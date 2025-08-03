@@ -130,7 +130,7 @@ if st.session_state.get("hypothesis_confirmed") and st.session_state.selected_in
     criteria = plan.get("success_criteria", {})
     metrics = plan.get("metrics", [])
     segments = plan.get("segments", [])
-    risks = [sanitize_text(r) for r in plan.get("risks_and_assumptions", []) if r.strip()]
+    risks = [sanitize_text(r) for r in plan.get("risks_and_assumptions", []) if isinstance(r, str) and r.strip()]
     steps = [sanitize_text(s) for s in plan.get("next_steps", []) if s.strip()]
 
     try:
