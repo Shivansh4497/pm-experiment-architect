@@ -184,7 +184,10 @@ if "output" in st.session_state:
 
         try:
             conf_level = float(criteria.get("confidence_level", 0))
-            conf_display = f"{round(conf_level * 100)}%"
+            if conf_level <= 1:  # e.g., 0.95
+                conf_display = f"{round(conf_level * 100)}%"
+            else:  # e.g., 95
+                conf_display = f"{round(conf_level)}%"
         except:
             conf_display = "N/A"
 
