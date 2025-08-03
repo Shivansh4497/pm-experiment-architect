@@ -1,6 +1,7 @@
 def generate_experiment_plan(goal, context):
     import streamlit as st
     from groq import Groq
+    import os
 
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
