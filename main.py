@@ -237,6 +237,9 @@ Increase {exact_metric} from {st.session_state.current} to {st.session_state.tar
             export += f"- {step}\n"
 
         # --- Download PRD ---
-        b64 = base64.b64encode(export.encode()).decode()
-        href = f'<a href="data:file/txt;base64,{b64}" download="experiment_prd.txt">📥 Download Polished PRD</a>'
-        st.markdown(href, unsafe_allow_html=True)
+        st.download_button(
+            label="📥 Download Polished PRD",
+            data=export,
+            file_name="experiment_prd.txt",
+            mime="text/plain"
+        )
