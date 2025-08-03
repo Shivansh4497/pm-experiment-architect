@@ -2,7 +2,7 @@ def generate_experiment_plan(goal, context):
     import streamlit as st
     from groq import Groq
 
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
     unit = context.get("metric_unit", "")
     context["expected_lift_with_unit"] = f"{context['expected_lift']}{unit}"
