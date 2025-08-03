@@ -77,7 +77,7 @@ if st.button("Generate Plan") or "output" not in st.session_state:
         st.error("Metric values must be numeric.")
         st.stop()
 
-    # Save for reuse in PRD
+    # Save for reuse
     st.session_state.current = current
     st.session_state.target = target
     st.session_state.auto_goal = f"I want to improve {exact_metric} from {current} to {target}."
@@ -132,64 +132,106 @@ if "output" in st.session_state:
                     st.session_state.selected_index = i
                     st.session_state.hypothesis_confirmed = True
 
-    if st.session_state.get("hypothesis_confirmed") and st.session_state.selected_index is not None:
-        i = st.session_state.selected_index
-        selected_hypo_obj = hypotheses[i] if i < len(hypotheses) else {}
-        selected_hypo = selected_hypo_obj.get("hypothesis", "N/A")
+# --- Hypothesis Selected ---
+if st.session_state.get("hypothesis_confirmed") and st.session_state.selected_index is not None:
+    i = st.session_state.selected_index
+    selected_hypo_obj = hypotheses[i] if i < len(hypotheses) else {}
+    selected_hypo = selected_hypo_obj.get("hypothesis", "N/A")
 
-        effort_list = plan.get("effort", [])
-        effort = effort_list[i].get("effort", "N/A") if i < len(effort_list) else "N/A"
+    effort_list = plan.get("effort", [])
+    effort = effort_list[i].get("effort", "N/A") if i < len(effort_list) else "N/A"
 
-        variant_list = plan.get("variants", [])
-        variant = variant_list[i] if i < len(variant_list) else {}
-        control = variant.get("control", "Not specified")
-        variation = variant.get("variation", "Not specified")
+    variant_list = plan.get("variants", [])
+    variant = variant_list[i] if i < len(variant_list) else {}
+    control = variant.get("control", "Not specified")
+    variation = variant.get("variation", "Not specified")
 
-        rationale_list = plan.get("hypothesis_rationale", [])
-        rationale = "Not available"
-        if i < len(rationale_list):
-            item = rationale_list[i]
-            if isinstance(item, dict):
-                rationale = item.get("rationale", "Not available")
-            elif isinstance(item, str) and len(item.strip()) > 10:
-                rationale = item.strip()
-        rationale = sanitize_text(rationale)
+    rationale_list = plan.get("hypothesis_rationale", [])
+    rationale = "Not available"
+    if i < len(rationale_list):
+        item = rationale_list[i]
+        if isinstance(item, dict):
+            rationale = item.get("rationale", "Not available")
+        elif isinstance(item, str) and len(item.strip()) > 10:
+            rationale = item.strip()
+    rationale = sanitize_text(rationale)
 
-        teams = plan.get("team_involved", [])
-        criteria = plan.get("success_criteria", {})
-        segments = plan.get("segments", [])
-        metrics = plan.get("metrics", [])
+    teams = plan.get("team_involved", [])
+    criteria = plan.get("success_criteria", {})
+    segments = plan.get("segments", [])
+    metrics = plan.get("metrics", [])
 
-        # Success Criteria
-        try:
-            conf_level = float(criteria.get("confidence_level", 0))
-            conf_display = f"{round(conf_level * 100)}%"
-        except:
-            conf_display = "N/A"
+    # Success Criteria
+    try:
+        conf_level = float(criteria.get("confidence_level", 0))
+        conf_display = f"{round(conf_level * 100)}%"
+    except:
+        conf_display = "N/A"
 
-        expected_lift = criteria.get("expected_lift", "N/A")
-        try:
-            expected_lift_val = float(expected_lift)
-            expected_lift_str = f"{expected_lift_val}{unit}"
-        except:
-            expected_lift_str = expected_lift
+    expected_lift = criteria.get("expected_lift", "N/A")
+    try:
+        expected_lift_val = float(expected_lift)
+        expected_lift_str = f"{expected_lift_val}{unit}"
+    except:
+        expected_lift_str = expected_lift
 
-        try:
-            mde = float(criteria.get("MDE", 0))
-            mde_display = f"{round(mde * 100)}%"
-        except:
-            mde_display = "N/A"
+    try:
+        mde = float(criteria.get("MDE", 0))
+        mde_display = f"{round(mde * 100)}%"
+    except:
+        mde_display = "N/A"
 
-        test_duration = criteria.get("estimated_test_duration", "N/A")
+    test_duration = criteria.get("estimated_test_duration", "N/A")
 
-        risks = [sanitize_text(r) for r in plan.get("risks_and_assumptions", []) if isinstance(r, str) and r.strip()]
-        if not risks:
-            risks = ["No risks or assumptions were provided."]
+    risks = [sanitize_text(r) for r in plan.get("risks_and_assumptions", []) if isinstance(r, str) and r.strip()]
+    if not risks:
+        risks = ["No risks or assumptions were provided."]
 
-        steps = [sanitize_text(s) for s in plan.get("next_steps", ["Not specified"])]
+    steps = [sanitize_text(s) for s in plan.get("next_steps", ["Not specified"])]
 
-        # --- 📄 Polished PRD Export ---
-        export = f"""# 📄 Experiment PRD: {selected_hypo[:60]}
+    # --- Render to UI ---
+    st.subheader("📉 Selected Hypothesis")
+    st.success(selected_hypo)
+    st.markdown("**Control Variant:**")
+    st.code(control)
+    st.markdown("**Test Variant:**")
+    st.code(variation)
+    st.markdown("**Why this Hypothesis?**")
+    safe_display(rationale)
+    st.markdown(f"**Effort**: {effort}")
+    if teams:
+        st.markdown(f"**Teams Involved:** {', '.join(teams)}")
+
+    st.markdown("### 🎯 Success Criteria")
+    st.markdown(f"""
+| Metric                     | Value                |
+|---------------------------|----------------------|
+| Confidence Level          | {conf_display}       |
+| Expected Lift             | {expected_lift_str}  |
+| Minimum Detectable Effect | {mde_display}        |
+| Test Duration             | {test_duration} days |
+""")
+
+    st.markdown("### 📈 Metrics to Track")
+    for metric in metrics:
+        name = metric.get("name", "Unnamed Metric")
+        formula = metric.get("formula", "N/A")
+        st.markdown(f"- **{name}**: {formula}")
+
+    st.markdown("### 👥 Segments for Breakdown")
+    for seg in segments:
+        st.markdown(f"- {seg}")
+
+    st.markdown("### ⚠️ Risks and Assumptions")
+    for r in risks:
+        st.markdown(f"- {r}")
+
+    st.markdown("### ✅ Next Steps")
+    for step in steps:
+        st.markdown(f"- {step}")
+
+    # --- 📄 Polished PRD Export ---
+    export = f"""# 📄 Experiment PRD: {selected_hypo[:60]}
 
 ## 🧩 Problem Statement
 {problem_statement}
@@ -217,29 +259,28 @@ Increase {exact_metric} from {st.session_state.current} to {st.session_state.tar
 
 ## 📈 Metrics to Track
 """
-        for metric in metrics:
-            name = metric.get("name", "Unnamed Metric")
-            formula = metric.get("formula", "N/A")
-            export += f"- **{name}**: {formula}\n"
+    for metric in metrics:
+        name = metric.get("name", "Unnamed Metric")
+        formula = metric.get("formula", "N/A")
+        export += f"- **{name}**: {formula}\n"
 
-        export += "\n## 👥 Segments for Breakdown\n"
-        for seg in segments:
-            export += f"- {seg}\n"
+    export += "\n## 👥 Segments for Breakdown\n"
+    for seg in segments:
+        export += f"- {seg}\n"
 
-        export += f"\n## ⚙️ Implementation Effort\n- **Effort**: {effort}\n- **Teams Involved**: {', '.join(teams)}\n"
+    export += f"\n## ⚙️ Implementation Effort\n- **Effort**: {effort}\n- **Teams Involved**: {', '.join(teams)}\n"
 
-        export += "\n## ⚠️ Risks and Assumptions\n"
-        for r in risks:
-            export += f"- {r}\n"
+    export += "\n## ⚠️ Risks and Assumptions\n"
+    for r in risks:
+        export += f"- {r}\n"
 
-        export += "\n## ✅ Next Steps\n"
-        for step in steps:
-            export += f"- {step}\n"
+    export += "\n## ✅ Next Steps\n"
+    for step in steps:
+        export += f"- {step}\n"
 
-        # --- Download PRD ---
-        st.download_button(
-            label="📥 Download Polished PRD",
-            data=export,
-            file_name="experiment_prd.txt",
-            mime="text/plain"
-        )
+    st.download_button(
+        label="📥 Download Polished PRD",
+        data=export,
+        file_name="experiment_prd.txt",
+        mime="text/plain"
+    )
