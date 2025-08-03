@@ -193,59 +193,97 @@ if "output" in st.session_state:
 
         steps = [sanitize_text(s) for s in plan.get("next_steps", ["Not specified"])]
 
-        export = f"""# 📄 Experiment PRD: {selected_hypo[:60]}
+        # Visual Output
+        with st.container():
+            st.markdown("### 🧩 Problem Statement", help="Why this matters")
+            st.info(problem_statement)
 
-## 🧩 Problem Statement
-{problem_statement}
+        with st.container():
+            st.markdown("### 🎯 Objective")
+            st.success(f"Increase {exact_metric} from {st.session_state.current} to {st.session_state.target} by launching a targeted experiment.")
 
-## 🎯 Objective
-Increase {exact_metric} from {st.session_state.current} to {st.session_state.target} by launching a targeted experiment.
+        with st.container():
+            st.markdown("### 🧪 Hypothesis")
+            st.code(selected_hypo, language="markdown")
 
-## 🧪 Hypothesis
-{selected_hypo}
+        with st.container():
+            st.markdown("### 🔁 Test Variants")
+            st.markdown(f"- **Control**: {control}\n- **Variation**: {variation}")
 
-## 🔁 Test Variants
-- **Control**: {control}
-- **Variation**: {variation}
+        with st.container():
+            st.markdown("### 💡 Rationale")
+            st.markdown(rationale)
 
-## 💡 Rationale
-{rationale}
-
-## 📊 Success Criteria
+        with st.container():
+            st.markdown("### 📊 Success Criteria")
+            st.markdown(f"""
 | Metric                     | Value                |
 |---------------------------|----------------------|
 | Confidence Level          | {conf_display}       |
 | Expected Lift             | {expected_lift_str}  |
 | Minimum Detectable Effect | {mde_display}        |
 | Test Duration             | {test_duration} days |
+""")
 
-## 📈 Metrics to Track
-"""
+        with st.container():
+            st.markdown("### 📈 Metrics to Track")
+            for metric in metrics:
+                name = metric.get("name", "Unnamed Metric")
+                formula = metric.get("formula", "N/A")
+                st.markdown(f"- **{name}**: {formula}")
+
+        with st.container():
+            st.markdown("### 👥 Segments for Breakdown")
+            for seg in segments:
+                st.markdown(f"- {seg}")
+
+        with st.container():
+            st.markdown("### ⚙️ Implementation Effort")
+            st.markdown(f"- **Effort**: {effort}")
+            st.markdown(f"- **Teams Involved**: {', '.join(teams)}")
+
+        with st.container():
+            st.markdown("### ⚠️ Risks and Assumptions")
+            for r in risks:
+                st.markdown(f"- {r}")
+
+        with st.container():
+            st.markdown("### ✅ Next Steps")
+            for step in steps:
+                st.markdown(f"- {step}")
+
+        # Download PRD
+        st.markdown("---")
+        st.markdown("### 📥 Download Final PRD")
+        export = "".join([f"# 📄 Experiment PRD: {selected_hypo[:60]}\n\n",
+                         f"## 🧩 Problem Statement\n{problem_statement}\n\n",
+                         f"## 🎯 Objective\nIncrease {exact_metric} from {st.session_state.current} to {st.session_state.target} by launching a targeted experiment.\n\n",
+                         f"## 🧪 Hypothesis\n{selected_hypo}\n\n",
+                         f"## 🔁 Test Variants\n- **Control**: {control}\n- **Variation**: {variation}\n\n",
+                         f"## 💡 Rationale\n{rationale}\n\n",
+                         f"## 📊 Success Criteria\n",
+                         f"| Metric                     | Value                |\n",
+                         f"|---------------------------|----------------------|\n",
+                         f"| Confidence Level          | {conf_display}       |\n",
+                         f"| Expected Lift             | {expected_lift_str}  |\n",
+                         f"| Minimum Detectable Effect | {mde_display}        |\n",
+                         f"| Test Duration             | {test_duration} days |\n\n",
+                         f"## 📈 Metrics to Track\n"])
         for metric in metrics:
             name = metric.get("name", "Unnamed Metric")
             formula = metric.get("formula", "N/A")
             export += f"- **{name}**: {formula}\n"
-
         export += "\n## 👥 Segments for Breakdown\n"
         for seg in segments:
             export += f"- {seg}\n"
-
         export += f"\n## ⚙️ Implementation Effort\n- **Effort**: {effort}\n- **Teams Involved**: {', '.join(teams)}\n"
-
         export += "\n## ⚠️ Risks and Assumptions\n"
         for r in risks:
             export += f"- {r}\n"
-
         export += "\n## ✅ Next Steps\n"
         for step in steps:
             export += f"- {step}\n"
 
-        # Show visual preview before download
-        st.subheader("📄 Generated Experiment PRD")
-        st.code(export, language="markdown")
-
-        st.markdown("---")
-        st.markdown("### 📥 Download Final PRD")
         st.download_button(
             label="📄 Download Polished PRD",
             data=export,
