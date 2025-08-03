@@ -126,7 +126,7 @@ if "output" in st.session_state:
                 if st.button(f"✅ Select H{i+1}", key=f"select_{i}"):
                     st.session_state.selected_index = i
                     st.session_state.hypothesis_confirmed = True
-                    st.experimental_rerun()
+                    st.rerun()
 
 # --- Polished PRD ---
 if (
