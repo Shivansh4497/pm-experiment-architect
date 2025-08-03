@@ -3,16 +3,14 @@ import json
 import re
 from prompt_engine import generate_experiment_plan
 
+# --- Utility Functions ---
 def sanitize_text(text):
     if not text or not isinstance(text, str):
         return ""
-    text = text.replace("\n", " ").replace("\r", " ").replace("\t", " ")
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    return re.sub(r"\s+", " ", text.replace("\n", " ").replace("\r", " ").replace("\t", " ")).strip()
 
 def safe_display(text, method=st.info):
-    clean_text = sanitize_text(text)
-    method(clean_text)
+    method(sanitize_text(text))
 
 def extract_json(text):
     try:
@@ -24,41 +22,32 @@ def extract_json(text):
 def remove_units_from_text(text, unit):
     if not text or not unit.strip():
         return text
-    escaped_unit = re.escape(unit.strip())
-    return re.sub(rf"(\d+\.?\d*)\s*{escaped_unit}", r"\1", text)
+    return re.sub(rf"(\d+\.?\d*)\s*{re.escape(unit.strip())}", r"\1", text)
 
 # --- Page Setup ---
 st.set_page_config(page_title="A/B Test Architect", layout="wide")
 st.title("🧪 AI-Powered A/B Test Architect")
 st.markdown("Use Groq + LLMs to design smarter experiments from fuzzy product goals.")
 
-# --- Product Context ---
+# --- Input: Product Context ---
 st.header("🧠 Product Context")
 product_type = st.radio("Product Type *", ["SaaS", "Consumer App", "E-commerce", "Marketplace", "Gaming", "Other"], horizontal=True)
 user_base = st.radio("User Base Size (DAU) *", ["< 10K", "10K–100K", "100K–1M", "> 1M"], horizontal=True)
 metric_focus = st.radio("Primary Metric Focus *", ["Activation", "Retention", "Monetization", "Engagement", "Virality"], horizontal=True)
 product_notes = st.text_area("Anything unique about your product or users?", placeholder="e.g. drop-off at pricing, seasonality, power users...")
 
-# --- Metric Objective ---
-st.markdown("## 🌟 Metric Improvement Objective")
-exact_metric = st.text_input("🌟 Metric to Improve * (e.g. Activation Rate, ARPU, DAU/MAU)")
-metric_unit = st.text_input("📀 Metric Unit (e.g. %, $, secs, count)", value="%")
+# --- Input: Metric Goal ---
+st.markdown("## 🎯 Metric Improvement Objective")
+exact_metric = st.text_input("🎯 Metric to Improve * (e.g. Activation Rate, ARPU, DAU/MAU)")
+metric_unit = st.text_input("📐 Metric Unit (e.g. %, $, secs, count)", value="%")
 current_value_raw = st.text_input("📉 Current Metric Value * (numerical only)")
 target_value_raw = st.text_input("🚀 Target Metric Value * (numerical only)")
 
 # --- Generate Plan ---
 if st.button("Generate Plan") or "output" not in st.session_state:
-    missing = []
-    if not product_type: missing.append("Product Type")
-    if not user_base: missing.append("User Base Size")
-    if not metric_focus: missing.append("Primary Metric Focus")
-    if not exact_metric.strip(): missing.append("Metric to Improve")
-    if not current_value_raw.strip(): missing.append("Current Value")
-    if not target_value_raw.strip(): missing.append("Target Value")
-    if not metric_unit.strip(): missing.append("Metric Unit")
-
-    if missing:
-        st.warning("Please fill all required fields: " + ", ".join(missing))
+    required = [product_type, user_base, metric_focus, exact_metric, current_value_raw, target_value_raw, metric_unit]
+    if not all(map(str.strip, required)):
+        st.warning("Please fill all required fields.")
         st.stop()
 
     try:
@@ -70,6 +59,7 @@ if st.button("Generate Plan") or "output" not in st.session_state:
         st.error("Metric values must be numeric.")
         st.stop()
 
+    # Save State
     st.session_state.current = current
     st.session_state.target = target
     st.session_state.auto_goal = f"I want to improve {exact_metric} from {current} to {target}."
@@ -86,14 +76,14 @@ if st.button("Generate Plan") or "output" not in st.session_state:
         "metric_unit": metric_unit.strip()
     }
 
-    output = generate_experiment_plan(st.session_state.auto_goal, st.session_state.context)
-    st.session_state.output = output
+    st.session_state.output = generate_experiment_plan(st.session_state.auto_goal, st.session_state.context)
     st.session_state.hypothesis_confirmed = False
     st.session_state.selected_index = None
 
-# --- Display Output ---
+# --- Display Plan Output ---
 if "output" in st.session_state:
     raw_output = extract_json(st.session_state.output)
+
     try:
         plan = json.loads(raw_output)
     except Exception as e:
@@ -102,123 +92,63 @@ if "output" in st.session_state:
         st.stop()
 
     unit = " " + st.session_state.context.get("metric_unit", "").strip()
+    safe_display(st.session_state.auto_goal)
 
-    st.markdown("## ✍️ Inferred Product Goal")
-    safe_display(st.session_state.auto_goal, method=st.info)
-
-    st.subheader("🧹 Problem Statement")
+    st.subheader("🧩 Problem Statement")
     problem_statement = plan.get("problem_statement", "")
-    problem_statement = remove_units_from_text(problem_statement, unit)
-    safe_display(problem_statement or "⚠️ Problem statement not generated by the model.")
+    safe_display(remove_units_from_text(problem_statement, unit) or "⚠️ Problem statement not generated.")
 
     st.subheader("🧪 Choose a Hypothesis")
     hypotheses = plan.get("hypotheses", [])
     if not hypotheses:
-        st.warning("No hypotheses found in the generated plan.")
+        st.warning("No hypotheses found.")
     else:
         for i, h in enumerate(hypotheses):
-            hypo = h.get("hypothesis") if isinstance(h, dict) else str(h)
-            with st.expander(f"H{i+1}: {hypo}", expanded=(st.session_state.selected_index == i)):
+            hypo = h.get("hypothesis", str(h))
+            with st.expander(f"H{i+1}: {hypo}", expanded=(st.session_state.get("selected_index") == i)):
                 if st.button(f"✅ Select H{i+1}", key=f"select_{i}"):
                     st.session_state.selected_index = i
                     st.session_state.hypothesis_confirmed = True
                     st.rerun()
 
-    if st.session_state.get("hypothesis_confirmed") and st.session_state.selected_index is not None:
-        i = st.session_state.selected_index
-        selected_hypo_obj = hypotheses[i] if i < len(hypotheses) else {}
-        selected_hypo = selected_hypo_obj.get("hypothesis", "N/A")
+# --- Show Detailed Output After Selection ---
+if st.session_state.get("hypothesis_confirmed") and st.session_state.selected_index is not None:
+    i = st.session_state.selected_index
+    selected_hypo_obj = hypotheses[i] if i < len(hypotheses) else {}
+    selected_hypo = selected_hypo_obj.get("hypothesis", "N/A")
 
-        effort_list = plan.get("effort", [])
-        effort = effort_list[i].get("effort", "N/A") if i < len(effort_list) else "N/A"
+    effort = plan.get("effort", [{}])[i].get("effort", "N/A")
+    variant = plan.get("variants", [{}])[i] if i < len(plan.get("variants", [])) else {}
+    control = variant.get("control", "Not specified")
+    variation = variant.get("variation", "Not specified")
 
-        variant_list = plan.get("variants", [])
-        variant = variant_list[i] if i < len(variant_list) else {}
-        control = variant.get("control", "Not specified")
-        variation = variant.get("variation", "Not specified")
+    rationale = plan.get("hypothesis_rationale", [{}])[i]
+    rationale = rationale.get("rationale", rationale) if isinstance(rationale, dict) else rationale
+    rationale = sanitize_text(rationale)
 
-        rationale_list = plan.get("hypothesis_rationale", [])
-        rationale = rationale_list[i].get("rationale", "Not available") if i < len(rationale_list) and isinstance(rationale_list[i], dict) else "Not available"
-        rationale = sanitize_text(rationale)
+    teams = plan.get("team_involved", [])
+    criteria = plan.get("success_criteria", {})
+    metrics = plan.get("metrics", [])
+    segments = plan.get("segments", [])
+    risks = [sanitize_text(r) for r in plan.get("risks_and_assumptions", []) if r.strip()]
+    steps = [sanitize_text(s) for s in plan.get("next_steps", []) if s.strip()]
 
-        teams = plan.get("team_involved", [])
-        criteria = plan.get("success_criteria", {})
-        segments = plan.get("segments", [])
-        metrics = plan.get("metrics", [])
+    try:
+        conf_level = float(criteria.get("confidence_level", 0))
+        conf_display = f"{round(conf_level * 100)}%" if conf_level <= 1 else f"{round(conf_level)}%"
+    except:
+        conf_display = "N/A"
 
-        try:
-            conf_level = float(criteria.get("confidence_level", 0))
-            conf_display = f"{round(conf_level * 100)}%"
-        except:
-            conf_display = "N/A"
+    try:
+        expected_lift = float(criteria.get("expected_lift", 0))
+        expected_lift_str = f"{expected_lift}{unit}"
+    except:
+        expected_lift_str = "N/A"
 
-        expected_lift = criteria.get("expected_lift", "N/A")
-        try:
-            expected_lift_val = float(expected_lift)
-            expected_lift_str = f"{expected_lift_val}{unit}"
-        except:
-            expected_lift_str = expected_lift
+    try:
+        mde = float(criteria.get("MDE", 0))
+        mde_display = f"{round(mde * 100)}%" if mde <= 1 else f"{round(mde)}%"
+    except:
+        mde_display = "N/A"
 
-        try:
-            mde = float(criteria.get("MDE", 0))
-            mde_display = f"{round(mde)}%" if mde > 1 else f"{round(mde * 100)}%"
-        except:
-            mde_display = "N/A"
-
-        test_duration = criteria.get("estimated_test_duration", "N/A")
-        risks = [sanitize_text(r) for r in plan.get("risks_and_assumptions", []) if isinstance(r, str) and r.strip()]
-        if not risks:
-            risks = ["No risks or assumptions were provided."]
-        steps = [sanitize_text(s) for s in plan.get("next_steps", ["Not specified"])]
-
-        export = f"""# 📄 Experiment PRD: {selected_hypo[:60]}
-
-## 🧹 Problem Statement
-{problem_statement}
-
-## 🌟 Objective
-Increase {exact_metric} from {st.session_state.current} to {st.session_state.target} by launching a targeted experiment.
-
-## 🧪 Hypothesis
-{selected_hypo}
-
-## 🤁 Test Variants
-- **Control**: {control}
-- **Variation**: {variation}
-
-## 💡 Rationale
-{rationale}
-
-## 📊 Success Criteria
-| Metric                     | Value                |
-|---------------------------|----------------------|
-| Confidence Level          | {conf_display}       |
-| Expected Lift             | {expected_lift_str}  |
-| Minimum Detectable Effect | {mde_display}        |
-| Test Duration             | {test_duration} days |
-
-## 📈 Metrics to Track
-"""
-        for metric in metrics:
-            name = metric.get("name", "Unnamed Metric")
-            formula = metric.get("formula", "N/A")
-            export += f"- **{name}**: {formula}\n"
-
-        export += "\n## 👥 Segments for Breakdown\n"
-        for seg in segments:
-            export += f"- {seg}\n"
-
-        export += f"\n## ⚙️ Implementation Effort\n- **Effort**: {effort}\n- **Teams Involved**: {', '.join(teams)}\n"
-        export += "\n## ⚠️ Risks and Assumptions\n"
-        for r in risks:
-            export += f"- {r}\n"
-        export += "\n## ✅ Next Steps\n"
-        for step in steps:
-            export += f"- {step}\n"
-
-        st.download_button(
-            label="📅 Download Polished PRD",
-            data=export,
-            file_name="experiment_prd.txt",
-            mime="text/plain"
-        )
+    te
