@@ -197,7 +197,7 @@ if "output" in st.session_state:
             conf_level = float(criteria.get("confidence_level", 0))
             conf_display = f"{round(conf_level * 100)}%"
         except:
-        conf_display = "N/A"
+            conf_display = "N/A"
 
 # Expected Lift
         expected_lift = criteria.get("expected_lift", "N/A")
@@ -205,7 +205,7 @@ if "output" in st.session_state:
             expected_lift_val = float(expected_lift)
             expected_lift_str = f"{expected_lift_val}{unit}"
         except:
-        expected_lift_str = expected_lift
+            expected_lift_str = expected_lift
 
 # MDE
         try:
