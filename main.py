@@ -191,16 +191,37 @@ if "output" in st.session_state:
 
         criteria = plan.get("success_criteria", {})
         st.markdown("### 🎯 Success Criteria")
-        st.markdown(f"- **Confidence Level**: {criteria.get('confidence_level', 'N/A')}%")
+
+# Confidence Level
+        try:
+            conf_level = float(criteria.get("confidence_level", 0))
+            conf_display = f"{round(conf_level * 100)}%"
+        except:
+        conf_display = "N/A"
+
+# Expected Lift
         expected_lift = criteria.get("expected_lift", "N/A")
         try:
             expected_lift_val = float(expected_lift)
             expected_lift_str = f"{expected_lift_val}{unit}"
         except:
-            expected_lift_str = expected_lift
+        expected_lift_str = expected_lift
+
+# MDE
+        try:
+            mde = float(criteria.get("MDE", 0))
+            mde_display = f"{round(mde * 100)}%"
+        except:
+            mde_display = "N/A"
+
+# Test Duration
+        test_duration = criteria.get("estimated_test_duration", "N/A")
+
+        st.markdown(f"- **Confidence Level**: {conf_display}")
         st.markdown(f"- **Expected Lift**: {expected_lift_str}")
-        st.markdown(f"- **Minimum Detectable Effect**: {criteria.get('MDE', 'N/A')}%")
-        st.markdown(f"- **Test Duration**: {criteria.get('estimated_test_duration', 'N/A')} days")
+        st.markdown(f"- **Minimum Detectable Effect**: {mde_display}")
+        st.markdown(f"- **Test Duration**: {test_duration} days")
+        
 
         risks = plan.get("risks_and_assumptions", [])
         risks = [sanitize_text(r) for r in risks if isinstance(r, str) and r.strip()]
