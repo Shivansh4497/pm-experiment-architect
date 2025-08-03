@@ -54,7 +54,7 @@ current_value_raw = st.text_input("📉 Current Metric Value * (numerical only)"
 target_value_raw = st.text_input("🚀 Target Metric Value * (numerical only)")
 
 # --- Generate Plan ---
-if st.button("Generate Plan"):
+if st.button("Generate Plan") or "output" not in st.session_state:
     missing = []
     if not product_type: missing.append("Product Type")
     if not user_base: missing.append("User Base Size")
