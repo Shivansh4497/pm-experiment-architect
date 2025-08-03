@@ -221,7 +221,6 @@ Increase {exact_metric} from {st.session_state.current} to {st.session_state.tar
 
 ## 📈 Metrics to Track
 """
-
         for metric in metrics:
             name = metric.get("name", "Unnamed Metric")
             formula = metric.get("formula", "N/A")
@@ -241,9 +240,10 @@ Increase {exact_metric} from {st.session_state.current} to {st.session_state.tar
         for step in steps:
             export += f"- {step}\n"
 
-
+        # Show visual preview before download
         st.subheader("📄 Generated Experiment PRD")
         st.code(export, language="markdown")
+
         st.markdown("---")
         st.markdown("### 📥 Download Final PRD")
         st.download_button(
