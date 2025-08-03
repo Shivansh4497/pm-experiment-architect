@@ -1,0 +1,255 @@
+import streamlit as st
+import json
+import base64
+import re
+import os
+from prompt_engine import generate_experiment_plan
+
+
+def sanitize_text(text):
+    if not text or not isinstance(text, str):
+        return ""
+    text = text.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def safe_display(text, method=st.info):
+    clean_text = sanitize_text(text)
+    method(clean_text)
+
+
+def extract_json(text):
+    try:
+        match = re.search(r"\{[\s\S]+\}", text)
+        return match.group(0) if match else text
+    except:
+        return text
+
+
+def remove_units_from_text(text, unit):
+    if not text or not unit.strip():
+        return text
+    escaped_unit = re.escape(unit.strip())
+    return re.sub(rf"(\d+\.?\d*)\s*{escaped_unit}", r"\1", text)
+
+
+def insert_units_in_goal(text, unit):
+    if not text or not unit.strip():
+        return text
+    return re.sub(r"(\d+\.?\d*)", r"\1" + unit, text)
+
+
+st.set_page_config(page_title="A/B Test Architect", layout="wide")
+st.title("🧪 AI-Powered A/B Test Architect")
+st.markdown("Use Groq + LLMs to design smarter experiments from fuzzy product goals.")
+
+
+# --- Product Context ---
+st.header("🧠 Product Context")
+product_type = st.radio("Product Type *", ["SaaS", "Consumer App", "E-commerce", "Marketplace", "Gaming", "Other"], horizontal=True)
+user_base = st.radio("User Base Size (DAU) *", ["< 10K", "10K–100K", "100K–1M", "> 1M"], horizontal=True)
+metric_focus = st.radio("Primary Metric Focus *", ["Activation", "Retention", "Monetization", "Engagement", "Virality"], horizontal=True)
+product_notes = st.text_area("Anything unique about your product or users?", placeholder="e.g. drop-off at pricing, seasonality, power users...")
+
+
+# --- Goal Inputs ---
+st.markdown("## 🎯 Metric Improvement Objective")
+exact_metric = st.text_input("🎯 Metric to Improve * (e.g. Activation Rate, ARPU, DAU/MAU)")
+metric_unit = st.text_input("📐 Metric Unit (e.g. %, $, secs, count)", value="%")
+current_value_raw = st.text_input("📉 Current Metric Value * (numerical only)")
+target_value_raw = st.text_input("🚀 Target Metric Value * (numerical only)")
+
+
+# --- Generate Plan ---
+if st.button("Generate Plan"):
+    missing = []
+    if not product_type: missing.append("Product Type")
+    if not user_base: missing.append("User Base Size")
+    if not metric_focus: missing.append("Primary Metric Focus")
+    if not exact_metric.strip(): missing.append("Metric to Improve")
+    if not current_value_raw.strip(): missing.append("Current Value")
+    if not target_value_raw.strip(): missing.append("Target Value")
+    if not metric_unit.strip(): missing.append("Metric Unit")
+
+    if missing:
+        st.warning("Please fill all required fields: " + ", ".join(missing))
+        st.stop()
+
+    try:
+        current = float(current_value_raw)
+        target = float(target_value_raw)
+        expected_lift = round(target - current, 4)
+        mde = round(abs((target - current) / current) * 100, 2) if current != 0 else 0
+    except ValueError:
+        st.error("Metric values must be numeric.")
+        st.stop()
+
+    auto_goal = f"I want to improve {exact_metric} from {current} to {target}."
+    st.session_state.auto_goal = auto_goal
+
+    context = {
+        "type": product_type,
+        "users": user_base,
+        "metric": metric_focus,
+        "notes": product_notes,
+        "exact_metric": exact_metric,
+        "current_value": current,
+        "target_value": target,
+        "expected_lift": expected_lift,
+        "minimum_detectable_effect": mde,
+        "metric_unit": metric_unit.strip()
+    }
+    st.session_state.context = context
+
+    output = generate_experiment_plan(auto_goal, context)
+    st.session_state.output = output
+    st.session_state.hypothesis_confirmed = False
+    st.session_state.selected_index = None
+
+
+# --- Output UI ---
+if "output" in st.session_state:
+    raw_output = extract_json(st.session_state.output)
+
+    try:
+        plan = json.loads(raw_output)
+    except Exception as e:
+        st.error(f"❌ Could not parse JSON: {e}")
+        st.code(raw_output)
+        st.stop()
+
+    unit = ""
+    if "context" in st.session_state:
+        unit_raw = st.session_state.context.get("metric_unit", "")
+        if unit_raw:
+            unit = " " + unit_raw.strip()
+
+    # Inferred Product Goal
+    st.markdown("## ✍️ Inferred Product Goal")
+    goal_text = st.session_state.auto_goal  # already has numbers, no unit
+    safe_display(goal_text, method=st.info)
+
+    # Problem Statement
+    st.subheader("🧩 Problem Statement")
+    raw_problem_statement = plan.get("problem_statement", "")
+    if unit.strip():
+        escaped_unit = re.escape(unit.strip())
+        problem_statement = re.sub(rf"(\d+\.?\d*)\s*{escaped_unit}", r"\1", raw_problem_statement)
+    problem_statement = remove_units_from_text(problem_statement, unit)
+    if not problem_statement or len(problem_statement.strip()) < 10:
+        problem_statement = "⚠️ Problem statement not generated by the model."
+    safe_display(problem_statement, method=st.info)
+
+    # Hypotheses
+    st.subheader("🧪 Choose a Hypothesis")
+    hypotheses = plan.get("hypotheses", [])
+    if not hypotheses:
+        st.warning("No hypotheses found in the generated plan.")
+    else:
+        for i, h in enumerate(hypotheses):
+            hypo = h.get("hypothesis") if isinstance(h, dict) else str(h)
+            with st.expander(f"H{i+1}: {hypo}", expanded=(st.session_state.selected_index == i)):
+                if st.button(f"✅ Select H{i+1}", key=f"select_{i}"):
+                    st.session_state.selected_index = i
+                    st.session_state.hypothesis_confirmed = True
+
+    # Selected Hypothesis Details
+    if st.session_state.get("hypothesis_confirmed") and st.session_state.selected_index is not None:
+        i = st.session_state.selected_index
+        selected_hypo_obj = hypotheses[i] if i < len(hypotheses) else {}
+        selected_hypo = selected_hypo_obj.get("hypothesis", "N/A")
+
+        effort_list = plan.get("effort", [])
+        effort = effort_list[i].get("effort", "N/A") if i < len(effort_list) else "N/A"
+
+        variant_list = plan.get("variants", [])
+        variant = variant_list[i] if i < len(variant_list) else {}
+        control = variant.get("control", "Not specified")
+        variation = variant.get("variation", "Not specified")
+
+        rationale_list = plan.get("hypothesis_rationale", [])
+        rationale = "Not available"
+        if i < len(rationale_list):
+            item = rationale_list[i]
+            if isinstance(item, dict):
+                rationale = item.get("rationale", "Not available")
+            elif isinstance(item, str) and len(item.strip()) > 10:
+                rationale = item.strip()
+        rationale = sanitize_text(rationale)
+
+        st.subheader("📉 Selected Hypothesis")
+        st.success(selected_hypo)
+        st.markdown(f"**Effort**: {effort}")
+        st.markdown(f"**Why this Hypothesis?**\n\n{rationale}")
+        st.markdown(f"**Control Variant:**\n```text\n{control}\n```")
+        st.markdown(f"**Test Variant:**\n```text\n{variation}\n```")
+
+        teams = plan.get("team_involved", [])
+        if teams:
+            st.markdown(f"**Teams Involved:** {', '.join(teams)}")
+
+        criteria = plan.get("success_criteria", {})
+        st.markdown("### 🎯 Success Criteria")
+        st.markdown(f"- **Confidence Level**: {criteria.get('confidence_level', 'N/A')}%")
+        expected_lift = criteria.get("expected_lift", "N/A")
+        try:
+            expected_lift_val = float(expected_lift)
+            expected_lift_str = f"{expected_lift_val}{unit}"
+        except:
+            expected_lift_str = expected_lift
+        st.markdown(f"- **Expected Lift**: {expected_lift_str}")
+        st.markdown(f"- **Minimum Detectable Effect**: {criteria.get('MDE', 'N/A')}%")
+        st.markdown(f"- **Test Duration**: {criteria.get('estimated_test_duration', 'N/A')} days")
+
+        risks = plan.get("risks_and_assumptions", [])
+        risks = [sanitize_text(r) for r in risks if isinstance(r, str) and r.strip()]
+        if not risks:
+            risks = ["No risks or assumptions were provided."]
+        st.markdown("### ⚠️ Risks and Assumptions")
+        st.code("\n- " + "\n- ".join(risks))
+
+        steps = plan.get("next_steps") or ["Not specified"]
+        steps = [sanitize_text(s) for s in steps]
+        st.markdown("### ✅ Next Steps")
+        st.code("\n- " + "\n- ".join(steps))
+
+        export = f"""
+📄 Experiment PRD: {selected_hypo[:50]}
+
+🧩 Problem Statement:
+{problem_statement}
+
+🎯 Hypothesis:
+{selected_hypo}
+
+🧪 Control:
+{control}
+
+🧬 Variation:
+{variation}
+
+📈 Why this hypothesis:
+{rationale}
+
+📏 Metrics:
+{json.dumps(plan.get('metrics', []), indent=2)}
+
+👥 Segments:
+{json.dumps(plan.get('segments', []), indent=2)}
+
+📊 Success Criteria:
+{json.dumps(criteria, indent=2)}
+
+⏱️ Effort: {effort}
+👥 Teams: {', '.join(teams)}
+
+⚠️ Risks:
+{json.dumps(risks, indent=2)}
+
+✅ Next Steps:
+{json.dumps(steps, indent=2)}
+"""
+        b64 = base64.b64encode(export.encode()).decode()
+        href = f'<a href="data:file/txt;base64,{b64}" download="experiment_prd.txt">📥 Download PRD</a>'
+        st.markdown(href, unsafe_allow_html=True)
