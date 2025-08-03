@@ -223,42 +223,54 @@ if "output" in st.session_state:
         st.markdown("### ✅ Next Steps")
         st.code("\n- " + "\n- ".join(steps))
 
-        export = f"""
-📄 Experiment PRD: {selected_hypo[:50]}
+        # --- Generate Polished PRD ---
+        export = f"""# 📄 Experiment PRD: {selected_hypo[:60]}
 
-🧩 Problem Statement:
+## 🧩 Problem Statement
 {problem_statement}
 
-🎯 Hypothesis:
+## 🎯 Objective
+Increase {exact_metric} from {current} to {target} by launching a targeted experiment.
+
+## 🧪 Hypothesis
 {selected_hypo}
 
-🧪 Control:
-{control}
+## 🔁 Test Variants
+- **Control**: {control}
+- **Variation**: {variation}
 
-🧬 Variation:
-{variation}
-
-📈 Why this hypothesis:
+## 💡 Rationale
 {rationale}
 
-📏 Metrics:
-{json.dumps(plan.get('metrics', []), indent=2)}
+## 📊 Success Criteria
+| Metric                     | Value                |
+|---------------------------|----------------------|
+| Confidence Level          | {conf_display}       |
+| Expected Lift             | {expected_lift_str}  |
+| Minimum Detectable Effect | {mde_display}        |
+| Test Duration             | {test_duration} days |
 
-👥 Segments:
-{json.dumps(plan.get('segments', []), indent=2)}
-
-📊 Success Criteria:
-{json.dumps(criteria, indent=2)}
-
-⏱️ Effort: {effort}
-👥 Teams: {', '.join(teams)}
-
-⚠️ Risks:
-{json.dumps(risks, indent=2)}
-
-✅ Next Steps:
-{json.dumps(steps, indent=2)}
+## 📈 Metrics to Track
 """
+        for metric in plan.get("metrics", []):
+            name = metric.get("name", "Unnamed Metric")
+            formula = metric.get("formula", "N/A")
+            export += f"- **{name}**: {formula}\n"
+
+        export += "\n## 👥 Segments for Breakdown\n"
+        segments = plan.get("segments", [])
+        for seg in segments:
+            export += f"- {seg}\n"
+
+        export += f"\n## ⚙️ Implementation Effort\n- **Effort**: {effort}\n- **Teams Involved**: {', '.join(teams)}\n"
+
+        export += "\n## ⚠️ Risks and Assumptions\n"
+        for r in risks:
+            export += f"- {r}\n"
+
+        export += "\n## ✅ Next Steps\n"
+        for step in steps:
+            export += f"- {step}\n"
         b64 = base64.b64encode(export.encode()).decode()
         href = f'<a href="data:file/txt;base64,{b64}" download="experiment_prd.txt">📥 Download PRD</a>'
         st.markdown(href, unsafe_allow_html=True)
