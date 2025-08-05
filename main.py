@@ -149,7 +149,6 @@ if "output" in st.session_state:
 
     if st.session_state.get("hypothesis_confirmed") and st.session_state.selected_index is not None:
         st.markdown("<a name='output'></a>", unsafe_allow_html=True)
-        st.query_params(scroll="output")
 
         i = st.session_state.selected_index
         selected_hypo_obj = hypotheses[i] if i < len(hypotheses) else {}
