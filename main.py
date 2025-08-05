@@ -54,7 +54,7 @@ if st.button("\U0001F504 Start Over"):
 
 # --- Product Context ---
 st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
-st.markdown("<div class='section-title'>🧠 Product Context</div>", unsafe_allow_html=True)
+st.markdown("<div class='section-title'>\U0001F9E0 Product Context</div>", unsafe_allow_html=True)
 product_type = st.radio("Product Type *", ["SaaS", "Consumer App", "E-commerce", "Marketplace", "Gaming", "Other"], horizontal=True, help="What kind of product are you testing?")
 user_base = st.radio("User Base Size (DAU) *", ["< 10K", "10K–100K", "100K–1M", "> 1M"], horizontal=True, help="Your product's average daily active users")
 metric_focus = st.radio("Primary Metric Focus *", ["Activation", "Retention", "Monetization", "Engagement", "Virality"], horizontal=True, help="The key area you want to improve")
@@ -63,14 +63,14 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 # --- Metric Objective ---
 st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
-st.markdown("<div class='section-title'>🎯 Metric Improvement Objective</div>", unsafe_allow_html=True)
-exact_metric = st.text_input("🎯 Metric to Improve * (e.g. Activation Rate, ARPU, DAU/MAU)", help="Be specific — name the metric you want to shift")
-metric_unit = st.text_input("📐 Metric Unit (e.g. %, $, secs, count)", value="%", help="How is the metric measured?")
+st.markdown("<div class='section-title'>\U0001F3AF Metric Improvement Objective</div>", unsafe_allow_html=True)
+exact_metric = st.text_input("\U0001F3AF Metric to Improve * (e.g. Activation Rate, ARPU, DAU/MAU)", help="Be specific — name the metric you want to shift")
+metric_unit = st.text_input("\U0001F4C0 Metric Unit (e.g. %, $, secs, count)", value="%", help="How is the metric measured?")
 col1, col2 = st.columns(2)
 with col1:
-    current_value_raw = st.text_input("📉 Current Metric Value *", help="Current observed value of the metric")
+    current_value_raw = st.text_input("\U0001F4C9 Current Metric Value *", help="Current observed value of the metric")
 with col2:
-    target_value_raw = st.text_input("🚀 Target Metric Value *", help="What do you want the metric to reach?")
+    target_value_raw = st.text_input("\U0001F680 Target Metric Value *", help="What do you want the metric to reach?")
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- Generate Plan ---
@@ -98,9 +98,12 @@ if st.button("Generate Plan") or "output" not in st.session_state:
         st.error("Metric values must be numeric.")
         st.stop()
 
+    goal_text = f"I want to improve {exact_metric} from {current} to {target}."
+    goal_with_units = insert_units_in_goal(goal_text, metric_unit).strip()
+
     st.session_state.current = current
     st.session_state.target = target
-    st.session_state.auto_goal = insert_units_in_goal(f"I want to improve {exact_metric} from {current} to {target}.", metric_unit)
+    st.session_state.auto_goal = goal_with_units
     st.session_state.context = {
         "type": product_type,
         "users": user_base,
@@ -115,7 +118,7 @@ if st.button("Generate Plan") or "output" not in st.session_state:
     }
 
     with st.spinner("🌀 Generating your plan..."):
-        output = generate_experiment_plan(st.session_state.auto_goal, st.session_state.context)
+        output = generate_experiment_plan(goal_with_units, st.session_state.context)
     st.session_state.output = output
     st.session_state.hypothesis_confirmed = False
     st.session_state.selected_index = None
@@ -201,7 +204,6 @@ if "output" in st.session_state:
 - Estimated Effort: {effort}
 """)
 
-        # PRD Export
         prd = f"""
 # 🧪 Experiment PRD
 
@@ -232,7 +234,6 @@ if "output" in st.session_state:
         st.download_button("📄 Download PRD", prd, file_name="experiment_prd.txt")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# Sticky scroll to output
 st.markdown("""
 <script>
     const params = new URLSearchParams(window.location.search);
