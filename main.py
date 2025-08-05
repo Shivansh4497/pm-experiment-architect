@@ -117,7 +117,7 @@ if st.button("Generate Plan") or "output" not in st.session_state:
         "metric_unit": metric_unit.strip()
     }
 
-    with st.spinner("🌀 Generating your plan..."):
+    with st.spinner("\U0001F300 Generating your plan..."):
         output = generate_experiment_plan(goal_with_units, st.session_state.context)
     st.session_state.output = output
     st.session_state.hypothesis_confirmed = False
@@ -203,6 +203,30 @@ if "output" in st.session_state:
 - Estimated Duration: {duration} days
 - Estimated Effort: {effort}
 """)
+
+        metrics = plan.get("metrics", [])
+        if metrics:
+            st.markdown("<div class='section-title'>📏 Metrics</div>", unsafe_allow_html=True)
+            for m in metrics:
+                st.markdown(f"- **{m.get('name', 'Unnamed')}**: {m.get('formula', 'N/A')}")
+
+        segments = plan.get("segments", [])
+        if segments:
+            st.markdown("<div class='section-title'>👥 Segments</div>", unsafe_allow_html=True)
+            for s in segments:
+                st.markdown(f"- {s}")
+
+        risks = plan.get("risks", [])
+        if risks:
+            st.markdown("<div class='section-title'>⚠️ Risks</div>", unsafe_allow_html=True)
+            for r in risks:
+                st.markdown(f"- {r}")
+
+        next_steps = plan.get("next_steps", [])
+        if next_steps:
+            st.markdown("<div class='section-title'>✅ Next Steps</div>", unsafe_allow_html=True)
+            for step in next_steps:
+                st.markdown(f"- {step}")
 
         prd = f"""
 # 🧪 Experiment PRD
