@@ -137,15 +137,19 @@ if "output" in st.session_state:
     else:
         for i, h in enumerate(hypotheses):
             hypo = h.get("hypothesis") if isinstance(h, dict) else str(h)
-            with st.expander(f"H{i+1}: {hypo}", expanded=(st.session_state.selected_index == i)):
-                if st.button(f"✅ Select H{i+1}", key=f"select_{i}"):
+            selected = (st.session_state.selected_index == i)
+            col1, col2 = st.columns([8, 1])
+            with col1:
+                st.markdown(f"**H{i+1}:** {hypo}")
+            with col2:
+                if st.button("Select", key=f"select_{i}"):
                     st.session_state.selected_index = i
                     st.session_state.hypothesis_confirmed = True
                     st.rerun()
 
     if st.session_state.get("hypothesis_confirmed") and st.session_state.selected_index is not None:
         st.markdown("<a name='output'></a>", unsafe_allow_html=True)
-        st.experimental_set_query_params(scroll="output")
+        st.query_params(scroll="output")
 
         i = st.session_state.selected_index
         selected_hypo_obj = hypotheses[i] if i < len(hypotheses) else {}
