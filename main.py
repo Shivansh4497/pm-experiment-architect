@@ -32,7 +32,11 @@ def remove_units_from_text(text, unit):
 def insert_units_in_goal(text, unit):
     if not text or not unit.strip():
         return text
-    return re.sub(r"(\d+\.?\d*)", r"\1" + unit, text)
+    unit = unit.strip()
+    if unit in ["$", "₹", "€", "£"]:  # Common prefix units
+        return re.sub(r"(?<=\s)(\d+\.?\d*)", rf"{unit}\1", text)
+    else:
+        return re.sub(r"(\d+\.?\d*)(?!\S)", rf"\1{unit}", text)
 
 # --- Page Setup ---
 st.set_page_config(page_title="A/B Test Architect", layout="wide")
