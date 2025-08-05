@@ -296,7 +296,7 @@ if next_steps:
     prd += "\n## ✅ Next Steps\n"
     for step in next_steps:
         prd += f"- {step}\n"
-"""
+
         st.download_button("📄 Download PRD", prd, file_name="experiment_prd.txt")
     st.markdown("</div>", unsafe_allow_html=True)
 
