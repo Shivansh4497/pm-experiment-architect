@@ -49,14 +49,39 @@ def insert_units_in_goal(text, unit):
 
 # --- Page Setup ---
 st.set_page_config(page_title="A/B Test Architect", layout="wide")
+
+# --- Onboarding Additions ---
 st.markdown("""
-<style>
-    .blue-section { background-color: #e6f0ff; padding: 15px; border-radius: 10px; }
-    .green-section { background-color: #e9f9f0; padding: 15px; border-radius: 10px; }
-    .grey-section { background-color: #f0f0f0; padding: 15px; border-radius: 10px; }
-    .section-title { font-size: 20px; font-weight: bold; margin-top: 20px; }
-</style>
+<div style='padding: 20px 0;'>
+  <h2 style='margin-bottom: 0;'>📊 Smarter A/B Test Planning in 2 Minutes</h2>
+  <p style='font-size: 16px; color: #444;'>
+    Struggling to write strong hypotheses or align on success criteria? This tool helps you instantly generate a full experiment PRD — from your product goal to clear variants, metrics, and risks — powered by LLMs.
+  </p>
+</div>
 """, unsafe_allow_html=True)
+
+st.markdown("""
+**Steps:**
+1. Provide product + metric context →  
+2. Get AI-generated experiment plan →  
+3. Select best hypothesis →  
+4. Download PRD
+""")
+
+st.markdown("⏳ This will take **under 2 minutes** to fill.")
+
+with st.expander("🔍 What will I get?"):
+    st.markdown("""
+    - ✅ Inferred Product Goal
+    - 🧪 2–3 Actionable Hypotheses
+    - 🔁 Clear Control vs Variant
+    - 📊 MDE, Confidence, Sample Size
+    - 📏 Custom Metrics
+    - ⚠️ Risks & Segments
+    - ✅ Downloadable PRD
+    > Looks like this:
+    """)
+    st.code("## 🧪 Hypothesis: Showing price upfront\n...\n- MDE: 3.2%\n- Users per Variant: 5,000")
 
 st.title("\U0001F9EA AI-Powered A/B Test Architect")
 st.markdown("Use Groq + LLMs to design smarter experiments from fuzzy product goals.")
@@ -64,6 +89,7 @@ st.markdown("Use Groq + LLMs to design smarter experiments from fuzzy product go
 if st.button("\U0001F504 Start Over"):
     st.session_state.clear()
     st.rerun()
+
 
 # --- Product Context ---
 st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
