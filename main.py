@@ -34,14 +34,18 @@ def insert_units_in_goal(text, unit):
         return text
 
     unit = unit.strip()
-    tokens = re.split(r'(\d+\.?\d*)', text)
+    output = []
+    tokens = re.split(r'(\s+|\d+\.?\d*)', text)  # keep whitespace
+
     for i, token in enumerate(tokens):
         if re.match(r'^\d+\.?\d*$', token):
             if unit in ["$", "₹", "€", "£"]:
-                tokens[i] = unit + token
+                output.append(unit + token)
             else:
-                tokens[i] = token + " " + unit
-    return ''.join(tokens)
+                output.append(token + " " + unit)
+        else:
+            output.append(token)
+    return ''.join(output)
 
 # --- Page Setup ---
 st.set_page_config(page_title="A/B Test Architect", layout="wide")
