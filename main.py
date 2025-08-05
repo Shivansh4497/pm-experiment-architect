@@ -241,61 +241,54 @@ if "output" in st.session_state:
             for step in next_steps:
                 st.markdown(f"- {step}")
 
-        prd = f"""
-# 🧪 Experiment PRD
+        prd = ""
+        prd += "# 🧪 Experiment PRD\n\n"
+        prd += "## 🎯 Goal\n"
+        prd += st.session_state.auto_goal + "\n\n"
 
-## 🎯 Goal
-{st.session_state.auto_goal}
+        prd += "## 🧩 Problem\n"
+        prd += problem_statement + "\n\n"
 
-## 🧩 Problem
-{problem_statement}
+        prd += "## 🧪 Hypothesis\n"
+        prd += selected_hypo + "\n\n"
 
-## 🧪 Hypothesis
-{selected_hypo}
+        prd += "## 🔁 Variants\n"
+        prd += f"- Control: {control}\n- Variation: {variation}\n\n"
 
-## 🔁 Variants
-- Control: {control}
-- Variation: {variation}
+        prd += "## 💡 Rationale\n"
+        prd += rationale + "\n\n"
 
-## 💡 Rationale
-{rationale}
+        prd += "## 📊 Experiment Stats\n"
+        prd += f"- Confidence Level: {confidence_str}\n"
+        prd += f"- MDE: {mde_display}\n"
+        prd += f"- Sample Size: {sample_size}\n"
+        prd += f"- Users/Variant: {users_per_variant}\n"
+        prd += f"- Duration: {duration} days\n"
+        prd += f"- Effort: {effort}\n\n"
 
-## 📊 Experiment Stats
-- Confidence Level: {confidence_str}
-- MDE: {mde_display}
-- Sample Size: {sample_size}
-- Users/Variant: {users_per_variant}
-- Duration: {duration} days
-- Effort: {effort}
-"""
+        metrics = plan.get("metrics", [])
+        if metrics:
+            prd += "## 📏 Metrics\n"
+            for m in metrics:
+                prd += f"- {m.get('name', 'Unnamed')}: {m.get('formula', 'N/A')}\n"
 
-# Append Metrics
-metrics = plan.get("metrics", [])
-if metrics:
-    prd += "\n## 📏 Metrics\n"
-    for m in metrics:
-        prd += f"- {m.get('name', 'Unnamed')}: {m.get('formula', 'N/A')}\n"
+        segments = plan.get("segments", [])
+        if segments:
+            prd += "\n## 👥 Segments\n"
+            for s in segments:
+                prd += f"- {s}\n"
 
-# Append Segments
-segments = plan.get("segments", [])
-if segments:
-    prd += "\n## 👥 Segments\n"
-    for s in segments:
-        prd += f"- {s}\n"
+        risks = plan.get("risks_and_assumptions", [])  # ✅ Correct key
+        if risks:
+            prd += "\n## ⚠️ Risks\n"
+            for r in risks:
+                prd += f"- {r}\n"
 
-# Append Risks
-risks = plan.get("risks_and_assumptions", [])
-if risks:
-    prd += "\n## ⚠️ Risks\n"
-    for r in risks:
-        prd += f"- {r}\n"
-
-# Append Next Steps
-next_steps = plan.get("next_steps", [])
-if next_steps:
-    prd += "\n## ✅ Next Steps\n"
-    for step in next_steps:
-        prd += f"- {step}\n"
+        next_steps = plan.get("next_steps", [])
+        if next_steps:
+            prd += "\n## ✅ Next Steps\n"
+            for step in next_steps:
+                prd += f"- {step}\n"
 
         st.download_button("📄 Download PRD", prd, file_name="experiment_prd.txt")
     st.markdown("</div>", unsafe_allow_html=True)
