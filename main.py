@@ -36,22 +36,26 @@ def insert_units_in_goal(text, unit):
 
 # --- Page Setup ---
 st.set_page_config(page_title="A/B Test Architect", layout="wide")
-st.title("🧪 AI-Powered A/B Test Architect")
+st.title("\U0001F9EA AI-Powered A/B Test Architect")
 st.markdown("Use Groq + LLMs to design smarter experiments from fuzzy product goals.")
 
+if st.button("\U0001F504 Start Over"):
+    st.session_state.clear()
+    st.experimental_rerun()
+
 # --- Product Context ---
-st.header("🧠 Product Context")
+st.header("\U0001F9E0 Product Context")
 product_type = st.radio("Product Type *", ["SaaS", "Consumer App", "E-commerce", "Marketplace", "Gaming", "Other"], horizontal=True)
 user_base = st.radio("User Base Size (DAU) *", ["< 10K", "10K–100K", "100K–1M", "> 1M"], horizontal=True)
 metric_focus = st.radio("Primary Metric Focus *", ["Activation", "Retention", "Monetization", "Engagement", "Virality"], horizontal=True)
 product_notes = st.text_area("Anything unique about your product or users?", placeholder="e.g. drop-off at pricing, seasonality, power users...")
 
 # --- Metric Objective ---
-st.markdown("## 🎯 Metric Improvement Objective")
-exact_metric = st.text_input("🎯 Metric to Improve * (e.g. Activation Rate, ARPU, DAU/MAU)")
-metric_unit = st.text_input("📐 Metric Unit (e.g. %, $, secs, count)", value="%")
-current_value_raw = st.text_input("📉 Current Metric Value * (numerical only)")
-target_value_raw = st.text_input("🚀 Target Metric Value * (numerical only)")
+st.markdown("## \U0001F3AF Metric Improvement Objective")
+exact_metric = st.text_input("\U0001F3AF Metric to Improve * (e.g. Activation Rate, ARPU, DAU/MAU)")
+metric_unit = st.text_input("\U0001F4C0 Metric Unit (e.g. %, $, secs, count)", value="%")
+current_value_raw = st.text_input("\U0001F4C9 Current Metric Value * (numerical only)")
+target_value_raw = st.text_input("\U0001F680 Target Metric Value * (numerical only)")
 
 # --- Generate Plan ---
 if st.button("Generate Plan") or "output" not in st.session_state:
@@ -77,7 +81,6 @@ if st.button("Generate Plan") or "output" not in st.session_state:
         st.error("Metric values must be numeric.")
         st.stop()
 
-    # Save for reuse
     st.session_state.current = current
     st.session_state.target = target
     st.session_state.auto_goal = f"I want to improve {exact_metric} from {current} to {target}."
@@ -94,7 +97,8 @@ if st.button("Generate Plan") or "output" not in st.session_state:
         "metric_unit": metric_unit.strip()
     }
 
-    output = generate_experiment_plan(st.session_state.auto_goal, st.session_state.context)
+    with st.spinner("\U0001F504 Generating your plan..."):
+        output = generate_experiment_plan(st.session_state.auto_goal, st.session_state.context)
     st.session_state.output = output
     st.session_state.hypothesis_confirmed = False
     st.session_state.selected_index = None
@@ -122,6 +126,12 @@ if "output" in st.session_state:
 
     st.subheader("🧪 Choose a Hypothesis")
     hypotheses = plan.get("hypotheses", [])
+
+    if len(hypotheses) == 1 and not st.session_state.get("hypothesis_confirmed"):
+        st.session_state.selected_index = 0
+        st.session_state.hypothesis_confirmed = True
+        st.experimental_rerun()
+
     if not hypotheses:
         st.warning("No hypotheses found in the generated plan.")
     else:
@@ -131,8 +141,12 @@ if "output" in st.session_state:
                 if st.button(f"✅ Select H{i+1}", key=f"select_{i}"):
                     st.session_state.selected_index = i
                     st.session_state.hypothesis_confirmed = True
+                    st.experimental_rerun()
 
     if st.session_state.get("hypothesis_confirmed") and st.session_state.selected_index is not None:
+        st.markdown("<a name='output'></a>", unsafe_allow_html=True)
+        st.experimental_set_query_params(scroll="output")
+
         i = st.session_state.selected_index
         selected_hypo_obj = hypotheses[i] if i < len(hypotheses) else {}
         selected_hypo = selected_hypo_obj.get("hypothesis", "N/A")
@@ -146,147 +160,53 @@ if "output" in st.session_state:
         variation = variant.get("variation", "Not specified")
 
         rationale_list = plan.get("hypothesis_rationale", [])
-        rationale = "Not available"
-        if i < len(rationale_list):
-            item = rationale_list[i]
-            if isinstance(item, dict):
-                rationale = item.get("rationale", "Not available")
-            elif isinstance(item, str) and len(item.strip()) > 10:
-                rationale = item.strip()
+        rationale = rationale_list[i].get("rationale", "N/A") if i < len(rationale_list) else "N/A"
         rationale = sanitize_text(rationale)
 
-        teams = plan.get("team_involved", [])
-        criteria = plan.get("success_criteria", {})
-        segments = plan.get("segments", [])
-        metrics = plan.get("metrics", [])
+        st.markdown("### 🧪 Selected Hypothesis")
+        st.code(selected_hypo)
 
-        try:
-            conf_level = float(criteria.get("confidence_level", 0))
-            conf_display = f"{round(conf_level)}%" if conf_level > 1 else f"{round(conf_level * 100)}%"
-        except:
-            conf_display = "N/A"
+        st.markdown("### 🔁 Test Variants")
+        st.markdown(f"- **Control**: {control}\n- **Variation**: {variation}")
 
-        expected_lift = criteria.get("expected_lift", "N/A")
-        try:
-            expected_lift_val = float(expected_lift)
-            expected_lift_str = f"{expected_lift_val}{unit}"
-        except:
-            expected_lift_str = expected_lift
+        st.markdown("### 💡 Rationale")
+        st.markdown(rationale)
 
-        try:
-            mde = float(criteria.get("MDE", 0))
-            mde_display = f"{round(mde)}%" if mde > 1 else f"{round(mde * 100)}%"
-        except:
-            mde_display = "N/A"
+        export = f"""
+# 📄 Experiment PRD: {selected_hypo[:60]}
 
-        test_duration = criteria.get("estimated_test_duration", "N/A")
+## 🧩 Problem Statement
+{problem_statement}
 
-        risks_raw = plan.get("risks_and_assumptions", [])
-        risks = []
-        for r in risks_raw:
-            if isinstance(r, str) and r.strip():
-                risks.append(sanitize_text(r))
-            elif isinstance(r, dict):
-                risks.append(sanitize_text(str(r)))
-        if not risks:
-            risks = ["No risks or assumptions were provided."]
+## 🎯 Objective
+Increase {exact_metric} from {st.session_state.current} to {st.session_state.target} by launching a targeted experiment.
 
-        steps = [sanitize_text(s) for s in plan.get("next_steps", ["Not specified"])]
+## 🧪 Hypothesis
+{selected_hypo}
 
-        # Visual Output
-        with st.container():
-            st.markdown("### 🧩 Problem Statement", help="Why this matters")
-            st.info(problem_statement)
+## 🔁 Test Variants
+- Control: {control}
+- Variation: {variation}
 
-        with st.container():
-            st.markdown("### 🎯 Objective")
-            st.success(f"Increase {exact_metric} from {st.session_state.current} to {st.session_state.target} by launching a targeted experiment.")
-
-        with st.container():
-            st.markdown("### 🧪 Hypothesis")
-            st.code(selected_hypo, language="markdown")
-
-        with st.container():
-            st.markdown("### 🔁 Test Variants")
-            st.markdown(f"- **Control**: {control}\n- **Variation**: {variation}")
-
-        with st.container():
-            st.markdown("### 💡 Rationale")
-            st.markdown(rationale)
-
-        with st.container():
-            st.markdown("### 📊 Success Criteria")
-            st.markdown(f"""
-| Metric                     | Value                |
-|---------------------------|----------------------|
-| Confidence Level          | {conf_display}       |
-| Expected Lift             | {expected_lift_str}  |
-| Minimum Detectable Effect | {mde_display}        |
-| Test Duration             | {test_duration} days |
-""")
-
-        with st.container():
-            st.markdown("### 📈 Metrics to Track")
-            for metric in metrics:
-                name = metric.get("name", "Unnamed Metric")
-                formula = metric.get("formula", "N/A")
-                st.markdown(f"- **{name}**: {formula}")
-
-        with st.container():
-            st.markdown("### 👥 Segments for Breakdown")
-            for seg in segments:
-                st.markdown(f"- {seg}")
-
-        with st.container():
-            st.markdown("### ⚙️ Implementation Effort")
-            st.markdown(f"- **Effort**: {effort}")
-            st.markdown(f"- **Teams Involved**: {', '.join(teams)}")
-
-        with st.container():
-            st.markdown("### ⚠️ Risks and Assumptions")
-            for r in risks:
-                st.markdown(f"- {r}")
-
-        with st.container():
-            st.markdown("### ✅ Next Steps")
-            for step in steps:
-                st.markdown(f"- {step}")
-
-        # Download PRD
-        st.markdown("---")
-        st.markdown("### 📥 Download Final PRD")
-        export = "".join([f"# 📄 Experiment PRD: {selected_hypo[:60]}\n\n",
-                         f"## 🧩 Problem Statement\n{problem_statement}\n\n",
-                         f"## 🎯 Objective\nIncrease {exact_metric} from {st.session_state.current} to {st.session_state.target} by launching a targeted experiment.\n\n",
-                         f"## 🧪 Hypothesis\n{selected_hypo}\n\n",
-                         f"## 🔁 Test Variants\n- **Control**: {control}\n- **Variation**: {variation}\n\n",
-                         f"## 💡 Rationale\n{rationale}\n\n",
-                         f"## 📊 Success Criteria\n",
-                         f"| Metric                     | Value                |\n",
-                         f"|---------------------------|----------------------|\n",
-                         f"| Confidence Level          | {conf_display}       |\n",
-                         f"| Expected Lift             | {expected_lift_str}  |\n",
-                         f"| Minimum Detectable Effect | {mde_display}        |\n",
-                         f"| Test Duration             | {test_duration} days |\n\n",
-                         f"## 📈 Metrics to Track\n"])
-        for metric in metrics:
-            name = metric.get("name", "Unnamed Metric")
-            formula = metric.get("formula", "N/A")
-            export += f"- **{name}**: {formula}\n"
-        export += "\n## 👥 Segments for Breakdown\n"
-        for seg in segments:
-            export += f"- {seg}\n"
-        export += f"\n## ⚙️ Implementation Effort\n- **Effort**: {effort}\n- **Teams Involved**: {', '.join(teams)}\n"
-        export += "\n## ⚠️ Risks and Assumptions\n"
-        for r in risks:
-            export += f"- {r}\n"
-        export += "\n## ✅ Next Steps\n"
-        for step in steps:
-            export += f"- {step}\n"
+## 💡 Rationale
+{rationale}
+"""
 
         st.download_button(
-            label="📄 Download Polished PRD",
+            label="📥 Download PRD",
             data=export,
             file_name="experiment_prd.txt",
             mime="text/plain"
         )
+
+st.markdown("""
+<script>
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("scroll") === "output") {
+        const el = document.querySelector("a[name='output']");
+        if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    }
+</script>
+""", unsafe_allow_html=True)
