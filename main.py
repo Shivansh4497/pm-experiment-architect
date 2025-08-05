@@ -254,6 +254,33 @@ if "output" in st.session_state:
 - Users/Variant: {users_per_variant}
 - Duration: {duration} days
 - Effort: {effort}
+
+metrics = plan.get("metrics", [])
+if metrics:
+    prd += "\n## 📏 Metrics\n"
+    for m in metrics:
+        prd += f"- {m.get('name', 'Unnamed')}: {m.get('formula', 'N/A')}\n"
+
+# 👥 Segments
+segments = plan.get("segments", [])
+if segments:
+    prd += "\n## 👥 Segments\n"
+    for s in segments:
+        prd += f"- {s}\n"
+
+# ⚠️ Risks
+risks = plan.get("risks", [])
+if risks:
+    prd += "\n## ⚠️ Risks\n"
+    for r in risks:
+        prd += f"- {r}\n"
+
+# ✅ Next Steps
+next_steps = plan.get("next_steps", [])
+if next_steps:
+    prd += "\n## ✅ Next Steps\n"
+    for step in next_steps:
+        prd += f"- {step}\n"
 """
         st.download_button("📄 Download PRD", prd, file_name="experiment_prd.txt")
     st.markdown("</div>", unsafe_allow_html=True)
