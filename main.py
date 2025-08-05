@@ -41,7 +41,7 @@ st.markdown("Use Groq + LLMs to design smarter experiments from fuzzy product go
 
 if st.button("\U0001F504 Start Over"):
     st.session_state.clear()
-    st.experimental_rerun()
+    st.rerun()
 
 # --- Product Context ---
 st.header("\U0001F9E0 Product Context")
@@ -130,7 +130,7 @@ if "output" in st.session_state:
     if len(hypotheses) == 1 and not st.session_state.get("hypothesis_confirmed"):
         st.session_state.selected_index = 0
         st.session_state.hypothesis_confirmed = True
-        st.experimental_rerun()
+        st.rerun()
 
     if not hypotheses:
         st.warning("No hypotheses found in the generated plan.")
@@ -141,7 +141,7 @@ if "output" in st.session_state:
                 if st.button(f"✅ Select H{i+1}", key=f"select_{i}"):
                     st.session_state.selected_index = i
                     st.session_state.hypothesis_confirmed = True
-                    st.experimental_rerun()
+                    st.rerun()
 
     if st.session_state.get("hypothesis_confirmed") and st.session_state.selected_index is not None:
         st.markdown("<a name='output'></a>", unsafe_allow_html=True)
