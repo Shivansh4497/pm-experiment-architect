@@ -166,6 +166,21 @@ if "output" in st.session_state:
         rationale = rationale_list[i].get("rationale", "N/A") if i < len(rationale_list) else "N/A"
         rationale = sanitize_text(rationale)
 
+        criteria = plan.get("success_criteria", {})
+        try:
+            confidence = float(criteria.get("confidence_level", 0))
+            confidence_str = f"{round(confidence)}%" if confidence > 1 else f"{round(confidence * 100)}%"
+        except:
+            confidence_str = "N/A"
+        sample_size = criteria.get("sample_size_required", "N/A")
+        users_per_variant = criteria.get("users_per_variant", "N/A")
+        test_duration = criteria.get("estimated_test_duration", "N/A")
+        try:
+            mde = float(criteria.get("MDE", 0))
+            mde_display = f"{round(mde)}%" if mde > 1 else f"{round(mde * 100)}%"
+        except:
+            mde_display = "N/A"
+
         st.markdown("### 🧪 Selected Hypothesis")
         st.code(selected_hypo)
 
@@ -175,13 +190,22 @@ if "output" in st.session_state:
         st.markdown("### 💡 Rationale")
         st.markdown(rationale)
 
+        st.markdown("### 📊 Experiment Stats")
+        st.markdown(f"""
+- **Confidence Level**: {confidence_str}
+- **Minimum Detectable Effect (MDE)**: {mde_display}
+- **Required Sample Size**: {sample_size}
+- **Users per Variant**: {users_per_variant}
+- **Estimated Test Duration**: {test_duration} days
+""")
+
         export = f"""
 # 📄 Experiment PRD: {selected_hypo[:60]}
 
 ## 🧩 Problem Statement
 {problem_statement}
 
-## 🎯 Objective
+## 🌟 Objective
 Increase {exact_metric} from {st.session_state.current} to {st.session_state.target} by launching a targeted experiment.
 
 ## 🧪 Hypothesis
@@ -193,10 +217,17 @@ Increase {exact_metric} from {st.session_state.current} to {st.session_state.tar
 
 ## 💡 Rationale
 {rationale}
+
+## 📊 Experiment Stats
+- Confidence Level: {confidence_str}
+- Minimum Detectable Effect (MDE): {mde_display}
+- Required Sample Size: {sample_size}
+- Users per Variant: {users_per_variant}
+- Estimated Test Duration: {test_duration} days
 """
 
         st.download_button(
-            label="📥 Download PRD",
+            label="📅 Download PRD",
             data=export,
             file_name="experiment_prd.txt",
             mime="text/plain"
