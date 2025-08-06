@@ -102,6 +102,9 @@ product_type = st.radio("Product Type *", ["SaaS", "Consumer App", "E-commerce",
 user_base = st.radio("User Base Size (DAU) *", ["< 10K", "10K–100K", "100K–1M", "> 1M"], horizontal=True, help="Your product's average daily active users")
 metric_focus = st.radio("Primary Metric Focus *", ["Activation", "Retention", "Monetization", "Engagement", "Virality"], horizontal=True, help="The key area you want to improve")
 product_notes = st.text_area("Anything unique about your product or users?", placeholder="e.g. drop-off at pricing, seasonality, power users...", help="Optional context to inform better suggestions")
+strategic_goal = st.text_area("High-Level Business Goal *", placeholder="e.g., Increase overall revenue from our premium tier", help="The broader business objective this experiment supports.")
+
+
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- Metric Objective ---
@@ -158,6 +161,7 @@ if st.button("Generate Plan") or "output" not in st.session_state:
         "expected_lift": expected_lift,
         "minimum_detectable_effect": round(mde * 100, 2),
         "metric_unit": metric_unit.strip()
+        "strategic_goal": strategic_goal
     }
 
     with st.spinner("\U0001F300 Generating your plan..."):
