@@ -437,15 +437,20 @@ if "output" in st.session_state:
         control = variant.get("control", "Not specified")
         variation = variant.get("variation", "Not specified")
         
-        # --- Use locked stats if available, otherwise use LLM output ---
+       # --- Get qualitative stats from LLM first ---
+        effort_display = plan.get("effort", [{}])[i].get("effort", "N/A")
+        statistical_rationale_display = plan.get("success_criteria", {}).get("statistical_rationale", "N/A")
+        
+        # --- Use locked quantitative stats if available, otherwise use LLM output ---
+        criteria_display = {}
         if st.session_state.get("stats_locked", False):
             criteria_display = st.session_state.locked_stats
-            effort_display = criteria_display.get("effort", "N/A")
-            statistical_rationale_display = "Values provided by the A/B Test Calculator."
+            statistical_rationale_display = "Values provided by the A/B Test Calculator." # Override rationale
         else:
             criteria_display = plan.get("success_criteria", {})
-            effort_display = plan.get("effort", [{}])[i].get("effort", "N/A")
-            statistical_rationale_display = criteria_display.get("statistical_rationale", "N/A")
+
+        # This will now always use the LLM effort, and the calculator's rationale override if locked
+        # But the PRD download logic will still need a slight adjustment
         # --- End locked stats logic ---
 
         try:
@@ -460,7 +465,9 @@ if "output" in st.session_state:
         
         try:
             mde = float(criteria_display.get("MDE", 0))
-            mde_display = f"{round(mde)}%" if mde > 1 else f"{round(mde * 100)}%"
+            # MDE from LLM/Calculator is stored as a percentage number (e.g., 5.0 for 5%)
+            # This handles both whole numbers and decimals correctly
+            mde_display = f"{mde}%"
         except:
             mde_display = "N/A"
 
