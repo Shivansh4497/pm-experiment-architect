@@ -10,6 +10,7 @@ import numpy as np
 
 # --- Helper Functions ---
 def sanitize_text(text):
+    """Sanitizes text to prevent injection issues and clean up whitespace."""
     if not text or not isinstance(text, str):
         return ""
     text = text.replace("\n", " ").replace("\r", " ").replace("\t", " ")
@@ -17,10 +18,12 @@ def sanitize_text(text):
     return text.strip()
 
 def safe_display(text, method=st.info):
+    """Displays sanitized text using a Streamlit method."""
     clean_text = sanitize_text(text)
     method(clean_text)
 
 def extract_json(text):
+    """Extracts a JSON object from a string that may contain other text."""
     try:
         match = re.search(r"\{[\s\S]+\}", text)
         return match.group(0) if match else text
@@ -28,12 +31,14 @@ def extract_json(text):
         return text
 
 def remove_units_from_text(text, unit):
+    """Removes a unit from a number within a string."""
     if not text or not unit.strip():
         return text
     escaped_unit = re.escape(unit.strip())
     return re.sub(rf"(\d+\.?\d*)\s*{escaped_unit}", r"\1", text)
 
 def insert_units_in_goal(text, unit):
+    """Inserts a unit into numeric values within a string."""
     if not text or not unit.strip():
         return text
 
@@ -51,6 +56,9 @@ def insert_units_in_goal(text, unit):
     return ''.join(output)
 
 def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type, std_dev=None):
+    """
+    Calculates the required sample size for an A/B test based on metric type.
+    """
     try:
         # Convert percentage inputs to decimals
         alpha = alpha
@@ -62,15 +70,15 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
             baseline_prop = baseline / 100.0
             expected_prop = baseline_prop * (1 + mde_relative)
 
-            # Handle cases where expected_prop might exceed 1 or be too close to 0
+            # Handle edge cases for proportion calculation
             if baseline_prop <= 0 or expected_prop <= 0:
                 st.warning("Baseline conversion rate must be greater than 0 for calculation.")
                 return None, None
-            if expected_prop >= 1.0: # Cap at 0.999 to avoid issues with proportion_effectsize
+            if expected_prop >= 1.0:
                 expected_prop = 0.999
             
             effect_size = proportion_effectsize(baseline_prop, expected_prop)
-            if effect_size == 0: # If MDE is 0, effect size is 0, leading to infinite sample size
+            if effect_size == 0:
                 st.warning("MDE must be greater than 0 for a meaningful sample size calculation.")
                 return None, None
 
@@ -136,7 +144,7 @@ st.markdown("""
 .section-title {
     font-size: 1.5rem;
     font-weight: bold;
-    color: #1E90FF; /* Changed from #004d40 to a light blue */
+    color: #1E90FF; /* Changed to a light blue */
     margin-bottom: 15px;
 }
 </style>
@@ -380,7 +388,6 @@ if "output" in st.session_state:
                     "sample_size_required": f"{st.session_state.calculated_total_sample_size:,} users",
                     "users_per_variant": f"{st.session_state.calculated_sample_size_per_variant:,} users",
                     "estimated_test_duration": f"{st.session_state.calculated_duration_days:,.0f} days",
-                    "effort": "N/A (from calculator)" # You might want to remove this or make it dynamic
                 }
                 st.success("Calculator values locked and will be used in the plan below!")
                 st.rerun() # Rerun to update the display immediately
@@ -388,7 +395,7 @@ if "output" in st.session_state:
                 st.error("Cannot lock values. Please ensure the calculator has successfully generated results.")
 
 
-    st.markdown("</div>", unsafe_allow_html=True) # Close calculator expander
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # --- Display AI-Generated Plan ---
     raw_output = extract_json(st.session_state.output)
@@ -437,21 +444,19 @@ if "output" in st.session_state:
         control = variant.get("control", "Not specified")
         variation = variant.get("variation", "Not specified")
         
-       # --- Get qualitative stats from LLM first ---
+        # --- Get qualitative stats from LLM first ---
         effort_display = plan.get("effort", [{}])[i].get("effort", "N/A")
-        statistical_rationale_display = plan.get("success_criteria", {}).get("statistical_rationale", "N/A")
-        
+        # Get rationale from LLM, with a more descriptive fallback if missing
+        llm_rationale = plan.get("success_criteria", {}).get("statistical_rationale", "⚠️ Rationale missing from LLM response. Please regenerate or fill manually.")
+
         # --- Use locked quantitative stats if available, otherwise use LLM output ---
         criteria_display = {}
         if st.session_state.get("stats_locked", False):
             criteria_display = st.session_state.locked_stats
-            statistical_rationale_display = "Values provided by the A/B Test Calculator." # Override rationale
+            statistical_rationale_display = "Values provided by the A/B Test Calculator."
         else:
             criteria_display = plan.get("success_criteria", {})
-
-        # This will now always use the LLM effort, and the calculator's rationale override if locked
-        # But the PRD download logic will still need a slight adjustment
-        # --- End locked stats logic ---
+            statistical_rationale_display = llm_rationale
 
         try:
             confidence = float(criteria_display.get("confidence_level", 0))
@@ -464,9 +469,8 @@ if "output" in st.session_state:
         duration = criteria_display.get("estimated_test_duration", "N/A")
         
         try:
-            mde = float(criteria_display.get("MDE", 0))
             # MDE from LLM/Calculator is stored as a percentage number (e.g., 5.0 for 5%)
-            # This handles both whole numbers and decimals correctly
+            mde = float(criteria_display.get("MDE", 0))
             mde_display = f"{mde}%"
         except:
             mde_display = "N/A"
@@ -491,7 +495,7 @@ if "output" in st.session_state:
 - Users per Variant: {users_per_variant}
 - Estimated Duration: {duration}
 - Estimated Effort: {effort_display}
-- Statistical Rationale:** {statistical_rationale_display}
+**Statistical Rationale:** {statistical_rationale_display}
 """)
 
         metrics = plan.get("metrics", [])
