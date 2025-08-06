@@ -28,9 +28,9 @@ Product goal: "{goal}"
 
 Return a JSON with the following keys:
 
-- problem_statement: exactly 2–3 clear sentences. Must include the metric name, current value, target value, and why this change matters *in the context of the high-level business objective*. Include the risk of not improving. DO NOT return placeholder text, special symbols, or markdown.
+- problem_statement: exactly 2–3 clear sentences. Must frame the problem as a barrier to achieving the high-level business objective. Include the metric name, current value, and target value*. Include the risk of not improving. DO NOT return placeholder text, special symbols, or markdown.
 
-- hypotheses: list of 2–3 actionable, testable ideas to improve the target metric. Each hypothesis must be grounded in the high-level business objective. Each item should be a JSON object:
+- + hypotheses: list of 2–3 actionable, testable ideas. Each hypothesis must be a plausible solution to the problem statement and directly align with the high-level business objective. Avoid general ideas. Each item should be a JSON object:
   {{
     "hypothesis": "1-line summary of what change you're testing and why it might improve the metric (10–20 words max)",
     "description": "Optional: add brief context or reasoning"
