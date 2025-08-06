@@ -62,7 +62,18 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
             baseline_prop = baseline / 100.0
             expected_prop = baseline_prop * (1 + mde_relative)
 
+            # Handle cases where expected_prop might exceed 1 or be too close to 0
+            if baseline_prop <= 0 or expected_prop <= 0:
+                st.warning("Baseline conversion rate must be greater than 0 for calculation.")
+                return None, None
+            if expected_prop >= 1.0: # Cap at 0.999 to avoid issues with proportion_effectsize
+                expected_prop = 0.999
+            
             effect_size = proportion_effectsize(baseline_prop, expected_prop)
+            if effect_size == 0: # If MDE is 0, effect size is 0, leading to infinite sample size
+                st.warning("MDE must be greater than 0 for a meaningful sample size calculation.")
+                return None, None
+
             analysis = NormalIndPower()
             sample_size_per_variant = analysis.solve_power(
                 effect_size=effect_size,
@@ -72,12 +83,16 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
             )
         elif metric_type == 'Numeric Value':
             if std_dev is None or std_dev == 0:
-                st.error("Standard deviation is required for numeric metrics.")
+                st.error("Standard deviation is required and must be non-zero for numeric metrics.")
                 return None, None
 
             # Calculate absolute effect size based on relative MDE
             mde_absolute = baseline * mde_relative
             effect_size = mde_absolute / std_dev
+            
+            if effect_size == 0:
+                st.warning("MDE must be greater than 0 for a meaningful sample size calculation.")
+                return None, None
 
             analysis = TTestIndPower()
             sample_size_per_variant = analysis.solve_power(
@@ -90,7 +105,8 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
             st.error("Invalid metric type selected.")
             return None, None
         
-        if sample_size_per_variant < 0:
+        # Ensure sample size is positive and finite
+        if sample_size_per_variant <= 0 or not np.isfinite(sample_size_per_variant):
              return None, None
 
         total_sample_size = sample_size_per_variant * num_variants
@@ -194,10 +210,9 @@ with col1:
 with col2:
     target_value_raw = st.text_input("Target Metric Value *", help="What do you want the metric to reach?")
 
+std_dev_raw = None
 if metric_type == "Numeric Value":
     std_dev_raw = st.text_input("Standard Deviation of Metric *", placeholder="e.g., 2.5", help="The standard deviation is crucial for calculating sample size for numeric metrics.")
-else:
-    std_dev_raw = None
 
 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -223,12 +238,16 @@ if st.button("Generate Plan"):
         target = float(target_value_raw)
         std_dev = float(std_dev_raw) if std_dev_raw else None
         
-        # Calculate expected lift as a percentage
-        if current == 0:
-            st.error("Current value cannot be zero for lift calculation.")
+        if current == 0 and metric_type == "Conversion Rate":
+            st.error("Current value cannot be zero for conversion rate lift calculation.")
             st.stop()
-        expected_lift = round(((target - current) / current) * 100, 2)
-        mde_percent = round(abs((target - current) / current) * 100, 2)
+        if current == 0 and metric_type == "Numeric Value" and std_dev == 0:
+             st.error("Current value or standard deviation cannot be zero for numeric metric calculation.")
+             st.stop()
+
+        # Calculate expected lift as a percentage
+        expected_lift = round(((target - current) / current) * 100, 2) if current != 0 else 0.0
+        mde_percent = round(abs((target - current) / current) * 100, 2) if current != 0 else 0.0
     except ValueError:
         st.error("Metric values and standard deviation must be numeric.")
         st.stop()
@@ -255,6 +274,7 @@ if st.button("Generate Plan"):
         "metric_type": metric_type,
         "std_dev": std_dev
     }
+    st.session_state.stats_locked = False # Reset lock when new plan is generated
 
     with st.spinner("🧠 Generating your plan..."):
         output = generate_experiment_plan(goal_with_units, st.session_state.context)
@@ -275,56 +295,102 @@ if "output" in st.session_state:
         
         st.metric(f"Baseline {'Conversion Rate' if metric_type == 'Conversion Rate' else 'Value'}", f"{baseline_rate}{metric_unit}")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            mde_calc = st.slider("Minimum Detectable Effect (MDE) %", min_value=0.1, max_value=50.0, value=st.session_state.get('context', {}).get('minimum_detectable_effect', 5.0), step=0.1)
-            confidence_level_calc = st.slider("Confidence Level (%)", min_value=80, max_value=99, value=95, step=1)
-        with col2:
-            power_level_calc = st.slider("Statistical Power (%)", min_value=70, max_value=95, value=80, step=1)
-            num_variants_calc = st.slider("Number of Variants (Control + Variations)", min_value=2, max_value=5, value=2, step=1)
+        # Initialize calculator input values in session state if not present
+        if 'calc_mde' not in st.session_state:
+            st.session_state.calc_mde = st.session_state.get('context', {}).get('minimum_detectable_effect', 5.0)
+        if 'calc_confidence' not in st.session_state:
+            st.session_state.calc_confidence = 95
+        if 'calc_power' not in st.session_state:
+            st.session_state.calc_power = 80
+        if 'calc_variants' not in st.session_state:
+            st.session_state.calc_variants = 2
+
+        col_input1, col_input2 = st.columns(2)
+        with col_input1:
+            st.session_state.calc_mde = st.number_input("Minimum Detectable Effect (MDE) %", min_value=0.1, max_value=50.0, value=st.session_state.calc_mde, step=0.1, key="mde_input")
+            st.session_state.calc_confidence = st.number_input("Confidence Level (%)", min_value=80, max_value=99, value=st.session_state.calc_confidence, step=1, key="confidence_input")
+        with col_input2:
+            st.session_state.calc_power = st.number_input("Statistical Power (%)", min_value=70, max_value=95, value=st.session_state.calc_power, step=1, key="power_input")
+            st.session_state.calc_variants = st.number_input("Number of Variants (Control + Variations)", min_value=2, max_value=5, value=st.session_state.calc_variants, step=1, key="variants_input")
 
         std_dev_calc = st.session_state.get('context', {}).get('std_dev', None)
         if metric_type == "Numeric Value":
             st.info(f"Standard Deviation for this metric is pre-filled from your input: **{std_dev_calc}**")
 
-        if baseline_rate > 0:
+        col_buttons = st.columns(2)
+        with col_buttons[0]:
+            refresh_button = st.button("Refresh Calculator", key="refresh_calc_btn")
+        with col_buttons[1]:
+            lock_button = st.button("Lock Values for Plan", key="lock_calc_btn")
+
+        # Perform calculation only on refresh or initial load of calculator
+        if refresh_button or (not st.session_state.get('calculator_calculated_once', False) and 'output' in st.session_state):
+            st.session_state.calculator_calculated_once = True # Mark as calculated
+            st.session_state.last_calc_mde = st.session_state.calc_mde
+            st.session_state.last_calc_confidence = st.session_state.calc_confidence
+            st.session_state.last_calc_power = st.session_state.calc_power
+            st.session_state.last_calc_variants = st.session_state.calc_variants
+
+            alpha_calc = 1 - (st.session_state.last_calc_confidence / 100)
+            power_calc = st.session_state.last_calc_power / 100
+            
             sample_size_per_variant, total_sample_size = calculate_sample_size(
                 baseline=baseline_rate, 
-                mde=mde_calc, 
-                alpha=1-(confidence_level_calc/100), 
-                power=power_level_calc/100, 
-                num_variants=num_variants_calc,
+                mde=st.session_state.last_calc_mde, 
+                alpha=alpha_calc, 
+                power=power_calc, 
+                num_variants=st.session_state.last_calc_variants,
                 metric_type=metric_type,
                 std_dev=std_dev_calc
             )
 
-            if sample_size_per_variant and total_sample_size:
-                dau_raw = st.session_state.get('context', {}).get('users', '< 10K')
-                try:
-                    if dau_raw == '< 10K': dau = 5000
-                    elif dau_raw == '10K–100K': dau = 50000
-                    elif dau_raw == '100K–1M': dau = 500000
-                    else: dau = 2000000
-                except:
-                    dau = 10000
+            st.session_state.calculated_sample_size_per_variant = sample_size_per_variant
+            st.session_state.calculated_total_sample_size = total_sample_size
+            
+            dau_raw = st.session_state.get('context', {}).get('users', '< 10K')
+            try:
+                if dau_raw == '< 10K': dau = 5000
+                elif dau_raw == '10K–100K': dau = 50000
+                elif dau_raw == '100K–1M': dau = 500000
+                else: dau = 2000000
+            except:
+                dau = 10000
 
-                users_to_test = total_sample_size
-                duration_days = (users_to_test / dau) if dau > 0 else float('inf')
-                
-                st.markdown("---")
-                st.subheader("Calculator Results")
-                st.metric("Users Per Variant", f"{sample_size_per_variant:,} users")
-                st.metric("Total Sample Size", f"{total_sample_size:,} users")
-                st.metric("Estimated Test Duration", f"{duration_days:,.0f} days")
-                st.caption("Note: This calculation assumes all DAU are eligible for the test and are split evenly.")
-            else:
-                st.warning("Please check your input values for a valid calculation.")
+            users_to_test = st.session_state.calculated_total_sample_size if st.session_state.calculated_total_sample_size else 0
+            st.session_state.calculated_duration_days = (users_to_test / dau) if dau > 0 else float('inf')
+
+        # Display results from the last successful calculation
+        if st.session_state.get('calculated_sample_size_per_variant') is not None and st.session_state.get('calculated_total_sample_size') is not None:
+            st.markdown("---")
+            st.subheader("Calculator Results")
+            st.metric("Users Per Variant", f"{st.session_state.calculated_sample_size_per_variant:,} users")
+            st.metric("Total Sample Size", f"{st.session_state.calculated_total_sample_size:,} users")
+            st.metric("Estimated Test Duration", f"{st.session_state.calculated_duration_days:,.0f} days")
+            st.caption("Note: This calculation assumes all DAU are eligible for the test and are split evenly.")
         else:
-            st.warning("Please input a non-zero current value to use the calculator.")
-    
+            st.warning("Please adjust inputs and click 'Refresh Calculator' for results.")
 
-# --- Display Output ---
-if "output" in st.session_state:
+        # Handle locking values
+        if lock_button:
+            if st.session_state.get('calculated_sample_size_per_variant') is not None:
+                st.session_state.stats_locked = True
+                st.session_state.locked_stats = {
+                    "confidence_level": st.session_state.last_calc_confidence,
+                    "MDE": st.session_state.last_calc_mde,
+                    "sample_size_required": f"{st.session_state.calculated_total_sample_size:,} users",
+                    "users_per_variant": f"{st.session_state.calculated_sample_size_per_variant:,} users",
+                    "estimated_test_duration": f"{st.session_state.calculated_duration_days:,.0f} days",
+                    "effort": "N/A (from calculator)" # You might want to remove this or make it dynamic
+                }
+                st.success("Calculator values locked and will be used in the plan below!")
+                st.rerun() # Rerun to update the display immediately
+            else:
+                st.error("Cannot lock values. Please ensure the calculator has successfully generated results.")
+
+
+    st.markdown("</div>", unsafe_allow_html=True) # Close calculator expander
+
+    # --- Display AI-Generated Plan ---
     raw_output = extract_json(st.session_state.output)
     try:
         plan = json.loads(raw_output)
@@ -334,7 +400,7 @@ if "output" in st.session_state:
         st.stop()
 
     unit = " " + st.session_state.context.get("metric_unit", "").strip()
-    st.markdown("<a name='output'></a>", unsafe_allow_html=True)
+    
     st.markdown("<div class='green-section'>", unsafe_allow_html=True)
     st.markdown("<div class='section-title'>📌 Inferred Product Goal</div>", unsafe_allow_html=True)
     safe_display(st.session_state.auto_goal)
@@ -360,6 +426,7 @@ if "output" in st.session_state:
                 if st.button("Select", key=f"select_{i}"):
                     st.session_state.selected_index = i
                     st.session_state.hypothesis_confirmed = True
+                    st.session_state.stats_locked = False # Reset lock if new hypothesis selected
                     st.rerun()
 
     if st.session_state.get("hypothesis_confirmed") and st.session_state.selected_index is not None:
@@ -369,19 +436,30 @@ if "output" in st.session_state:
         variant = plan.get("variants", [{}])[i]
         control = variant.get("control", "Not specified")
         variation = variant.get("variation", "Not specified")
-        effort = plan.get("effort", [{}])[i].get("effort", "N/A")
+        
+        # --- Use locked stats if available, otherwise use LLM output ---
+        if st.session_state.get("stats_locked", False):
+            criteria_display = st.session_state.locked_stats
+            effort_display = criteria_display.get("effort", "N/A")
+            statistical_rationale_display = "Values provided by the A/B Test Calculator."
+        else:
+            criteria_display = plan.get("success_criteria", {})
+            effort_display = plan.get("effort", [{}])[i].get("effort", "N/A")
+            statistical_rationale_display = criteria_display.get("statistical_rationale", "N/A")
+        # --- End locked stats logic ---
 
-        criteria = plan.get("success_criteria", {})
         try:
-            confidence = float(criteria.get("confidence_level", 0))
+            confidence = float(criteria_display.get("confidence_level", 0))
             confidence_str = f"{round(confidence)}%" if confidence > 1 else f"{round(confidence * 100)}%"
         except:
             confidence_str = "N/A"
-        sample_size = criteria.get("sample_size_required", "N/A")
-        users_per_variant = criteria.get("users_per_variant", "N/A")
-        duration = criteria.get("estimated_test_duration", "N/A")
+        
+        sample_size = criteria_display.get("sample_size_required", "N/A")
+        users_per_variant = criteria_display.get("users_per_variant", "N/A")
+        duration = criteria_display.get("estimated_test_duration", "N/A")
+        
         try:
-            mde = float(criteria.get("MDE", 0))
+            mde = float(criteria_display.get("MDE", 0))
             mde_display = f"{round(mde)}%" if mde > 1 else f"{round(mde * 100)}%"
         except:
             mde_display = "N/A"
@@ -404,8 +482,9 @@ if "output" in st.session_state:
 - Minimum Detectable Effect (MDE): {mde_display}
 - Sample Size Required: {sample_size}
 - Users per Variant: {users_per_variant}
-- Estimated Duration: {duration} days
-- Estimated Effort: {effort}
+- Estimated Duration: {duration}
+- Estimated Effort: {effort_display}
+**Statistical Rationale:** {statistical_rationale_display}
 """)
 
         metrics = plan.get("metrics", [])
@@ -420,7 +499,7 @@ if "output" in st.session_state:
             for s in segments:
                 st.markdown(f"- {s}")
 
-        risks = plan.get("risks", [])
+        risks = plan.get("risks_and_assumptions", [])
         if risks:
             st.markdown("<div class='section-title'>⚠️ Risks</div>", unsafe_allow_html=True)
             for r in risks:
@@ -432,6 +511,7 @@ if "output" in st.session_state:
             for step in next_steps:
                 st.markdown(f"- {step}")
 
+        # --- PRD Download Logic ---
         prd = ""
         prd += "# 🧪 Experiment PRD\n\n"
         prd += "## 🎯 Goal\n"
@@ -454,8 +534,9 @@ if "output" in st.session_state:
         prd += f"- MDE: {mde_display}\n"
         prd += f"- Sample Size: {sample_size}\n"
         prd += f"- Users/Variant: {users_per_variant}\n"
-        prd += f"- Duration: {duration} days\n"
-        prd += f"- Effort: {effort}\n\n"
+        prd += f"- Duration: {duration}\n"
+        prd += f"- Effort: {effort_display}\n"
+        prd += f"- Statistical Rationale: {statistical_rationale_display}\n\n"
 
         metrics = plan.get("metrics", [])
         if metrics:
@@ -469,7 +550,7 @@ if "output" in st.session_state:
             for s in segments:
                 prd += f"- {s}\n"
 
-        risks = plan.get("risks_and_assumptions", [])  # ✅ Correct key
+        risks = plan.get("risks_and_assumptions", [])
         if risks:
             prd += "\n## ⚠️ Risks\n"
             for r in risks:
