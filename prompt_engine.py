@@ -8,7 +8,8 @@ def generate_experiment_plan(goal, context):
     unit = context.get("metric_unit", "")
     context["expected_lift_with_unit"] = f"{context['expected_lift']}{unit}"
     context["mde_with_unit"] = f"{context['minimum_detectable_effect']}%"
-
+    strategic_goal = context.get('strategic_goal', '')
+    
     prompt = f"""
 You are an expert product manager. Use the following product context to generate a structured A/B test plan:
 
@@ -27,9 +28,9 @@ Product goal: "{goal}"
 
 Return a JSON with the following keys:
 
-- problem_statement: exactly 2–3 clear sentences. Must include the metric name, current value, target value, and why this change matters. Include the risk of not improving. DO NOT return placeholder text, special symbols, or markdown.
+- problem_statement: exactly 2–3 clear sentences. Must include the metric name, current value, target value, and why this change matters *in the context of the high-level business objective*. Include the risk of not improving. DO NOT return placeholder text, special symbols, or markdown.
 
-- hypotheses: list of 2–3 actionable, testable ideas to improve the target metric. Each item should be a JSON object:
+- hypotheses: list of 2–3 actionable, testable ideas to improve the target metric. Each hypothesis must be grounded in the high-level business objective. Each item should be a JSON object:
   {{
     "hypothesis": "1-line summary of what change you're testing and why it might improve the metric (10–20 words max)",
     "description": "Optional: add brief context or reasoning"
