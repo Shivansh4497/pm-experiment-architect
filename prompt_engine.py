@@ -11,8 +11,8 @@ def generate_experiment_plan(goal, context):
     strategic_goal = context.get('strategic_goal', '')
     
     prompt = f"""
-You are an expert product manager. Use the following product context to generate a structured A/B test plan:
-
+You are an expert product manager. Your primary objective is to generate an A/B test plan that directly supports the following high-level business objective:
+High-level business objective: {strategic_goal}
 Product type: {context['type']}
 User base size (DAU): {context['users']}
 Primary metric category: {context['metric']}
