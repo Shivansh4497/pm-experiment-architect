@@ -12,7 +12,6 @@ import numpy as np
 def create_header_with_help(header_text, help_text, icon="🔗"):
     """
     Creates a consistent header with an icon, title, and a help tooltip.
-    This version includes the '?' icon on the right, which shows 'help_text' on hover.
     """
     st.markdown(f"""
         <div style="display: flex; align-items: center; justify-content: space-between;">
