@@ -136,7 +136,7 @@ st.markdown("""
 .section-title {
     font-size: 1.5rem;
     font-weight: bold;
-    color: #004d40;
+    color: #1E90FF; /* Changed from #004d40 to a light blue */
     margin-bottom: 15px;
 }
 </style>
@@ -491,7 +491,7 @@ if "output" in st.session_state:
 - Users per Variant: {users_per_variant}
 - Estimated Duration: {duration}
 - Estimated Effort: {effort_display}
-**Statistical Rationale:** {statistical_rationale_display}
+- Statistical Rationale:** {statistical_rationale_display}
 """)
 
         metrics = plan.get("metrics", [])
