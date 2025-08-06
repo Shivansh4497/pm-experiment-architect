@@ -59,7 +59,7 @@ def insert_units_in_goal(text, unit):
     tokens = re.split(r'(\s+|\d+\.?\d*)', text)
     for i, token in enumerate(tokens):
         if re.match(r'^\d+\.?\d*$', token):
-            if unit in ["$", "₹", "€", "£"]:
+            if unit in ["$", "₹", "€", "£", "%"]:
                 output.append(unit + token)
             else:
                 output.append(token + " " + unit)
@@ -221,7 +221,8 @@ col_metric_type, col_metric_unit = st.columns(2)
 with col_metric_type:
     metric_type = st.radio("Metric Type", ["Conversion Rate", "Numeric Value"], horizontal=True, help="Is this a percentage/proportion or a continuous number?")
 with col_metric_unit:
-    metric_unit = st.text_input("Metric Unit (e.g. %, $, secs, count)", value="%", help="How is the metric measured?")
+    # --- FIX: Changed header to be clearer and allow '%' ---
+    metric_unit = st.text_input("Metric Unit", value="%", help="How is the metric measured? E.g., 'USD', 'minutes', 'count', or '%'")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -248,7 +249,7 @@ if st.button("Generate Plan"):
     if not metric_unit.strip(): missing.append("Metric Unit")
     if metric_type == "Numeric Value" and not std_dev_raw: missing.append("Standard Deviation")
 
-    invalid_chars = ['"', '{', '}', '[', ']', '$', '₹', '€', '£', '%']
+    invalid_chars = ['"', '{', '}', '[', ']', '$', '₹', '€', '£']
     if any(char in metric_unit for char in invalid_chars):
         st.error("The 'Metric Unit' contains invalid characters. Please use plain text like 'USD' or 'count' instead of symbols like '$' or brackets.")
         st.stop()
@@ -462,8 +463,9 @@ if "output" in st.session_state:
         
         effort_display = plan.get("effort", [{}])[i].get("effort", "N/A")
         
-        # --- CHANGE: Fetch statistical rationale and provide a better default ---
-        statistical_rationale_display = plan.get("success_criteria", {}).get("statistical_rationale", "The experiment is designed to detect a minimum effect size with a specified confidence and power level to ensure that any observed changes are statistically significant.")
+        statistical_rationale_display = plan.get("success_criteria", {}).get("statistical_rationale")
+        if not statistical_rationale_display:
+            statistical_rationale_display = "The experiment is designed to detect a minimum effect size with a specified confidence and power level to ensure that any observed changes are statistically significant."
 
         if st.session_state.get("stats_locked", False):
             criteria_display = st.session_state.locked_stats
