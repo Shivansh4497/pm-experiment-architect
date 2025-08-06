@@ -4,7 +4,11 @@ import base64
 import re
 import os
 from prompt_engine import generate_experiment_plan
+from statsmodels.stats.power import NormalIndPower, TTestIndPower
+from statsmodels.stats.proportion import proportion_effectsize
+import numpy as np
 
+# --- Helper Functions ---
 def sanitize_text(text):
     if not text or not isinstance(text, str):
         return ""
@@ -35,8 +39,7 @@ def insert_units_in_goal(text, unit):
 
     unit = unit.strip()
     output = []
-    tokens = re.split(r'(\s+|\d+\.?\d*)', text)  # keep whitespace
-
+    tokens = re.split(r'(\s+|\d+\.?\d*)', text)
     for i, token in enumerate(tokens):
         if re.match(r'^\d+\.?\d*$', token):
             if unit in ["$", "₹", "€", "£"]:
@@ -47,12 +50,82 @@ def insert_units_in_goal(text, unit):
             output.append(token)
     return ''.join(output)
 
+def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type, std_dev=None):
+    try:
+        # Convert percentage inputs to decimals
+        alpha = alpha
+        power = power
+        mde_relative = mde / 100.0
 
-    if toggle:
-        st.caption(explanation)
+        if metric_type == 'Conversion Rate':
+            # Assumes baseline is a percentage and needs to be converted
+            baseline_prop = baseline / 100.0
+            expected_prop = baseline_prop * (1 + mde_relative)
+
+            effect_size = proportion_effectsize(baseline_prop, expected_prop)
+            analysis = NormalIndPower()
+            sample_size_per_variant = analysis.solve_power(
+                effect_size=effect_size,
+                alpha=alpha,
+                power=power,
+                alternative='two-sided'
+            )
+        elif metric_type == 'Numeric Value':
+            if std_dev is None or std_dev == 0:
+                st.error("Standard deviation is required for numeric metrics.")
+                return None, None
+
+            # Calculate absolute effect size based on relative MDE
+            mde_absolute = baseline * mde_relative
+            effect_size = mde_absolute / std_dev
+
+            analysis = TTestIndPower()
+            sample_size_per_variant = analysis.solve_power(
+                effect_size=effect_size,
+                alpha=alpha,
+                power=power,
+                alternative='two-sided'
+            )
+        else:
+            st.error("Invalid metric type selected.")
+            return None, None
+        
+        if sample_size_per_variant < 0:
+             return None, None
+
+        total_sample_size = sample_size_per_variant * num_variants
+        return int(np.ceil(sample_size_per_variant)), int(np.ceil(total_sample_size))
+
+    except Exception as e:
+        st.error(f"Error in sample size calculation: {e}")
+        return None, None
 
 # --- Page Setup ---
 st.set_page_config(page_title="A/B Test Architect", layout="wide")
+
+st.markdown("""
+<style>
+.blue-section {
+    background-color: #f0f2f6;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+.green-section {
+    background-color: #f0fff4;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+.section-title {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #004d40;
+    margin-bottom: 15px;
+}
+</style>
+""", unsafe_allow_html=True)
+
 
 # --- Onboarding Additions ---
 st.markdown("""
@@ -87,42 +160,50 @@ with st.expander("🔍 What will I get?"):
     """)
     st.code("## 🧪 Hypothesis: Showing price upfront\n...\n- MDE: 3.2%\n- Users per Variant: 5,000")
 
-st.title("\U0001F9EA AI-Powered A/B Test Architect")
+st.title("💡 A/B Test Architect")
 st.markdown("Use Groq + LLMs to design smarter experiments from fuzzy product goals.")
 
-if st.button("\U0001F504 Start Over"):
+if st.button("🔄 Start Over"):
     st.session_state.clear()
     st.rerun()
 
-
 # --- Product Context ---
 st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
-st.markdown("<div class='section-title'>\U0001F9E0 Product Context</div>", unsafe_allow_html=True)
+st.markdown("<div class='section-title'>🧠 Product Context</div>", unsafe_allow_html=True)
 product_type = st.radio("Product Type *", ["SaaS", "Consumer App", "E-commerce", "Marketplace", "Gaming", "Other"], horizontal=True, help="What kind of product are you testing?")
 user_base = st.radio("User Base Size (DAU) *", ["< 10K", "10K–100K", "100K–1M", "> 1M"], horizontal=True, help="Your product's average daily active users")
 metric_focus = st.radio("Primary Metric Focus *", ["Activation", "Retention", "Monetization", "Engagement", "Virality"], horizontal=True, help="The key area you want to improve")
 product_notes = st.text_area("Anything unique about your product or users?", placeholder="e.g. drop-off at pricing, seasonality, power users...", help="Optional context to inform better suggestions")
 strategic_goal = st.text_area("High-Level Business Goal *", placeholder="e.g., Increase overall revenue from our premium tier", help="The broader business objective this experiment supports.")
 user_persona = st.text_input("Target User Persona (optional)", placeholder="e.g., First-time users from India, iOS users, power users", help="Focus the plan on a specific user segment.")
-
-
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- Metric Objective ---
 st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
-st.markdown("<div class='section-title'>\U0001F3AF Metric Improvement Objective</div>", unsafe_allow_html=True)
-exact_metric = st.text_input("\U0001F3AF Metric to Improve * (e.g. Activation Rate, ARPU, DAU/MAU)", help="Be specific — name the metric you want to shift")
-metric_unit = st.text_input("\U0001F4C0 Metric Unit (e.g. %, $, secs, count)", value="%", help="How is the metric measured?")
+st.markdown("<div class='section-title'>🎯 Metric Improvement Objective</div>", unsafe_allow_html=True)
+exact_metric = st.text_input("Metric to Improve * (e.g. Activation Rate, ARPU, DAU/MAU)", help="Be specific — name the metric you want to shift")
+col_metric_type, col_metric_unit = st.columns(2)
+with col_metric_type:
+    metric_type = st.radio("Metric Type", ["Conversion Rate", "Numeric Value"], horizontal=True, help="Is this a percentage/proportion or a continuous number?")
+with col_metric_unit:
+    metric_unit = st.text_input("Metric Unit (e.g. %, $, secs, count)", value="%", help="How is the metric measured?")
+
 col1, col2 = st.columns(2)
 with col1:
-    current_value_raw = st.text_input("\U0001F4C9 Current Metric Value *", help="Current observed value of the metric")
+    current_value_raw = st.text_input("Current Metric Value *", help="Current observed value of the metric")
 with col2:
-    target_value_raw = st.text_input("\U0001F680 Target Metric Value *", help="What do you want the metric to reach?")
+    target_value_raw = st.text_input("Target Metric Value *", help="What do you want the metric to reach?")
+
+if metric_type == "Numeric Value":
+    std_dev_raw = st.text_input("Standard Deviation of Metric *", placeholder="e.g., 2.5", help="The standard deviation is crucial for calculating sample size for numeric metrics.")
+else:
+    std_dev_raw = None
+
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- Generate Plan ---
 st.markdown("<div class='green-section'>", unsafe_allow_html=True)
-if st.button("Generate Plan") or "output" not in st.session_state:
+if st.button("Generate Plan"):
     missing = []
     if not product_type: missing.append("Product Type")
     if not user_base: missing.append("User Base Size")
@@ -131,6 +212,7 @@ if st.button("Generate Plan") or "output" not in st.session_state:
     if not current_value_raw.strip(): missing.append("Current Value")
     if not target_value_raw.strip(): missing.append("Target Value")
     if not metric_unit.strip(): missing.append("Metric Unit")
+    if metric_type == "Numeric Value" and not std_dev_raw: missing.append("Standard Deviation")
 
     if missing:
         st.warning("Please fill all required fields: " + ", ".join(missing))
@@ -139,10 +221,16 @@ if st.button("Generate Plan") or "output" not in st.session_state:
     try:
         current = float(current_value_raw)
         target = float(target_value_raw)
-        expected_lift = round(target - current, 4)
-        mde = round(abs((target - current) / current), 4) if current != 0 else 0.0
+        std_dev = float(std_dev_raw) if std_dev_raw else None
+        
+        # Calculate expected lift as a percentage
+        if current == 0:
+            st.error("Current value cannot be zero for lift calculation.")
+            st.stop()
+        expected_lift = round(((target - current) / current) * 100, 2)
+        mde_percent = round(abs((target - current) / current) * 100, 2)
     except ValueError:
-        st.error("Metric values must be numeric.")
+        st.error("Metric values and standard deviation must be numeric.")
         st.stop()
 
     goal_text = f"I want to improve {exact_metric} from {current} to {target}."
@@ -160,18 +248,80 @@ if st.button("Generate Plan") or "output" not in st.session_state:
         "current_value": current,
         "target_value": target,
         "expected_lift": expected_lift,
-        "minimum_detectable_effect": round(mde * 100, 2),
+        "minimum_detectable_effect": mde_percent,
         "metric_unit": metric_unit.strip(),
         "strategic_goal": strategic_goal,
-        "user_persona": user_persona
+        "user_persona": user_persona,
+        "metric_type": metric_type,
+        "std_dev": std_dev
     }
 
-    with st.spinner("\U0001F300 Generating your plan..."):
+    with st.spinner("🧠 Generating your plan..."):
         output = generate_experiment_plan(goal_with_units, st.session_state.context)
     st.session_state.output = output
     st.session_state.hypothesis_confirmed = False
     st.session_state.selected_index = None
-st.markdown("</div>", unsafe_allow_html=True)
+
+# --- Calculator Section ---
+if "output" in st.session_state:
+    st.markdown("<a name='output'></a>", unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
+    with st.expander("🔢 A/B Test Calculator: Fine-tune Your Sample Size", expanded=True):
+        st.markdown("Adjust the experiment parameters to understand the impact on test duration.")
+        
+        baseline_rate = st.session_state.get('current', 0)
+        metric_unit = st.session_state.get('context', {}).get('metric_unit', '')
+        metric_type = st.session_state.get('context', {}).get('metric_type', 'Conversion Rate')
+        
+        st.metric(f"Baseline {'Conversion Rate' if metric_type == 'Conversion Rate' else 'Value'}", f"{baseline_rate}{metric_unit}")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            mde_calc = st.slider("Minimum Detectable Effect (MDE) %", min_value=0.1, max_value=50.0, value=st.session_state.get('context', {}).get('minimum_detectable_effect', 5.0), step=0.1)
+            confidence_level_calc = st.slider("Confidence Level (%)", min_value=80, max_value=99, value=95, step=1)
+        with col2:
+            power_level_calc = st.slider("Statistical Power (%)", min_value=70, max_value=95, value=80, step=1)
+            num_variants_calc = st.slider("Number of Variants (Control + Variations)", min_value=2, max_value=5, value=2, step=1)
+
+        std_dev_calc = st.session_state.get('context', {}).get('std_dev', None)
+        if metric_type == "Numeric Value":
+            st.info(f"Standard Deviation for this metric is pre-filled from your input: **{std_dev_calc}**")
+
+        if baseline_rate > 0:
+            sample_size_per_variant, total_sample_size = calculate_sample_size(
+                baseline=baseline_rate, 
+                mde=mde_calc, 
+                alpha=1-(confidence_level_calc/100), 
+                power=power_level_calc/100, 
+                num_variants=num_variants_calc,
+                metric_type=metric_type,
+                std_dev=std_dev_calc
+            )
+
+            if sample_size_per_variant and total_sample_size:
+                dau_raw = st.session_state.get('context', {}).get('users', '< 10K')
+                try:
+                    if dau_raw == '< 10K': dau = 5000
+                    elif dau_raw == '10K–100K': dau = 50000
+                    elif dau_raw == '100K–1M': dau = 500000
+                    else: dau = 2000000
+                except:
+                    dau = 10000
+
+                users_to_test = total_sample_size
+                duration_days = (users_to_test / dau) if dau > 0 else float('inf')
+                
+                st.markdown("---")
+                st.subheader("Calculator Results")
+                st.metric("Users Per Variant", f"{sample_size_per_variant:,} users")
+                st.metric("Total Sample Size", f"{total_sample_size:,} users")
+                st.metric("Estimated Test Duration", f"{duration_days:,.0f} days")
+                st.caption("Note: This calculation assumes all DAU are eligible for the test and are split evenly.")
+            else:
+                st.warning("Please check your input values for a valid calculation.")
+        else:
+            st.warning("Please input a non-zero current value to use the calculator.")
+    
 
 # --- Display Output ---
 if "output" in st.session_state:
