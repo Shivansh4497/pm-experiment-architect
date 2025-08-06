@@ -9,11 +9,13 @@ def generate_experiment_plan(goal, context):
     context["expected_lift_with_unit"] = f"{context['expected_lift']}{unit}"
     context["mde_with_unit"] = f"{context['minimum_detectable_effect']}%"
     strategic_goal = context.get('strategic_goal', '')
+    user_persona = context.get('user_persona', '')
     
     prompt = f"""
 You are an expert product manager. Your primary objective is to generate an A/B test plan that directly supports the following high-level business objective:
 High-level business objective: {strategic_goal}
 Product type: {context['type']}
+Target user persona: {user_persona}
 User base size (DAU): {context['users']}
 Primary metric category: {context['metric']}
 Exact metric to improve: {context['exact_metric']}
@@ -21,6 +23,7 @@ Current value: {context['current_value']}
 Target value: {context['target_value']}
 Expected lift: {context['expected_lift']}{unit}
 Minimum detectable effect (MDE): {context['minimum_detectable_effect']}%
+
 
 Notes: {context['notes']}
 Target user persona: {user_persona}
