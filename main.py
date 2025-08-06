@@ -1,3 +1,12 @@
+That's an important security and stability concern. Special characters like `"` or `{}` in a user-provided string could corrupt the JSON structure when the LLM tries to parse it.
+
+To address this, we'll add a new validation step. Before the "Generate Plan" button proceeds, we'll check the `metric_unit` input for any characters that could cause a JSON parsing error.
+
+Here's the corrected `main.py` file with this new validation logic implemented.
+
+-----
+
+```python
 import streamlit as st
 import json
 import base64
@@ -237,6 +246,11 @@ if st.button("Generate Plan"):
     if not metric_unit.strip(): missing.append("Metric Unit")
     if metric_type == "Numeric Value" and not std_dev_raw: missing.append("Standard Deviation")
 
+    # NEW: Validate metric_unit for special characters
+    if any(char in metric_unit for char in ['"', '{', '}', '[', ']']):
+        st.error("The 'Metric Unit' contains invalid characters. Please use text like 'USD' or 'count' instead of symbols like '$' or brackets.")
+        st.stop()
+
     if missing:
         st.warning("Please fill all required fields: " + ", ".join(missing))
         st.stop()
@@ -436,6 +450,10 @@ if "output" in st.session_state:
                     st.session_state.selected_index = i
                     st.session_state.hypothesis_confirmed = True
                     st.session_state.stats_locked = False # Reset lock if new hypothesis selected
+                    # Pre-fill calculator with LLM's suggested stats
+                    llm_mde = plan.get("success_criteria", {}).get("MDE", 5.0)
+                    st.session_state.calc_mde = llm_mde
+                    st.session_state.refresh_button_clicked = True # Automatically trigger initial calc
                     st.rerun()
 
     if st.session_state.get("hypothesis_confirmed") and st.session_state.selected_index is not None:
@@ -446,19 +464,16 @@ if "output" in st.session_state:
         control = variant.get("control", "Not specified")
         variation = variant.get("variation", "Not specified")
         
-        # --- Get qualitative stats from LLM first ---
+        # Get LLM-generated qualitative stats and fallback values
         effort_display = plan.get("effort", [{}])[i].get("effort", "N/A")
-        # Get rationale from LLM, with a more descriptive fallback if missing
-        llm_rationale = plan.get("success_criteria", {}).get("statistical_rationale", "⚠️ Rationale missing from LLM response. Please regenerate or fill manually.")
+        statistical_rationale_display = plan.get("success_criteria", {}).get("statistical_rationale", "⚠️ Rationale missing from LLM response. Please regenerate or fill manually.")
 
-        # --- Use locked quantitative stats if available, otherwise use LLM output ---
-        criteria_display = {}
         if st.session_state.get("stats_locked", False):
+            # Use locked quantitative stats
             criteria_display = st.session_state.locked_stats
-            statistical_rationale_display = "Values provided by the A/B Test Calculator."
         else:
+            # Use LLM quantitative stats
             criteria_display = plan.get("success_criteria", {})
-            statistical_rationale_display = llm_rationale
 
         try:
             confidence = float(criteria_display.get("confidence_level", 0))
@@ -490,6 +505,10 @@ if "output" in st.session_state:
 
         st.markdown("### 📊 Experiment Stats")
         st.text_input(" ", value="", help="Details like sample size, confidence level, MDE, and duration help determine how trustworthy and actionable your results will be.", disabled=True, label_visibility="collapsed")
+        
+        if not st.session_state.get("stats_locked", False):
+            st.warning("Please adjust the A/B Test Calculator above and click 'Lock Values for Plan' to finalize your experiment stats.")
+
         st.markdown(f"""
 - Confidence Level: {confidence_str}
 - Minimum Detectable Effect (MDE): {mde_display}
@@ -589,3 +608,4 @@ st.markdown("""
     }
 </script>
 """, unsafe_allow_html=True)
+```
