@@ -160,7 +160,7 @@ if st.button("Generate Plan") or "output" not in st.session_state:
         "target_value": target,
         "expected_lift": expected_lift,
         "minimum_detectable_effect": round(mde * 100, 2),
-        "metric_unit": metric_unit.strip()
+        "metric_unit": metric_unit.strip(),
         "strategic_goal": strategic_goal
     }
 
