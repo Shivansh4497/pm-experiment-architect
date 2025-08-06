@@ -10,12 +10,16 @@ def generate_experiment_plan(goal, context):
     context["mde_with_unit"] = f"{context['minimum_detectable_effect']}%"
     strategic_goal = context.get('strategic_goal', '')
     user_persona = context.get('user_persona', '')
+    metric_type = context.get('metric_type', 'Conversion Rate')
+    std_dev = context.get('std_dev', None)
     
     prompt = f"""
 You are an expert product manager. Your primary objective is to generate an A/B test plan that directly supports the following high-level business objective:
 High-level business objective: {strategic_goal}
 Product type: {context['type']}
 Target user persona: {user_persona}
+Metric type: {metric_type}
+Standard Deviation: {std_dev} if metric_type == 'Numeric Value' else 'Not Applicable'
 User base size (DAU): {context['users']}
 Primary metric category: {context['metric']}
 Exact metric to improve: {context['exact_metric']}
@@ -60,6 +64,7 @@ Return a JSON with the following keys:
   DO NOT return just strings or single words. Each entry must be a dict with a full rationale explanation.
 - risks_and_assumptions: list of 2–4 potential risks or assumptions that could impact test outcomes
 - next_steps: list of clear action items to begin the experiment
+- statistical_rationale: 2-3 sentences explaining the statistical basis for the MDE, sample size, and duration. The explanation must correctly reference the metric type (e.g., "This is a numeric metric, so the calculation relies on the standard deviation...") and be grounded in the provided user base size. The rationale should be realistic and avoid over-promising.
 
 ⚠️ IMPORTANT FORMAT RULES:
 - DO NOT include markdown or extra commentary — only clean JSON.
