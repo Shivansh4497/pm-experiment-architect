@@ -52,9 +52,8 @@ def section_with_info(title, key, explanation):
     with col1:
         st.markdown(f"<div class='section-title'>{title}</div>", unsafe_allow_html=True)
     with col2:
-        if st.button("ℹ️", key=f"explain_{key}"):
-            st.session_state[f"explain_{key}"] = not st.session_state.get(f"explain_{key}", False)
-    if st.session_state.get(f"explain_{key}", False):
+        toggle = st.toggle("ℹ️", key=f"explain_{key}", label_visibility="collapsed")
+    if toggle:
         st.caption(explanation)
 
 # --- Page Setup ---
