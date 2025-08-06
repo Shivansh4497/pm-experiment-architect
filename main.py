@@ -1,12 +1,4 @@
-That's an important security and stability concern. Special characters like `"` or `{}` in a user-provided string could corrupt the JSON structure when the LLM tries to parse it.
 
-To address this, we'll add a new validation step. Before the "Generate Plan" button proceeds, we'll check the `metric_unit` input for any characters that could cause a JSON parsing error.
-
-Here's the corrected `main.py` file with this new validation logic implemented.
-
------
-
-```python
 import streamlit as st
 import json
 import base64
