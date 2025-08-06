@@ -23,6 +23,7 @@ Expected lift: {context['expected_lift']}{unit}
 Minimum detectable effect (MDE): {context['minimum_detectable_effect']}%
 
 Notes: {context['notes']}
+Target user persona: {user_persona}
 
 Product goal: "{goal}"
 
@@ -30,7 +31,7 @@ Return a JSON with the following keys:
 
 - problem_statement: exactly 2–3 clear sentences. Must frame the problem as a barrier to achieving the high-level business objective. Include the metric name, current value, and target value*. Include the risk of not improving. DO NOT return placeholder text, special symbols, or markdown.
 
-- + hypotheses: list of 2–3 actionable, testable ideas. Each hypothesis must be a plausible solution to the problem statement and directly align with the high-level business objective. Avoid general ideas. Each item should be a JSON object:
+- hypotheses: list of 2–3 actionable, testable ideas. Each hypothesis must be a plausible solution to the problem statement, directly align with the high-level business objective, and be tailored to the target user persona if provided. Avoid general ideas. Each item should be a JSON object:
   {{
     "hypothesis": "1-line summary of what change you're testing and why it might improve the metric (10–20 words max)",
     "description": "Optional: add brief context or reasoning"
@@ -44,7 +45,7 @@ Return a JSON with the following keys:
 - metrics: list of 2–4 metric objects, each with:
   - name: e.g. "Activation Rate"
   - formula: e.g. "Activated Users / Signups"
-- segments: relevant user groups to break down results by (e.g. "New Android Users", "Returning Gamers")
+- segments: relevant user groups to break down results by (e.g. "New Android Users", "Returning Gamers"). Must include the target user persona as one of the segments.
 - success_criteria: include confidence_level, expected_lift, MDE, and estimated_test_duration in days
 - effort: list of {{"hypothesis": "...", "effort": "Low/Medium/High"}}
 - team_involved: list of functions needed (e.g. Design, Data, Backend)
