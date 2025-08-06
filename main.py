@@ -283,6 +283,7 @@ if st.button("Generate Plan"):
         "std_dev": std_dev
     }
     st.session_state.stats_locked = False # Reset lock when new plan is generated
+    st.session_state.refresh_button_clicked = True # Initial calculation trigger
 
     with st.spinner("🧠 Generating your plan..."):
         output = generate_experiment_plan(goal_with_units, st.session_state.context)
@@ -330,10 +331,11 @@ if "output" in st.session_state:
             refresh_button = st.button("Refresh Calculator", key="refresh_calc_btn")
         with col_buttons[1]:
             lock_button = st.button("Lock Values for Plan", key="lock_calc_btn")
-
-        # Perform calculation only on refresh or initial load of calculator
-        if refresh_button or (not st.session_state.get('calculator_calculated_once', False) and 'output' in st.session_state):
-            st.session_state.calculator_calculated_once = True # Mark as calculated
+        
+        # New logic to trigger calculation only on button click or initial load
+        if refresh_button or st.session_state.get('refresh_button_clicked', False):
+            st.session_state.refresh_button_clicked = False # Reset the trigger
+            
             st.session_state.last_calc_mde = st.session_state.calc_mde
             st.session_state.last_calc_confidence = st.session_state.calc_confidence
             st.session_state.last_calc_power = st.session_state.calc_power
@@ -502,7 +504,7 @@ if "output" in st.session_state:
         if metrics:
             st.markdown("<div class='section-title'>📏 Metrics</div>", unsafe_allow_html=True)
             for m in metrics:
-                st.markdown(f"- **{m.get('name', 'Unnamed')}**: {m.get('formula', 'N/A')}")
+                st.markdown(f"- **{m.get('name', 'Unnamed')}:** {m.get('formula', 'N/A')}")
 
         segments = plan.get("segments", [])
         if segments:
