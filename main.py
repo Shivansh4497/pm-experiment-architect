@@ -12,12 +12,15 @@ import numpy as np
 def create_header_with_help(header_text, help_text, icon="🔗"):
     """
     Creates a consistent header with an icon, title, and a help tooltip.
+    This version includes the '?' icon on the right, which shows 'help_text' on hover.
     """
     st.markdown(f"""
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <div style="font-size: 1.5rem;">{icon}</div>
-            <div class="section-title" style="margin-bottom: 0;">{header_text}</div>
-            <span style="font-size: 1rem; color: #888; cursor: help;" title="{help_text}">❓</span>
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="font-size: 1.5rem;">{icon}</div>
+                <div class="section-title" style="margin-bottom: 0;">{header_text}</div>
+            </div>
+            <span style="font-size: 1rem; color: #888; cursor: help; float: right;" title="{help_text}">❓</span>
         </div>
     """, unsafe_allow_html=True)
 
@@ -35,12 +38,22 @@ def safe_display(text, method=st.info):
     method(clean_text)
 
 def extract_json(text):
-    """Extracts a JSON object from a string that may contain other text."""
+    """
+    Extracts and attempts to fix a JSON object from a string that may contain other text.
+    """
     try:
         match = re.search(r"\{[\s\S]+\}", text)
-        return match.group(0) if match else text
-    except:
-        return text
+        json_str = match.group(0) if match else text
+        
+        # Simple fix for trailing commas, which can cause a JSONDecodeError
+        json_str = re.sub(r',\s*\}', '}', json_str)
+        json_str = re.sub(r',\s*\]', ']', json_str)
+        
+        return json.loads(json_str)
+    except Exception as e:
+        st.error(f"❌ Could not parse JSON: {e}")
+        st.code(text)
+        return None
 
 def remove_units_from_text(text, unit):
     """Removes a unit from a number within a string."""
@@ -52,7 +65,7 @@ def remove_units_from_text(text, unit):
 def insert_units_in_goal(text, unit):
     """
     Inserts a unit into numeric values within a string.
-    FIX: The logic now correctly places '%' after the number.
+    Correctly places '%' after the number.
     """
     if not text or not unit.strip():
         return text
@@ -68,33 +81,31 @@ def insert_units_in_goal(text, unit):
                 output.append(token + " " + unit)
         else:
             output.append(token)
-    return ''.join(output).replace(" %", "%") # Corrected placement for '%'
+    
+    # Correct the placement of the '%' symbol
+    return ''.join(output).replace(" %", "%").replace(" %", "%")
 
 def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type, std_dev=None):
     """
     Calculates the required sample size for an A/B test based on metric type.
     """
     try:
-        # Convert percentage inputs to decimals
         alpha = alpha
         power = power
         mde_relative = mde / 100.0
 
         if metric_type == 'Conversion Rate':
-            # Assumes baseline is a percentage and needs to be converted
             baseline_prop = baseline / 100.0
             expected_prop = baseline_prop * (1 + mde_relative)
-
-            # Handle edge cases for proportion calculation
             if baseline_prop <= 0 or expected_prop <= 0:
-                st.warning("Baseline conversion rate must be greater than 0 for calculation.")
+                st.warning("Baseline conversion rate must be > 0.")
                 return None, None
             if expected_prop >= 1.0:
                 expected_prop = 0.999
             
             effect_size = proportion_effectsize(baseline_prop, expected_prop)
             if effect_size == 0:
-                st.warning("MDE must be greater than 0 for a meaningful sample size calculation.")
+                st.warning("MDE must be > 0 for a meaningful calculation.")
                 return None, None
 
             analysis = NormalIndPower()
@@ -106,15 +117,13 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
             )
         elif metric_type == 'Numeric Value':
             if std_dev is None or std_dev == 0:
-                st.error("Standard deviation is required and must be non-zero for numeric metrics.")
+                st.error("Standard deviation is required and must be non-zero.")
                 return None, None
-
-            # Calculate absolute effect size based on relative MDE
             mde_absolute = baseline * mde_relative
             effect_size = mde_absolute / std_dev
             
             if effect_size == 0:
-                st.warning("MDE must be greater than 0 for a meaningful sample size calculation.")
+                st.warning("MDE must be > 0 for a meaningful calculation.")
                 return None, None
 
             analysis = TTestIndPower()
@@ -128,7 +137,6 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
             st.error("Invalid metric type selected.")
             return None, None
         
-        # Ensure sample size is positive and finite
         if sample_size_per_variant <= 0 or not np.isfinite(sample_size_per_variant):
              return None, None
 
@@ -272,7 +280,6 @@ if st.button("Generate Plan"):
              st.error("Current value or standard deviation cannot be zero for numeric metric calculation.")
              st.stop()
 
-        # Calculate expected lift as a percentage
         expected_lift = round(((target - current) / current) * 100, 2) if current != 0 else 0.0
         mde_percent = round(abs((target - current) / current) * 100, 2) if current != 0 else 0.0
     except ValueError:
@@ -416,12 +423,8 @@ if "output" in st.session_state:
 
 # --- Display AI-Generated Plan ---
 if "output" in st.session_state:
-    raw_output = extract_json(st.session_state.output)
-    try:
-        plan = json.loads(raw_output)
-    except Exception as e:
-        st.error(f"❌ Could not parse JSON: {e}")
-        st.code(raw_output)
+    plan = extract_json(st.session_state.output)
+    if plan is None:
         st.stop()
 
     unit = st.session_state.context.get("metric_unit", "").strip()
