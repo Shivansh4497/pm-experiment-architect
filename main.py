@@ -9,6 +9,17 @@ from statsmodels.stats.proportion import proportion_effectsize
 import numpy as np
 
 # --- Helper Functions ---
+def create_header_with_help(header_text, help_text):
+    """
+    Creates a header with a help icon that shows a tooltip on hover.
+    """
+    st.markdown(f"""
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="section-title">{header_text}</div>
+            <span style="font-size: 1rem; color: #888;" title="{help_text}">❓</span>
+        </div>
+    """, unsafe_allow_html=True)
+
 def sanitize_text(text):
     """Sanitizes text to prevent injection issues and clean up whitespace."""
     if not text or not isinstance(text, str):
@@ -144,7 +155,7 @@ st.markdown("""
 .section-title {
     font-size: 1.5rem;
     font-weight: bold;
-    color: #1E90FF; /* Changed to a light blue */
+    color: #1E90FF;
     margin-bottom: 15px;
 }
 </style>
@@ -157,8 +168,7 @@ st.markdown("""
   <h2 style='margin-bottom: 0;'>📊 Smarter A/B Test Planning in 2 Minutes</h2>
   <p style='font-size: 16px; color: #444;'>
     Struggling to write strong hypotheses or align on success criteria? This tool helps you instantly generate a full experiment PRD — from your product goal to clear variants, metrics, and risks — powered by LLMs.
-  </p>
-</div>
+  </p></div>
 """, unsafe_allow_html=True)
 
 st.markdown("""
@@ -193,7 +203,7 @@ if st.button("🔄 Start Over"):
 
 # --- Product Context ---
 st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
-st.markdown("<div class='section-title'>🧠 Product Context</div>", unsafe_allow_html=True)
+create_header_with_help("🧠 Product Context", "This section provides the LLM with information about your product to generate a more relevant and accurate plan.")
 product_type = st.radio("Product Type *", ["SaaS", "Consumer App", "E-commerce", "Marketplace", "Gaming", "Other"], horizontal=True, help="What kind of product are you testing?")
 user_base = st.radio("User Base Size (DAU) *", ["< 10K", "10K–100K", "100K–1M", "> 1M"], horizontal=True, help="Your product's average daily active users")
 metric_focus = st.radio("Primary Metric Focus *", ["Activation", "Retention", "Monetization", "Engagement", "Virality"], horizontal=True, help="The key area you want to improve")
@@ -204,7 +214,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 # --- Metric Objective ---
 st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
-st.markdown("<div class='section-title'>🎯 Metric Improvement Objective</div>", unsafe_allow_html=True)
+create_header_with_help("🎯 Metric Improvement Objective", "Provide the specific metric you want to impact and its current vs. target value.")
 exact_metric = st.text_input("Metric to Improve * (e.g. Activation Rate, ARPU, DAU/MAU)", help="Be specific — name the metric you want to shift")
 col_metric_type, col_metric_unit = st.columns(2)
 with col_metric_type:
@@ -237,9 +247,9 @@ if st.button("Generate Plan"):
     if not metric_unit.strip(): missing.append("Metric Unit")
     if metric_type == "Numeric Value" and not std_dev_raw: missing.append("Standard Deviation")
 
-    # NEW: Validate metric_unit for special characters
-    if any(char in metric_unit for char in ['"', '{', '}', '[', ']']):
-        st.error("The 'Metric Unit' contains invalid characters. Please use text like 'USD' or 'count' instead of symbols like '$' or brackets.")
+    invalid_chars = ['"', '{', '}', '[', ']', '$', '₹', '€', '£', '%']
+    if any(char in metric_unit for char in invalid_chars):
+        st.error("The 'Metric Unit' contains invalid characters. Please use plain text like 'USD' or 'count' instead of symbols like '$' or brackets.")
         st.stop()
 
     if missing:
@@ -287,8 +297,8 @@ if st.button("Generate Plan"):
         "metric_type": metric_type,
         "std_dev": std_dev
     }
-    st.session_state.stats_locked = False # Reset lock when new plan is generated
-    st.session_state.refresh_button_clicked = True # Initial calculation trigger
+    st.session_state.stats_locked = False
+    st.session_state.calculate_now = True
 
     with st.spinner("🧠 Generating your plan..."):
         output = generate_experiment_plan(goal_with_units, st.session_state.context)
@@ -309,7 +319,6 @@ if "output" in st.session_state:
         
         st.metric(f"Baseline {'Conversion Rate' if metric_type == 'Conversion Rate' else 'Value'}", f"{baseline_rate}{metric_unit}")
 
-        # Initialize calculator input values in session state if not present
         if 'calc_mde' not in st.session_state:
             st.session_state.calc_mde = st.session_state.get('context', {}).get('minimum_detectable_effect', 5.0)
         if 'calc_confidence' not in st.session_state:
@@ -337,9 +346,8 @@ if "output" in st.session_state:
         with col_buttons[1]:
             lock_button = st.button("Lock Values for Plan", key="lock_calc_btn")
         
-        # New logic to trigger calculation only on button click or initial load
-        if refresh_button or st.session_state.get('refresh_button_clicked', False):
-            st.session_state.refresh_button_clicked = False # Reset the trigger
+        if refresh_button or st.session_state.get('calculate_now', False) or lock_button:
+            st.session_state.calculate_now = False
             
             st.session_state.last_calc_mde = st.session_state.calc_mde
             st.session_state.last_calc_confidence = st.session_state.calc_confidence
@@ -374,7 +382,6 @@ if "output" in st.session_state:
             users_to_test = st.session_state.calculated_total_sample_size if st.session_state.calculated_total_sample_size else 0
             st.session_state.calculated_duration_days = (users_to_test / dau) if dau > 0 else float('inf')
 
-        # Display results from the last successful calculation
         if st.session_state.get('calculated_sample_size_per_variant') is not None and st.session_state.get('calculated_total_sample_size') is not None:
             st.markdown("---")
             st.subheader("Calculator Results")
@@ -385,7 +392,6 @@ if "output" in st.session_state:
         else:
             st.warning("Please adjust inputs and click 'Refresh Calculator' for results.")
 
-        # Handle locking values
         if lock_button:
             if st.session_state.get('calculated_sample_size_per_variant') is not None:
                 st.session_state.stats_locked = True
@@ -397,14 +403,15 @@ if "output" in st.session_state:
                     "estimated_test_duration": f"{st.session_state.calculated_duration_days:,.0f} days",
                 }
                 st.success("Calculator values locked and will be used in the plan below!")
-                st.rerun() # Rerun to update the display immediately
+                st.rerun()
             else:
                 st.error("Cannot lock values. Please ensure the calculator has successfully generated results.")
 
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- Display AI-Generated Plan ---
+# --- Display AI-Generated Plan ---
+if "output" in st.session_state:
     raw_output = extract_json(st.session_state.output)
     try:
         plan = json.loads(raw_output)
@@ -416,17 +423,16 @@ if "output" in st.session_state:
     unit = " " + st.session_state.context.get("metric_unit", "").strip()
     
     st.markdown("<div class='green-section'>", unsafe_allow_html=True)
-    st.markdown("<div class='section-title'>📌 Inferred Product Goal</div>", unsafe_allow_html=True)
+    create_header_with_help("📌 Inferred Product Goal", "This is the goal the AI inferred from your input. Review and confirm it aligns with your objective.")
     safe_display(st.session_state.auto_goal)
 
-    st.markdown("### 🧩 Problem Statement")
-    st.text_input(" ", value="", help="Explains the gap between current and target metric values, and why this improvement matters.", disabled=True, label_visibility="collapsed")
+    create_header_with_help("🧩 Problem Statement", "Explains the gap between current and target metric values, and why this improvement matters.")
     problem_statement = plan.get("problem_statement", "")
-    problem_statement = remove_units_from_text(problem_statement, unit)
+    # --- CHANGE: Removing the line below to keep the units in the problem statement ---
+    # problem_statement = remove_units_from_text(problem_statement, unit)
     safe_display(problem_statement or "⚠️ Problem statement not generated by the model.")
 
-    st.markdown("### 🧪 Hypotheses")
-    st.text_input(" ", value="", help="These are actionable, testable ideas likely to improve the metric. They’re short, specific, and informed by your product context.", disabled=True, label_visibility="collapsed")
+    create_header_with_help("🧪 Hypotheses", "These are actionable, testable ideas likely to improve the metric. They’re short, specific, and informed by your product context.")
     hypotheses = plan.get("hypotheses", [])
     if not hypotheses:
         st.warning("No hypotheses found in the generated plan.")
@@ -440,11 +446,10 @@ if "output" in st.session_state:
                 if st.button("Select", key=f"select_{i}"):
                     st.session_state.selected_index = i
                     st.session_state.hypothesis_confirmed = True
-                    st.session_state.stats_locked = False # Reset lock if new hypothesis selected
-                    # Pre-fill calculator with LLM's suggested stats
+                    st.session_state.stats_locked = False
                     llm_mde = plan.get("success_criteria", {}).get("MDE", 5.0)
                     st.session_state.calc_mde = llm_mde
-                    st.session_state.refresh_button_clicked = True # Automatically trigger initial calc
+                    st.session_state.calculate_now = True
                     st.rerun()
 
     if st.session_state.get("hypothesis_confirmed") and st.session_state.selected_index is not None:
@@ -455,15 +460,12 @@ if "output" in st.session_state:
         control = variant.get("control", "Not specified")
         variation = variant.get("variation", "Not specified")
         
-        # Get LLM-generated qualitative stats and fallback values
         effort_display = plan.get("effort", [{}])[i].get("effort", "N/A")
         statistical_rationale_display = plan.get("success_criteria", {}).get("statistical_rationale", "⚠️ Rationale missing from LLM response. Please regenerate or fill manually.")
 
         if st.session_state.get("stats_locked", False):
-            # Use locked quantitative stats
             criteria_display = st.session_state.locked_stats
         else:
-            # Use LLM quantitative stats
             criteria_display = plan.get("success_criteria", {})
 
         try:
@@ -477,25 +479,21 @@ if "output" in st.session_state:
         duration = criteria_display.get("estimated_test_duration", "N/A")
         
         try:
-            # MDE from LLM/Calculator is stored as a percentage number (e.g., 5.0 for 5%)
             mde = float(criteria_display.get("MDE", 0))
             mde_display = f"{mde}%"
         except:
             mde_display = "N/A"
 
-        st.markdown("<div class='section-title'>✅ Selected Hypothesis</div>", unsafe_allow_html=True)
+        create_header_with_help("✅ Selected Hypothesis", "This is the hypothesis you selected from the generated options.")
         st.code(selected_hypo)
 
-        st.markdown("### 🔁 Variants")
-        st.text_input(" ", value="", help="Shows what users in the control group vs. the variant group will see or experience.", disabled=True, label_visibility="collapsed")
+        create_header_with_help("🔁 Variants", "Shows what users in the control group vs. the variant group will see or experience.")
         st.markdown(f"- Control: {control}\n- Variation: {variation}")
 
-        st.markdown("### 💡 Rationale")
-        st.text_input(" ", value="", help="Explains *why* the selected hypothesis is worth testing, based on user behavior or insight.", disabled=True, label_visibility="collapsed")
+        create_header_with_help("💡 Rationale", "Explains why the selected hypothesis is worth testing, based on user behavior or insight.")
         st.markdown(rationale)
 
-        st.markdown("### 📊 Experiment Stats")
-        st.text_input(" ", value="", help="Details like sample size, confidence level, MDE, and duration help determine how trustworthy and actionable your results will be.", disabled=True, label_visibility="collapsed")
+        create_header_with_help("📊 Experiment Stats", "Details like sample size, confidence level, MDE, and duration help determine how trustworthy and actionable your results will be.")
         
         if not st.session_state.get("stats_locked", False):
             st.warning("Please adjust the A/B Test Calculator above and click 'Lock Values for Plan' to finalize your experiment stats.")
@@ -512,29 +510,28 @@ if "output" in st.session_state:
 
         metrics = plan.get("metrics", [])
         if metrics:
-            st.markdown("<div class='section-title'>📏 Metrics</div>", unsafe_allow_html=True)
+            create_header_with_help("📏 Metrics", "The primary and secondary metrics to be measured during the experiment.")
             for m in metrics:
                 st.markdown(f"- **{m.get('name', 'Unnamed')}:** {m.get('formula', 'N/A')}")
 
         segments = plan.get("segments", [])
         if segments:
-            st.markdown("<div class='section-title'>👥 Segments</div>", unsafe_allow_html=True)
+            create_header_with_help("👥 Segments", "The specific user groups that will be included in the test.")
             for s in segments:
                 st.markdown(f"- {s}")
 
         risks = plan.get("risks_and_assumptions", [])
         if risks:
-            st.markdown("<div class='section-title'>⚠️ Risks</div>", unsafe_allow_html=True)
+            create_header_with_help("⚠️ Risks", "Potential risks, assumptions, and negative outcomes to monitor during the experiment.")
             for r in risks:
                 st.markdown(f"- {r}")
 
         next_steps = plan.get("next_steps", [])
         if next_steps:
-            st.markdown("<div class='section-title'>✅ Next Steps</div>", unsafe_allow_html=True)
+            create_header_with_help("✅ Next Steps", "A plan for the actions to be taken after the experiment concludes.")
             for step in next_steps:
                 st.markdown(f"- {step}")
 
-        # --- PRD Download Logic ---
         prd = ""
         prd += "# 🧪 Experiment PRD\n\n"
         prd += "## 🎯 Goal\n"
