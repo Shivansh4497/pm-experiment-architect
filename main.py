@@ -54,7 +54,6 @@ def extract_json(text):
         st.code(text)
         return None
 
-# NEW: a dedicated function to clean up LLM output
 def post_process_llm_text(text, unit):
     """Removes double units and ensures proper spacing."""
     if not text or not unit:
@@ -64,8 +63,19 @@ def post_process_llm_text(text, unit):
     if unit == "%":
         text = text.replace("%%", "%")
     
-    # Simple fix for unit placement (e.g. "30.0 %" -> "30.0%")
-    return text.replace(" %", "%").replace(" %", "%")
+    return text
+
+# NEW: Helper function to format value and unit correctly
+def format_value_with_unit(value, unit):
+    """Adds a space for certain units, but not for others like % or currency symbols."""
+    # List of units that should have a space before them
+    units_with_space = ["USD", "count", "minutes", "hours", "days"]
+    
+    if unit in units_with_space:
+        return f"{value} {unit}"
+    else:
+        # Assumes units like %, $, etc. should be directly attached
+        return f"{value}{unit}"
 
 
 def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type, std_dev=None):
@@ -272,9 +282,13 @@ if st.button("Generate Plan"):
     except ValueError:
         st.error("Metric values and standard deviation must be numeric.")
         st.stop()
+    
+    # MODIFIED: Use the new helper function to format the output correctly
+    formatted_current = format_value_with_unit(current, metric_unit)
+    formatted_target = format_value_with_unit(target, metric_unit)
 
-    # MODIFIED: Construct the goal string with units applied correctly
-    goal_with_units = f"I want to improve {sanitized_metric_name} from {current}{metric_unit} to {target}{metric_unit}."
+    # MODIFIED: Construct the goal string with the formatted values
+    goal_with_units = f"I want to improve {sanitized_metric_name} from {formatted_current} to {formatted_target}."
     
     st.session_state.current = current
     st.session_state.target = target
@@ -315,7 +329,7 @@ if "output" in st.session_state:
         metric_unit = st.session_state.get('context', {}).get('metric_unit', '')
         metric_type = st.session_state.get('context', {}).get('metric_type', 'Conversion Rate')
         
-        st.metric(f"Baseline {'Conversion Rate' if metric_type == 'Conversion Rate' else 'Value'}", f"{baseline_rate}{metric_unit}")
+        st.metric(f"Baseline {'Conversion Rate' if metric_type == 'Conversion Rate' else 'Value'}", format_value_with_unit(baseline_rate, metric_unit))
 
         if 'calc_mde' not in st.session_state:
             st.session_state.calc_mde = st.session_state.get('context', {}).get('minimum_detectable_effect', 5.0)
