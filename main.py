@@ -19,7 +19,7 @@ def create_header_with_help(header_text, help_text, icon="🔗"):
                 <div style="font-size: 1.5rem;">{icon}</div>
                 <div class="section-title" style="margin-bottom: 0;">{header_text}</div>
             </div>
-            <span style="font-size: 1rem; color: #888; cursor: help; float: right;" title="{help_text}">ⓘ</span>
+            <span style="font-size: 1rem; color: #888; cursor: help; float: right;" title="{help_text}">❓</span>
         </div>
     """, unsafe_allow_html=True)
 
@@ -268,10 +268,14 @@ if st.button("Generate Plan"):
         st.stop()
 
     try:
-        current = float(current_value_raw)
-        target = float(target_value_raw)
-        std_dev = float(std_dev_raw) if std_dev_raw else None
+        # Sanitize inputs by removing any percentage signs before converting to float
+        current = float(current_value_raw.replace('%', ''))
+        target = float(target_value_raw.replace('%', ''))
+        std_dev = float(std_dev_raw.replace('%', '')) if std_dev_raw else None
         
+        # Also, remove any percentage signs from the metric name
+        sanitized_metric_name = exact_metric.replace('%', '')
+
         if current == 0 and metric_type == "Conversion Rate":
             st.error("Current value cannot be zero for conversion rate lift calculation.")
             st.stop()
@@ -285,7 +289,7 @@ if st.button("Generate Plan"):
         st.error("Metric values and standard deviation must be numeric.")
         st.stop()
 
-    goal_text = f"I want to improve {exact_metric} from {current} to {target}."
+    goal_text = f"I want to improve {sanitized_metric_name} from {current} to {target}."
     goal_with_units = insert_units_in_goal(goal_text, metric_unit).strip()
 
     st.session_state.current = current
@@ -296,7 +300,7 @@ if st.button("Generate Plan"):
         "users": user_base,
         "metric": metric_focus,
         "notes": product_notes,
-        "exact_metric": exact_metric,
+        "exact_metric": sanitized_metric_name,
         "current_value": current,
         "target_value": target,
         "expected_lift": expected_lift,
