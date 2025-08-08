@@ -329,6 +329,9 @@ if st.button("Generate Plan"):
             current = float(current_value_raw.replace('%', '').strip())
             target = float(target_value_raw.replace('%', '').strip())
             std_dev = float(std_dev_raw.replace('%', '').strip()) if std_dev_raw else None
+            if current_metric == target_metric:
+                st.error("Current metric and target metric cannot be the same. Please adjust one of them.")
+                st.stop()
 
             sanitized_metric_name = exact_metric.replace('%', '').strip()
 
@@ -659,7 +662,7 @@ if "output" in st.session_state:
 - Users per Variant: {users_per_variant}
 - Estimated Duration: {duration}
 - Estimated Effort: {effort_display}
-**Statistical Rationale:** {statistical_rationale_display}
+- Statistical Rationale: {statistical_rationale_display}
 """)
 
                 metrics = plan.get("metrics", [])
