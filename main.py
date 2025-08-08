@@ -13,17 +13,15 @@ import hashlib
 import io
 from datetime import datetime
 from io import BytesIO
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.pagesizes import letter
 
-# Try to import reportlab for PDF export; we'll gracefully fall back if missing.
+# reportlab imports (optional) — used for PDF export
 REPORTLAB_AVAILABLE = False
 try:
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
     from reportlab.lib.units import inch
-    from reportlab.pdfgen import canvas
-
     REPORTLAB_AVAILABLE = True
 except Exception:
     REPORTLAB_AVAILABLE = False
@@ -226,98 +224,109 @@ def calculate_sample_size(
 
 
 # -------------------------
-# PDF / Export helpers
+# PDF Export (polished, reportlab-based)
 # -------------------------
-def build_prd_html(title: str, prd_text: str, logo_svg: Optional[str] = None) -> str:
-    # Basic HTML wrapper with nicer styling for preview/export
-    html = f"""
-    <!doctype html>
-    <html>
-    <head>
-      <meta charset="utf-8"/>
-      <title>{title}</title>
-      <style>
-        body {{ font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial; padding: 40px; color: #1b1b1b; }}
-        .logo {{ width: 120px; }}
-        h1 {{ font-size: 28px; margin-bottom: 6px; }}
-        h2 {{ font-size: 20px; margin-top: 18px; }}
-        p, li {{ font-size: 14px; line-height: 1.45; }}
-        pre {{ white-space: pre-wrap; font-family: inherit; }}
-        .meta {{ color: #666; margin-bottom: 20px; }}
-        .section {{ margin-bottom: 18px; }}
-      </style>
-    </head>
-    <body>
-      <div class="header">
-        {logo_svg or '<div style="width:120px;height:40px;background:#1E90FF;border-radius:6px;color:white;display:flex;align-items:center;justify-content:center;font-weight:700">A/B</div>'}
-        <h1>{title}</h1>
-        <div class="meta">Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}</div>
-      </div>
-      <div class="content">
-        <pre>{prd_text}</pre>
-      </div>
-    </body>
-    </html>
+def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -> Optional[bytes]:
     """
-    return html
+    Build a clean, multi-section PDF from a structured PRD dictionary using reportlab.
+    Returns PDF bytes or None if reportlab is unavailable.
+    Expected prd fields (recommended):
+      - goal (str)
+      - problem_statement (str)
+      - hypotheses (list of dicts {hypothesis, description})
+      - metrics (list of dicts {name, formula})
+      - segments (list of str)
+      - success_criteria (dict)
+      - effort (list of dicts {hypothesis, effort})
+      - team_involved (list of str)
+      - hypothesis_rationale (list of dicts {rationale})
+      - risks_and_assumptions (list of str)
+      - next_steps (list of str)
+      - statistical_rationale (str)
+    """
+    if not REPORTLAB_AVAILABLE:
+        return None
 
-
-def generate_pdf_bytes_from_text(prd_data, title="Experiment PRD"):
-    """
-    prd_data: dict containing the PRD content already parsed from AI output
-    """
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter,
-                            rightMargin=40, leftMargin=40,
-                            topMargin=50, bottomMargin=40)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
     styles = getSampleStyleSheet()
 
-    # Custom styles
-    styles.add(ParagraphStyle(name="PRDTitle", fontSize=20, leading=24, spaceAfter=20, alignment=1))
-    styles.add(ParagraphStyle(name="SectionHeading", fontSize=14, leading=18, spaceBefore=12, spaceAfter=6, fontName="Helvetica-Bold"))
-    styles.add(ParagraphStyle(name="BodyTextCustom", fontSize=11, leading=14))
-    styles.add(ParagraphStyle(name="BulletText", fontSize=11, leading=14, leftIndent=15, bulletIndent=5))
+    # Add custom styles
+    styles.add(ParagraphStyle(name="PRDTitle", fontSize=20, leading=24, spaceAfter=12, alignment=1))
+    styles.add(ParagraphStyle(name="SectionHeading", fontSize=13, leading=16, spaceBefore=12, spaceAfter=6, fontName="Helvetica-Bold"))
+    styles.add(ParagraphStyle(name="BodyTextCustom", fontSize=10.5, leading=14))
+    styles.add(ParagraphStyle(name="BulletText", fontSize=10.5, leading=14, leftIndent=12, bulletIndent=6))
 
-    story = []
+    story: List[Any] = []
 
-    # Optional logo
+    # Optional simple branding box
+    # Using a colored rectangle isn't as straightforward in platypus without flows; we'll include a small logo placeholder + title
     try:
-        from reportlab.platypus import Image
-        logo_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Google_2015_logo.svg/320px-Google_2015_logo.svg.png"
-        story.append(Image(logo_url, width=120, height=40))
+        # small colored box as an Image placeholder would be better with an actual file, skip if not available
+        story.append(Paragraph(title, styles["PRDTitle"]))
     except Exception:
-        pass
+        story.append(Paragraph(title, styles["PRDTitle"]))
 
-    # Title
-    story.append(Paragraph(title, styles["PRDTitle"]))
-
-    # Sections
-    def add_section(heading, content):
+    # helper to add sections
+    def add_paragraph(heading: str, content: Any):
         story.append(Paragraph(heading, styles["SectionHeading"]))
-        if isinstance(content, list):
+        if content is None:
+            return
+        if isinstance(content, str):
+            story.append(Paragraph(content, styles["BodyTextCustom"]))
+        elif isinstance(content, dict):
+            # render key: value lines
+            for k, v in content.items():
+                if v is None:
+                    continue
+                story.append(Paragraph(f"<b>{sanitize_text(str(k))}:</b> {sanitize_text(str(v))}", styles["BodyTextCustom"]))
+        elif isinstance(content, list):
+            # list of strings or dicts
             for item in content:
-                story.append(Paragraph(item, styles["BulletText"], bulletText="•"))
+                if isinstance(item, dict):
+                    # attempt to show dict as single line
+                    if "hypothesis" in item and "description" in item:
+                        txt = f"{sanitize_text(item.get('hypothesis',''))}"
+                        desc = sanitize_text(item.get("description",""))
+                        if desc:
+                            txt += f" — {desc}"
+                        story.append(Paragraph(txt, styles["BulletText"], bulletText="•"))
+                    elif "name" in item and "formula" in item:
+                        txt = f"{sanitize_text(item.get('name',''))}: {sanitize_text(item.get('formula',''))}"
+                        story.append(Paragraph(txt, styles["BulletText"], bulletText="•"))
+                    else:
+                        # generic rendering of dict
+                        story.append(Paragraph(json.dumps(item, ensure_ascii=False), styles["BulletText"], bulletText="•"))
+                else:
+                    story.append(Paragraph(sanitize_text(str(item)), styles["BulletText"], bulletText="•"))
         else:
-            story.append(Paragraph(str(content), styles["BodyTextCustom"]))
-        story.append(Spacer(1, 8))
+            # fallback
+            story.append(Paragraph(sanitize_text(str(content)), styles["BodyTextCustom"]))
+        story.append(Spacer(1, 6))
 
-    add_section("🎯 Goal", prd_data.get("goal", ""))
-    add_section("🧩 Problem Statement", prd_data.get("problem_statement", ""))
-    add_section("💡 Hypotheses", [f"{h['hypothesis']}: {h.get('description','')}" for h in prd_data.get("hypotheses", [])])
-    add_section("📊 Metrics", [f"{m['name']} — {m['formula']}" for m in prd_data.get("metrics", [])])
-    add_section("👥 Segments", prd_data.get("segments", []))
-    add_section("✅ Success Criteria", prd_data.get("success_criteria", {}))
-    add_section("⚙️ Effort", [f"{e['hypothesis']}: {e['effort']}" for e in prd_data.get("effort", [])])
-    add_section("🛠 Team Involved", prd_data.get("team_involved", []))
-    add_section("🔍 Hypothesis Rationale", [r['rationale'] for r in prd_data.get("hypothesis_rationale", [])])
-    add_section("⚠️ Risks & Assumptions", prd_data.get("risks_and_assumptions", []))
-    add_section("🚀 Next Steps", prd_data.get("next_steps", []))
-    add_section("📈 Statistical Rationale", prd_data.get("statistical_rationale", ""))
+    # Build sections in a professional order
+    add_paragraph("🎯 Goal", prd.get("goal", ""))
+    add_paragraph("🧩 Problem Statement", prd.get("problem_statement", ""))
+    add_paragraph("💡 Hypotheses", prd.get("hypotheses", []))
+    add_paragraph("📏 Metrics", prd.get("metrics", []))
+    add_paragraph("👥 Segments", prd.get("segments", []))
+    add_paragraph("✅ Success Criteria", [f"{k}: {v}" for k, v in (prd.get("success_criteria", {}) or {}).items()])
+    add_paragraph("⚙️ Effort", prd.get("effort", []))
+    add_paragraph("🧑‍💻 Team Involved", prd.get("team_involved", []))
+    add_paragraph("🔍 Hypothesis Rationale", prd.get("hypothesis_rationale", []))
+    add_paragraph("⚠️ Risks & Assumptions", prd.get("risks_and_assumptions", []))
+    add_paragraph("🚀 Next Steps", prd.get("next_steps", []))
+    add_paragraph("📈 Statistical Rationale", prd.get("statistical_rationale", ""))
+
+    # Footer timestamp
+    story.append(Spacer(1, 12))
+    story.append(Paragraph(f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}", styles["BodyTextCustom"]))
 
     doc.build(story)
-    pdf = buffer.getvalue()
+    buffer.seek(0)
+    pdf_bytes = buffer.getvalue()
     buffer.close()
-    return pdf
+    return pdf_bytes
 
 
 # -------------------------
@@ -801,7 +810,7 @@ if st.session_state.get("ai_parsed"):
                 with st.expander("Edit Next Steps"):
                     st.text_area("Next Steps (one per line)", value="\n".join(next_steps), key="editable_next_steps", height=120)
 
-            # Build final PRD string (gather edited inputs)
+            # Build final PRD structure (gather edited inputs)
             prd_parts = []
             prd_parts.append("# 🧪 Experiment PRD\n")
             prd_parts.append("## 🎯 Goal\n")
@@ -859,9 +868,8 @@ if st.session_state.get("ai_parsed"):
 
             prd_text = "\n".join(prd_parts)
 
-            # Show Final PRD preview (production-like)
+            # Final PRD preview (production-like)
             create_header_with_help("Final PRD Preview", "A clean, production-style preview suitable for interviews. Export to PDF or HTML.", icon="📄")
-            # Polished preview area (larger font)
             st.markdown(
                 f"""
                 <div style="padding:18px;border-radius:8px;background:white;">
@@ -881,24 +889,59 @@ if st.session_state.get("ai_parsed"):
                 unsafe_allow_html=True,
             )
 
-            # Download buttons: TXT, JSON, HTML, PDF (if available)
+            # Build structured PRD dict for export (used by PDF generator)
+            prd_dict: Dict[str, Any] = {
+                "goal": goal_with_units,
+                "problem_statement": st.session_state.get("editable_problem", problem_statement),
+                "hypotheses": [],
+                "metrics": [],
+                "segments": (st.session_state.get("editable_segments") or "\n".join(segments) if segments else "").splitlines() if (st.session_state.get("editable_segments") or segments) else [],
+                "success_criteria": criteria_display or {},
+                "effort": raw_efforts if raw_efforts else [],
+                "team_involved": plan.get("team_involved", []),
+                "hypothesis_rationale": raw_rationales if raw_rationales else [],
+                "risks_and_assumptions": (st.session_state.get("editable_risks") or "\n".join(risks) if risks else "").splitlines() if (st.session_state.get("editable_risks") or risks) else [],
+                "next_steps": (st.session_state.get("editable_next_steps") or "\n".join(next_steps) if next_steps else "").splitlines() if (st.session_state.get("editable_next_steps") or next_steps) else [],
+                "statistical_rationale": statistical_rationale_display,
+            }
+
+            # populate hypotheses list (respect original items and edited hypothesis)
+            for i_h, h in enumerate(hypotheses):
+                if isinstance(h, dict):
+                    ph = {"hypothesis": h.get("hypothesis", ""), "description": h.get("description", "")}
+                else:
+                    ph = {"hypothesis": sanitize_text(h), "description": ""}
+                # replace the selected hypothesis text if edited
+                if i_h == idx:
+                    ph["hypothesis"] = st.session_state.get("editable_hypothesis", ph["hypothesis"])
+                    ph["description"] = st.session_state.get("editable_rationale", ph.get("description", ""))
+                prd_dict["hypotheses"].append(ph)
+
+            # populate metrics list
+            if metrics and isinstance(metrics, list):
+                for mi, orig_m in enumerate(metrics):
+                    name = st.session_state.get(f"metric_name_{mi}") or (orig_m.get("name") if isinstance(orig_m, dict) else sanitize_text(orig_m))
+                    formula = st.session_state.get(f"metric_formula_{mi}") or (orig_m.get("formula") if isinstance(orig_m, dict) else "")
+                    prd_dict["metrics"].append({"name": name, "formula": formula})
+
+            # Download buttons: TXT, JSON, HTML, PDF
             col_dl1, col_dl2, col_dl3, col_dl4 = st.columns([1,1,1,1])
             with col_dl1:
                 st.download_button("📄 Download PRD (.txt)", prd_text, file_name="experiment_prd.txt")
             with col_dl2:
-                st.download_button("📥 Download Plan (.json)", json.dumps(plan, indent=2, ensure_ascii=False), file_name="experiment_plan.json")
+                st.download_button("📥 Download Plan (.json)", json.dumps(prd_dict, indent=2, ensure_ascii=False), file_name="experiment_plan.json")
             with col_dl3:
-                html_blob = build_prd_html("Experiment PRD", prd_text)
+                html_blob = f"<!doctype html><html><body><pre>{sanitize_text(prd_text)}</pre></body></html>"
                 st.download_button("🌐 Download PRD (.html)", html_blob, file_name="experiment_prd.html")
             with col_dl4:
                 if REPORTLAB_AVAILABLE:
-                    pdf_bytes = generate_pdf_bytes_from_text(prd_text, title="Experiment PRD")
+                    pdf_bytes = generate_pdf_bytes_from_prd_dict(prd_dict, title="Experiment PRD")
                     if pdf_bytes:
                         st.download_button("📁 Download PRD (.pdf)", pdf_bytes, file_name="experiment_prd.pdf", mime="application/pdf")
                     else:
-                        st.warning("PDF generation currently failed — try HTML download.")
+                        st.warning("PDF generation currently failed — try HTML or TXT download.")
                 else:
-                    st.info("PDF export requires 'reportlab'. Click HTML or TXT to download. To enable PDF, `pip install reportlab`.")
+                    st.info("PDF export requires 'reportlab'. To enable PDF, add 'reportlab' to requirements.txt and redeploy.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
