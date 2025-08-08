@@ -13,6 +13,7 @@ import hashlib
 import io
 from datetime import datetime
 from io import BytesIO
+import ast
 
 # reportlab imports (optional) — used for PDF export
 REPORTLAB_AVAILABLE = False
@@ -62,8 +63,10 @@ def safe_display(text: Any, method=st.info):
 
 
 def _extract_json_first_braces(text: str) -> Optional[str]:
+    """Find the first balanced {...} block in text and return it."""
     if not isinstance(text, str):
         return None
+    # prefer explicit <json> tags
     tag_match = re.search(r"<json>([\s\S]+?)</json>", text, re.IGNORECASE)
     if tag_match:
         return tag_match.group(1).strip()
@@ -83,14 +86,37 @@ def _extract_json_first_braces(text: str) -> Optional[str]:
     return None
 
 
+def _safe_single_to_double_quotes(s: str) -> str:
+    """
+    Conservative attempt to convert single-quoted JSON-like text to double-quoted JSON.
+    This is a last resort and not guaranteed to work for all cases.
+    """
+    # Replace things that look like Python dict strings: 'key': 'value' -> "key": "value"
+    # But avoid touching apostrophes inside words by only replacing quote patterns around word chars / spaces / punctuation.
+    s = re.sub(r"(?<=[:\{\[,]\s*)'([^']*?)'(?=\s*[,}\]])", r'"\1"', s)  # values
+    s = re.sub(r"'([A-Za-z0-9_ -]+?)'\s*:", r'"\1":', s)  # keys
+    return s
+
+
 def extract_json(text: Any) -> Optional[Dict]:
+    """
+    Robust attempt to parse JSON from a variety of LLM outputs.
+    Tries in order:
+      1. json.loads(raw)
+      2. ast.literal_eval(raw)  (handles Python dict/list syntax)
+      3. extract first {...} balanced substring and parse it (json or ast)
+      4. attempt safe single->double quote conversion and json.loads
+    On failure, shows helpful error and a snippet in the UI.
+    """
     if text is None:
         st.error("No output returned from LLM.")
         return None
 
+    # If it's already a dict, return
     if isinstance(text, dict):
         return text
 
+    # If it's a list at top-level, warn (we expect object)
     if isinstance(text, list):
         st.error("LLM returned a JSON list when an object was expected.")
         return None
@@ -101,7 +127,7 @@ def extract_json(text: Any) -> Optional[Dict]:
         st.error(f"Unexpected LLM output type: {e}")
         return None
 
-    # Try direct parse
+    # STEP 1: try direct JSON parse
     try:
         parsed = json.loads(raw)
         if isinstance(parsed, dict):
@@ -112,30 +138,72 @@ def extract_json(text: Any) -> Optional[Dict]:
     except Exception:
         pass
 
+    # STEP 2: try ast.literal_eval (handles Python dict style)
+    try:
+        parsed_ast = ast.literal_eval(raw)
+        if isinstance(parsed_ast, dict):
+            return parsed_ast
+        # if ast returns a list, reject (we expect dict)
+        if isinstance(parsed_ast, list):
+            st.error("LLM returned a top-level list (via ast). Expected an object.")
+            return None
+    except Exception:
+        pass
+
+    # STEP 3: extract first balanced braces substring and try parsing that
     candidate = _extract_json_first_braces(raw)
     if candidate:
-        candidate_clean = re.sub(r',\s*,', ',', candidate)
+        candidate_clean = candidate
+        # remove surrounding markdown/code fences if present
+        candidate_clean = re.sub(r"^```(?:json)?\s*", "", candidate_clean).strip()
+        candidate_clean = re.sub(r"\s*```$", "", candidate_clean).strip()
+        # fix common artifacts
+        candidate_clean = re.sub(r',\s*,', ',', candidate_clean)
         candidate_clean = re.sub(r',\s*\}', '}', candidate_clean)
         candidate_clean = re.sub(r',\s*\]', ']', candidate_clean)
-        candidate_clean = re.sub(r"^```(?:json)?", "", candidate_clean).strip()
-        candidate_clean = re.sub(r"```$", "", candidate_clean).strip()
 
+        # try json.loads
         try:
             parsed = json.loads(candidate_clean)
             if isinstance(parsed, dict):
                 return parsed
             else:
-                st.error("Extracted JSON is not an object.")
-                st.code(candidate_clean[:1000] + ("..." if len(candidate_clean) > 1000 else ""))
+                st.error("Extracted JSON parsed but was not an object.")
+                st.code(candidate_clean[:2000] + ("..." if len(candidate_clean) > 2000 else ""))
                 return None
-        except json.JSONDecodeError as e:
-            st.error(f"Could not parse JSON from LLM output: {e}")
-            st.code(candidate_clean[:1000] + ("..." if len(candidate_clean) > 1000 else ""))
-            return None
+        except Exception:
+            # try ast.literal_eval on candidate
+            try:
+                parsed_ast = ast.literal_eval(candidate_clean)
+                if isinstance(parsed_ast, dict):
+                    return parsed_ast
+            except Exception:
+                # try last-resort single->double quote conversion then json.loads
+                try:
+                    converted = _safe_single_to_double_quotes(candidate_clean)
+                    parsed = json.loads(converted)
+                    if isinstance(parsed, dict):
+                        return parsed
+                except Exception:
+                    # fall through to error display below
+                    st.error("Could not parse extracted JSON block. See snippet below.")
+                    st.code(candidate_clean[:2000] + ("..." if len(candidate_clean) > 2000 else ""))
+                    return None
 
+    # STEP 4: Attempt a conservative single-to-double quote conversion on the full raw text
+    try:
+        converted_full = _safe_single_to_double_quotes(raw)
+        parsed = json.loads(converted_full)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+
+    # If all attempts fail, show helpful error + snippet
     st.error("LLM output could not be parsed as JSON. Please inspect or edit the raw output below.")
     try:
-        st.code(raw[:2000] + ("..." if len(raw) > 2000 else ""))
+        # show a truncated snippet to help debugging
+        st.code(raw[:3000] + ("..." if len(raw) > 3000 else ""))
     except Exception:
         st.write("LLM output could not be displayed.")
     return None
@@ -230,19 +298,6 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     """
     Build a clean, multi-section PDF from a structured PRD dictionary using reportlab.
     Returns PDF bytes or None if reportlab is unavailable.
-    Expected prd fields (recommended):
-      - goal (str)
-      - problem_statement (str)
-      - hypotheses (list of dicts {hypothesis, description})
-      - metrics (list of dicts {name, formula})
-      - segments (list of str)
-      - success_criteria (dict)
-      - effort (list of dicts {hypothesis, effort})
-      - team_involved (list of str)
-      - hypothesis_rationale (list of dicts {rationale})
-      - risks_and_assumptions (list of str)
-      - next_steps (list of str)
-      - statistical_rationale (str)
     """
     if not REPORTLAB_AVAILABLE:
         return None
@@ -259,32 +314,22 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
 
     story: List[Any] = []
 
-    # Optional simple branding box
-    # Using a colored rectangle isn't as straightforward in platypus without flows; we'll include a small logo placeholder + title
-    try:
-        # small colored box as an Image placeholder would be better with an actual file, skip if not available
-        story.append(Paragraph(title, styles["PRDTitle"]))
-    except Exception:
-        story.append(Paragraph(title, styles["PRDTitle"]))
+    story.append(Paragraph(title, styles["PRDTitle"]))
 
-    # helper to add sections
     def add_paragraph(heading: str, content: Any):
         story.append(Paragraph(heading, styles["SectionHeading"]))
         if content is None:
             return
         if isinstance(content, str):
-            story.append(Paragraph(content, styles["BodyTextCustom"]))
+            story.append(Paragraph(sanitize_text(content), styles["BodyTextCustom"]))
         elif isinstance(content, dict):
-            # render key: value lines
             for k, v in content.items():
                 if v is None:
                     continue
                 story.append(Paragraph(f"<b>{sanitize_text(str(k))}:</b> {sanitize_text(str(v))}", styles["BodyTextCustom"]))
         elif isinstance(content, list):
-            # list of strings or dicts
             for item in content:
                 if isinstance(item, dict):
-                    # attempt to show dict as single line
                     if "hypothesis" in item and "description" in item:
                         txt = f"{sanitize_text(item.get('hypothesis',''))}"
                         desc = sanitize_text(item.get("description",""))
@@ -295,16 +340,14 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
                         txt = f"{sanitize_text(item.get('name',''))}: {sanitize_text(item.get('formula',''))}"
                         story.append(Paragraph(txt, styles["BulletText"], bulletText="•"))
                     else:
-                        # generic rendering of dict
                         story.append(Paragraph(json.dumps(item, ensure_ascii=False), styles["BulletText"], bulletText="•"))
                 else:
                     story.append(Paragraph(sanitize_text(str(item)), styles["BulletText"], bulletText="•"))
         else:
-            # fallback
             story.append(Paragraph(sanitize_text(str(content)), styles["BodyTextCustom"]))
         story.append(Spacer(1, 6))
 
-    # Build sections in a professional order
+    # Build sections
     add_paragraph("🎯 Goal", prd.get("goal", ""))
     add_paragraph("🧩 Problem Statement", prd.get("problem_statement", ""))
     add_paragraph("💡 Hypotheses", prd.get("hypotheses", []))
@@ -318,7 +361,6 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     add_paragraph("🚀 Next Steps", prd.get("next_steps", []))
     add_paragraph("📈 Statistical Rationale", prd.get("statistical_rationale", ""))
 
-    # Footer timestamp
     story.append(Spacer(1, 12))
     story.append(Paragraph(f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}", styles["BodyTextCustom"]))
 
