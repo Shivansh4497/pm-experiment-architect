@@ -12,6 +12,10 @@ import numpy as np
 import hashlib
 import io
 from datetime import datetime
+from io import BytesIO
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.pagesizes import letter
 
 # Try to import reportlab for PDF export; we'll gracefully fall back if missing.
 REPORTLAB_AVAILABLE = False
@@ -258,37 +262,62 @@ def build_prd_html(title: str, prd_text: str, logo_svg: Optional[str] = None) ->
     return html
 
 
-def generate_pdf_bytes_from_text(prd_text: str, title: str = "Experiment PRD") -> Optional[bytes]:
+def generate_pdf_bytes_from_text(prd_data, title="Experiment PRD"):
     """
-    Produces a simple single-column PDF using reportlab if available.
-    Returns bytes or None if reportlab isn't installed.
+    prd_data: dict containing the PRD content already parsed from AI output
     """
-    if not REPORTLAB_AVAILABLE:
-        return None
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter,
+                            rightMargin=40, leftMargin=40,
+                            topMargin=50, bottomMargin=40)
+    styles = getSampleStyleSheet()
 
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
-    # simple header
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(72, height - 72, title)
-    c.setFont("Helvetica", 10)
-    c.drawString(72, height - 90, f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
-    textobject = c.beginText(72, height - 120)
-    textobject.setFont("Helvetica", 10)
-    # wrap lines to page width (approx)
-    max_chars = 95
-    for line in prd_text.splitlines():
-        # break long lines
-        while len(line) > max_chars:
-            textobject.textLine(line[:max_chars])
-            line = line[max_chars:]
-        textobject.textLine(line)
-    c.drawText(textobject)
-    c.showPage()
-    c.save()
-    buffer.seek(0)
-    return buffer.read()
+    # Custom styles
+    styles.add(ParagraphStyle(name="PRDTitle", fontSize=20, leading=24, spaceAfter=20, alignment=1))
+    styles.add(ParagraphStyle(name="SectionHeading", fontSize=14, leading=18, spaceBefore=12, spaceAfter=6, fontName="Helvetica-Bold"))
+    styles.add(ParagraphStyle(name="BodyTextCustom", fontSize=11, leading=14))
+    styles.add(ParagraphStyle(name="BulletText", fontSize=11, leading=14, leftIndent=15, bulletIndent=5))
+
+    story = []
+
+    # Optional logo
+    try:
+        from reportlab.platypus import Image
+        logo_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Google_2015_logo.svg/320px-Google_2015_logo.svg.png"
+        story.append(Image(logo_url, width=120, height=40))
+    except Exception:
+        pass
+
+    # Title
+    story.append(Paragraph(title, styles["PRDTitle"]))
+
+    # Sections
+    def add_section(heading, content):
+        story.append(Paragraph(heading, styles["SectionHeading"]))
+        if isinstance(content, list):
+            for item in content:
+                story.append(Paragraph(item, styles["BulletText"], bulletText="•"))
+        else:
+            story.append(Paragraph(str(content), styles["BodyTextCustom"]))
+        story.append(Spacer(1, 8))
+
+    add_section("🎯 Goal", prd_data.get("goal", ""))
+    add_section("🧩 Problem Statement", prd_data.get("problem_statement", ""))
+    add_section("💡 Hypotheses", [f"{h['hypothesis']}: {h.get('description','')}" for h in prd_data.get("hypotheses", [])])
+    add_section("📊 Metrics", [f"{m['name']} — {m['formula']}" for m in prd_data.get("metrics", [])])
+    add_section("👥 Segments", prd_data.get("segments", []))
+    add_section("✅ Success Criteria", prd_data.get("success_criteria", {}))
+    add_section("⚙️ Effort", [f"{e['hypothesis']}: {e['effort']}" for e in prd_data.get("effort", [])])
+    add_section("🛠 Team Involved", prd_data.get("team_involved", []))
+    add_section("🔍 Hypothesis Rationale", [r['rationale'] for r in prd_data.get("hypothesis_rationale", [])])
+    add_section("⚠️ Risks & Assumptions", prd_data.get("risks_and_assumptions", []))
+    add_section("🚀 Next Steps", prd_data.get("next_steps", []))
+    add_section("📈 Statistical Rationale", prd_data.get("statistical_rationale", ""))
+
+    doc.build(story)
+    pdf = buffer.getvalue()
+    buffer.close()
+    return pdf
 
 
 # -------------------------
