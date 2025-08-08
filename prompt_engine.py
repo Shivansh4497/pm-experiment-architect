@@ -1,10 +1,28 @@
-def generate_experiment_plan(goal, context):
-    import streamlit as st
-    from groq import Groq
-    import os
+# prompt_engine.py
 
-    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+import streamlit as st
+from groq import Groq
+import os
 
+def generate_experiment_plan(goal, context, api_key):
+    """
+    Generates a detailed A/B test plan in JSON format based on a product goal and context.
+
+    Args:
+        goal (str): The high-level product goal that the experiment should address.
+        context (dict): A dictionary containing detailed context for the experiment.
+        api_key (str): The Groq API key for authentication.
+
+    Returns:
+        str: A string containing the A/B test plan in JSON format.
+    """
+    if not api_key:
+        st.error("Groq API Key is missing. Please provide it in the sidebar.")
+        return None
+
+    client = Groq(api_key=api_key)
+
+    # Prepare context variables for the prompt
     unit = context.get("metric_unit", "")
     context["expected_lift_with_unit"] = f"{context['expected_lift']}{unit}"
     context["mde_with_unit"] = f"{context['minimum_detectable_effect']}%"
@@ -13,6 +31,7 @@ def generate_experiment_plan(goal, context):
     metric_type = context.get('metric_type', 'Conversion Rate')
     std_dev = context.get('std_dev', None)
     
+    # The main prompt sent to the LLM
     prompt = f"""
 You are an expert product manager. Your primary objective is to generate an A/B test plan that directly supports the following high-level business objective:
 High-level business objective: {strategic_goal}
@@ -72,6 +91,7 @@ Return a JSON with the following keys:
 - JSON must start with {{ and end with }}. Must be parsable.
     """
 
+    # API call to Groq
     response = client.chat.completions.create(
         model="llama3-70b-8192",
         messages=[
@@ -81,4 +101,5 @@ Return a JSON with the following keys:
         temperature=0.4,
     )
 
+    # Return the cleaned response content
     return response.choices[0].message.content.strip()
