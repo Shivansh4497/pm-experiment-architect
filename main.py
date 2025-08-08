@@ -270,7 +270,7 @@ st.markdown("Use Groq + LLMs to design smarter experiments from fuzzy product go
 
 if st.button("🔄 Start Over"):
     st.session_state.clear()
-    st.experimental_rerun()
+    st.rerun()
 
 # --- Product Context ---
 st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
@@ -513,7 +513,7 @@ if "output" in st.session_state:
                     "estimated_test_duration": f"{st.session_state.calculated_duration_days:,.0f} days",
                 }
                 st.success("Calculator values locked and will be used in the plan below!")
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("Cannot lock values. Please ensure the calculator has successfully generated results.")
 
@@ -566,7 +566,7 @@ if "output" in st.session_state:
                         # leave existing MDE
                         pass
                     st.session_state.calculate_now = True
-                    st.experimental_rerun()
+                    st.rerun()
 
         # If user selected one hypothesis earlier, show details
         if st.session_state.get("hypothesis_confirmed") and st.session_state.get("selected_index") is not None:
