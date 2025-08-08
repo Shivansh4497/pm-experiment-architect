@@ -1,14 +1,28 @@
-# main.py — AI A/B Test Architect (polished UI + robust parsing)
+# main.py — AI A/B Test Architect (polished UI + robust parsing + PDF export + structured metric editor)
 import streamlit as st
 import json
 import re
 import os
-from typing import Any, Dict, Optional, Tuple
+import pandas as pd
+from typing import Any, Dict, Optional, Tuple, List
 from prompt_engine import generate_experiment_plan
 from statsmodels.stats.power import NormalIndPower, TTestIndPower
 from statsmodels.stats.proportion import proportion_effectsize
 import numpy as np
 import hashlib
+import io
+from datetime import datetime
+
+# Try to import reportlab for PDF export; we'll gracefully fall back if missing.
+REPORTLAB_AVAILABLE = False
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    from reportlab.pdfgen import canvas
+
+    REPORTLAB_AVAILABLE = True
+except Exception:
+    REPORTLAB_AVAILABLE = False
 
 # -------------------------
 # Helpers / Utilities
@@ -46,18 +60,12 @@ def safe_display(text: Any, method=st.info):
 
 
 def _extract_json_first_braces(text: str) -> Optional[str]:
-    """
-    Attempt to extract the most plausible JSON object substring from text by finding first '{' and matching '}'.
-    This handles cases where the model returns extra commentary before/after JSON.
-    """
     if not isinstance(text, str):
         return None
-    # Try <json> ... </json> tags first
     tag_match = re.search(r"<json>([\s\S]+?)</json>", text, re.IGNORECASE)
     if tag_match:
         return tag_match.group(1).strip()
 
-    # Try to find the first `{` and find a matching `}` by scanning.
     start = text.find("{")
     if start == -1:
         return None
@@ -74,10 +82,6 @@ def _extract_json_first_braces(text: str) -> Optional[str]:
 
 
 def extract_json(text: Any) -> Optional[Dict]:
-    """
-    Robust attempt to parse JSON from a variety of LLM outputs.
-    Returns a dict on success, otherwise None and shows errors in the UI.
-    """
     if text is None:
         st.error("No output returned from LLM.")
         return None
@@ -89,14 +93,13 @@ def extract_json(text: Any) -> Optional[Dict]:
         st.error("LLM returned a JSON list when an object was expected.")
         return None
 
-    # Convert to string
     try:
         raw = str(text)
     except Exception as e:
         st.error(f"Unexpected LLM output type: {e}")
         return None
 
-    # Try direct json.loads first
+    # Try direct parse
     try:
         parsed = json.loads(raw)
         if isinstance(parsed, dict):
@@ -107,14 +110,11 @@ def extract_json(text: Any) -> Optional[Dict]:
     except Exception:
         pass
 
-    # Try to extract a JSON substring heuristically
     candidate = _extract_json_first_braces(raw)
     if candidate:
-        # Clean common artifacts
-        candidate_clean = re.sub(r',\s*,', ',', candidate)  # double commas
+        candidate_clean = re.sub(r',\s*,', ',', candidate)
         candidate_clean = re.sub(r',\s*\}', '}', candidate_clean)
         candidate_clean = re.sub(r',\s*\]', ']', candidate_clean)
-        # Remove leading/trailing code fences
         candidate_clean = re.sub(r"^```(?:json)?", "", candidate_clean).strip()
         candidate_clean = re.sub(r"```$", "", candidate_clean).strip()
 
@@ -131,7 +131,6 @@ def extract_json(text: Any) -> Optional[Dict]:
             st.code(candidate_clean[:1000] + ("..." if len(candidate_clean) > 1000 else ""))
             return None
 
-    # Last resort: show raw output and let the user edit
     st.error("LLM output could not be parsed as JSON. Please inspect or edit the raw output below.")
     try:
         st.code(raw[:2000] + ("..." if len(raw) > 2000 else ""))
@@ -152,7 +151,6 @@ def post_process_llm_text(text: Any, unit: str) -> str:
 
 def format_value_with_unit(value: Any, unit: str) -> str:
     try:
-        # keep numeric formatting tidy
         if isinstance(value, (int, float)):
             if float(value).is_integer():
                 v_str = str(int(value))
@@ -173,16 +171,6 @@ def format_value_with_unit(value: Any, unit: str) -> str:
 def calculate_sample_size(
     baseline, mde, alpha, power, num_variants, metric_type, std_dev=None
 ) -> Tuple[Optional[int], Optional[int]]:
-    """
-    Returns (sample_size_per_variant, total_sample_size) or (None, None) on error.
-    baseline: numeric baseline (if percent metric, pass percent value, e.g. 5 for 5%)
-    mde: percent (e.g. 5 for 5%)
-    alpha: significance level (e.g. 0.05)
-    power: desired power as fraction (e.g. 0.8)
-    num_variants: integer (number of variants including control)
-    metric_type: 'Conversion Rate' or 'Numeric Value'
-    std_dev: required for numeric
-    """
     try:
         if baseline is None or mde is None:
             return None, None
@@ -234,6 +222,76 @@ def calculate_sample_size(
 
 
 # -------------------------
+# PDF / Export helpers
+# -------------------------
+def build_prd_html(title: str, prd_text: str, logo_svg: Optional[str] = None) -> str:
+    # Basic HTML wrapper with nicer styling for preview/export
+    html = f"""
+    <!doctype html>
+    <html>
+    <head>
+      <meta charset="utf-8"/>
+      <title>{title}</title>
+      <style>
+        body {{ font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial; padding: 40px; color: #1b1b1b; }}
+        .logo {{ width: 120px; }}
+        h1 {{ font-size: 28px; margin-bottom: 6px; }}
+        h2 {{ font-size: 20px; margin-top: 18px; }}
+        p, li {{ font-size: 14px; line-height: 1.45; }}
+        pre {{ white-space: pre-wrap; font-family: inherit; }}
+        .meta {{ color: #666; margin-bottom: 20px; }}
+        .section {{ margin-bottom: 18px; }}
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        {logo_svg or '<div style="width:120px;height:40px;background:#1E90FF;border-radius:6px;color:white;display:flex;align-items:center;justify-content:center;font-weight:700">A/B</div>'}
+        <h1>{title}</h1>
+        <div class="meta">Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}</div>
+      </div>
+      <div class="content">
+        <pre>{prd_text}</pre>
+      </div>
+    </body>
+    </html>
+    """
+    return html
+
+
+def generate_pdf_bytes_from_text(prd_text: str, title: str = "Experiment PRD") -> Optional[bytes]:
+    """
+    Produces a simple single-column PDF using reportlab if available.
+    Returns bytes or None if reportlab isn't installed.
+    """
+    if not REPORTLAB_AVAILABLE:
+        return None
+
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    # simple header
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(72, height - 72, title)
+    c.setFont("Helvetica", 10)
+    c.drawString(72, height - 90, f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    textobject = c.beginText(72, height - 120)
+    textobject.setFont("Helvetica", 10)
+    # wrap lines to page width (approx)
+    max_chars = 95
+    for line in prd_text.splitlines():
+        # break long lines
+        while len(line) > max_chars:
+            textobject.textLine(line[:max_chars])
+            line = line[max_chars:]
+        textobject.textLine(line)
+    c.drawText(textobject)
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+    return buffer.read()
+
+
+# -------------------------
 # Page Setup & Styling
 # -------------------------
 st.set_page_config(page_title="A/B Test Architect", layout="wide")
@@ -243,6 +301,7 @@ st.markdown(
 .blue-section {background-color: #f6f9ff; padding: 18px; border-radius: 8px; margin-bottom: 18px;}
 .green-section {background-color: #f7fff7; padding: 18px; border-radius: 8px; margin-bottom: 18px;}
 .section-title {font-size: 1.1rem; font-weight: 600; color: #1E90FF; margin-bottom: 8px;}
+.small-muted { color: #7a7a7a; font-size: 13px; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -270,7 +329,7 @@ if "last_llm_hash" not in st.session_state:
     st.session_state.last_llm_hash = None
 
 # -------------------------
-# INPUTS: Business Context (left column priority)
+# INPUTS: Business Context
 # -------------------------
 st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
 create_header_with_help(
@@ -340,7 +399,6 @@ with col_unit:
         "Metric Unit", ["%", "USD", "minutes", "count", "other"], index=0, help="Choose the unit for clarity."
     )
 with col_values:
-    # Use number inputs to avoid string parsing errors
     if metric_unit == "%":
         current_value = st.number_input("Current Metric Value *", min_value=0.0, step=0.01, format="%.2f")
         target_value = st.number_input("Target Metric Value *", min_value=0.0, step=0.01, format="%.2f")
@@ -367,18 +425,16 @@ if current_value == target_value:
 st.markdown("</div>", unsafe_allow_html=True)
 
 # -------------------------
-# GENERATE PLAN AREA — green section
+# GENERATE PLAN AREA
 # -------------------------
 st.markdown("<div class='green-section'>", unsafe_allow_html=True)
 create_header_with_help("Generate Experiment Plan", "When ready, click Generate to call the LLM and create a plan.", icon="🧠")
 
-# Build goal string (human readable)
 formatted_current = format_value_with_unit(current_value, metric_unit)
 formatted_target = format_value_with_unit(target_value, metric_unit)
 sanitized_metric_name = sanitize_text(exact_metric)
 goal_with_units = f"I want to improve {sanitized_metric_name} from {formatted_current} to {formatted_target}."
 
-# Generate button is disabled until required inputs are present and valid
 required_ok = all(
     [
         product_type,
@@ -392,7 +448,6 @@ required_ok = all(
 generate_btn = st.button("Generate Plan", disabled=not required_ok)
 
 if generate_btn:
-    # Compose the context dict the LLM expects
     context = {
         "type": product_type,
         "users": user_base_choice,
@@ -410,15 +465,12 @@ if generate_btn:
         "std_dev": std_dev,
     }
 
-    # Call the LLM and parse safely
     with st.spinner("Generating your plan..."):
         try:
             raw_llm = generate_experiment_plan(goal_with_units, context)
-            # store raw string for inspection
             st.session_state.output = raw_llm if raw_llm is not None else ""
             parsed = extract_json(raw_llm)
             st.session_state.ai_parsed = parsed
-            # compute hash of the LLM output for caching/traceability
             try:
                 h = hashlib.sha256((str(raw_llm) or "").encode("utf-8")).hexdigest()
                 st.session_state.last_llm_hash = h
@@ -436,12 +488,11 @@ if generate_btn:
 st.markdown("</div>", unsafe_allow_html=True)
 
 # -------------------------
-# Calculator (Sample size) Section — shown when there's a plan or context
+# Calculator (Sample size)
 # -------------------------
 if st.session_state.get("ai_parsed") is not None or st.session_state.get("output"):
     st.markdown("<hr>", unsafe_allow_html=True)
     with st.expander("🔢 A/B Test Calculator: Fine-tune sample size", expanded=True):
-        # Prefill calculator values from session or defaults
         calc_mde = st.session_state.get("calc_mde", st.session_state.get("ai_parsed", {}).get("success_criteria", {}).get("MDE", 5.0) if st.session_state.get("ai_parsed") else 5.0)
         calc_conf = st.session_state.get("calc_confidence", 95)
         calc_power = st.session_state.get("calc_power", 80)
@@ -485,13 +536,11 @@ if st.session_state.get("ai_parsed") is not None or st.session_state.get("output
             st.session_state.calculated_sample_size_per_variant = sample_per_variant
             st.session_state.calculated_total_sample_size = total_sample
 
-            # map user_base_choice to numeric DAU estimate
             dau_map = {"< 10K": 5000, "10K–100K": 50000, "100K–1M": 500000, "> 1M": 2000000}
             dau = dau_map.get(user_base_choice, 10000)
             users_to_test = st.session_state.calculated_total_sample_size or 0
             st.session_state.calculated_duration_days = (users_to_test / dau) if dau > 0 else float("inf")
 
-        # Display results if present
         if st.session_state.get("calculated_sample_size_per_variant") and st.session_state.get("calculated_total_sample_size"):
             st.markdown("---")
             st.metric("Users Per Variant", f"{st.session_state.calculated_sample_size_per_variant:,} users")
@@ -518,22 +567,29 @@ if st.session_state.get("ai_parsed") is not None or st.session_state.get("output
 st.markdown("<hr>", unsafe_allow_html=True)
 
 # -------------------------
-# DISPLAY AI-GENERATED PLAN (editable + final view)
+# DISPLAY AI-GENERATED PLAN (editable + final view + structured metric editor)
 # -------------------------
 if st.session_state.get("ai_parsed") is None and st.session_state.get("output"):
     st.info("AI returned output but parsing failed. Edit raw output in the Raw JSON tab to fix the parse or try regenerating.")
 
 if st.session_state.get("ai_parsed"):
     plan = st.session_state.ai_parsed
-    unit = st.session_state.get("context", {}).get("metric_unit", metric_unit) if st.session_state.get("context") else metric_unit
+    # store context locally for easy access
+    st.session_state.context = st.session_state.get("context", {
+        "metric_unit": metric_unit
+    })
+
+    unit = st.session_state.context.get("metric_unit", metric_unit)
 
     st.markdown("<div class='green-section'>", unsafe_allow_html=True)
     create_header_with_help("Inferred Product Goal", "The AI's interpretation of your goal. Edit if needed.", icon="🎯")
-    safe_display(post_process_llm_text(goal_with_units, unit))
+    st.markdown(f"**Goal:** {post_process_llm_text(goal_with_units, unit)}")
 
     create_header_with_help("Problem Statement", "Clear description of the gap and why it matters.", icon="🧩")
     problem_statement = post_process_llm_text(plan.get("problem_statement", ""), unit)
-    st.text_area("Problem Statement", value=problem_statement, key="editable_problem", height=120)
+    st.markdown(problem_statement or "⚠️ Problem statement not generated by the model.")
+    with st.expander("Edit Problem Statement"):
+        st.text_area("Problem Statement (edit)", value=problem_statement, key="editable_problem", height=160)
 
     create_header_with_help("Hypotheses", "Editable list of testable hypotheses.", icon="🧪")
     hypotheses = plan.get("hypotheses", [])
@@ -541,7 +597,6 @@ if st.session_state.get("ai_parsed"):
         st.warning("No hypotheses found in the generated plan.")
         hypotheses = []
 
-    # show hypotheses with Select buttons
     for i, h in enumerate(hypotheses):
         if isinstance(h, dict):
             hypo_text = sanitize_text(h.get("hypothesis") or h.get("description") or json.dumps(h))
@@ -553,7 +608,6 @@ if st.session_state.get("ai_parsed"):
             st.session_state.selected_index = i
             st.session_state.hypothesis_confirmed = True
             st.session_state.calc_locked = False
-            # try to pull MDE suggested by LLM
             try:
                 llm_mde = plan.get("success_criteria", {}).get("MDE", st.session_state.get("calc_mde", 5.0))
                 st.session_state.calc_mde = float(llm_mde)
@@ -561,17 +615,15 @@ if st.session_state.get("ai_parsed"):
                 pass
             st.rerun()
 
-    # If a hypothesis has been selected, present detailed editable fields
+    # If selected, show details
     if st.session_state.get("hypothesis_confirmed") and st.session_state.get("selected_index") is not None:
         idx = st.session_state.selected_index
         if idx < 0 or idx >= len(hypotheses):
             st.error("Selected hypothesis index out of range.")
         else:
-            # Normalize objects
             h_obj = hypotheses[idx] if isinstance(hypotheses[idx], dict) else {"hypothesis": hypotheses[idx]}
             selected_hypo = sanitize_text(h_obj.get("hypothesis", "N/A"))
 
-            # Rationale
             raw_rationales = plan.get("hypothesis_rationale", [])
             rationale = "N/A"
             if isinstance(raw_rationales, list) and idx < len(raw_rationales):
@@ -581,7 +633,6 @@ if st.session_state.get("ai_parsed"):
                 else:
                     rationale = sanitize_text(r_item)
 
-            # variants
             raw_variants = plan.get("variants", [])
             control = "Not specified"
             variation = "Not specified"
@@ -593,7 +644,6 @@ if st.session_state.get("ai_parsed"):
                 else:
                     variation = sanitize_text(v)
 
-            # effort
             raw_efforts = plan.get("effort", [])
             effort_display = "N/A"
             if isinstance(raw_efforts, list) and idx < len(raw_efforts):
@@ -603,7 +653,6 @@ if st.session_state.get("ai_parsed"):
                 else:
                     effort_display = sanitize_text(e)
 
-            # Criteria (may use locked stats)
             if st.session_state.get("calc_locked", False):
                 criteria_display = st.session_state.get("locked_stats", {})
             else:
@@ -619,7 +668,6 @@ if st.session_state.get("ai_parsed"):
                 or "The experiment is designed with a specified MDE, confidence level, and power to detect meaningful changes."
             )
 
-            # Confidence formatting
             try:
                 confidence_raw = criteria_display.get("confidence_level", 0)
                 confidence = float(confidence_raw)
@@ -637,16 +685,22 @@ if st.session_state.get("ai_parsed"):
             except Exception:
                 mde_display = "N/A"
 
-            # Show details and allow edits for these fields
+            # Display and edit sections
             create_header_with_help("Selected Hypothesis", "This is the hypothesis you selected from the generated options.", icon="🧪")
-            st.text_area("Hypothesis", value=selected_hypo, key="editable_hypothesis", height=100)
+            st.markdown(f"**Hypothesis:** {selected_hypo}")
+            with st.expander("Edit Hypothesis"):
+                st.text_area("Hypothesis (edit)", value=selected_hypo, key="editable_hypothesis", height=100)
 
             create_header_with_help("Variants", "Control vs Variation", icon="🔁")
-            st.text_input("Control (editable)", value=control, key="editable_control")
-            st.text_input("Variation (editable)", value=variation, key="editable_variation")
+            st.markdown(f"- **Control:** {control}\n- **Variation:** {variation}")
+            with st.expander("Edit Variants"):
+                st.text_input("Control (editable)", value=control, key="editable_control")
+                st.text_input("Variation (editable)", value=variation, key="editable_variation")
 
             create_header_with_help("Rationale", "Why this hypothesis is worth testing", icon="💡")
-            st.text_area("Rationale (editable)", value=rationale, key="editable_rationale", height=120)
+            st.markdown(rationale)
+            with st.expander("Edit Rationale"):
+                st.text_area("Rationale (editable)", value=rationale, key="editable_rationale", height=120)
 
             create_header_with_help("Experiment Stats", "Review/lock the final experiment stats used in the PRD", icon="📊")
             if not st.session_state.get("calc_locked", False):
@@ -663,30 +717,62 @@ if st.session_state.get("ai_parsed"):
 """
             )
 
-            # Metrics / segments / risks / next steps — editable areas
+            # Metrics — structured editor (name/formula) + nice table
             metrics = plan.get("metrics", [])
-            if metrics:
-                create_header_with_help("Metrics", "Primary and secondary metrics", icon="📏")
-                # show each metric as editable JSON text area
-                for mi, m in enumerate(metrics):
-                    st.text_area(f"Metric {mi+1}", value=json.dumps(m, ensure_ascii=False), key=f"metric_{mi}", height=80)
+            if metrics and isinstance(metrics, list):
+                create_header_with_help("Metrics", "Primary and secondary metrics (structured editor)", icon="📏")
+                normalized: List[Dict[str, str]] = []
+                for m in metrics:
+                    if isinstance(m, dict):
+                        normalized.append({"name": m.get("name", "Unnamed"), "formula": m.get("formula", "")})
+                    else:
+                        try:
+                            parsed_m = json.loads(m)
+                            normalized.append({"name": parsed_m.get("name", "Unnamed"), "formula": parsed_m.get("formula", "")})
+                        except Exception:
+                            normalized.append({"name": sanitize_text(m), "formula": ""})
 
+                # Display table view
+                try:
+                    df_metrics = pd.DataFrame(normalized)
+                    st.table(df_metrics)
+                except Exception:
+                    for nm in normalized:
+                        st.markdown(f"- **{nm.get('name')}**: {nm.get('formula')}")
+
+                with st.expander("Edit Metrics (structured)"):
+                    for mi, m in enumerate(normalized):
+                        st.text_input(f"Metric {mi+1} Name", value=m.get("name", ""), key=f"metric_name_{mi}")
+                        st.text_input(f"Metric {mi+1} Formula", value=m.get("formula", ""), key=f"metric_formula_{mi}")
+
+            # Segments (clean list)
             segments = plan.get("segments", [])
-            if segments:
-                create_header_with_help("Segments", "User segments for analysis", icon="👥")
-                st.text_area("Segments (one per line)", value="\n".join(segments), key="editable_segments", height=80)
+            if segments and isinstance(segments, list):
+                create_header_with_help("Segments", "User segments for analysis (clean list)", icon="👥")
+                for s in segments:
+                    st.markdown(f"- {sanitize_text(s)}")
+                with st.expander("Edit Segments"):
+                    st.text_area("Segments (one per line)", value="\n".join(segments), key="editable_segments", height=120)
 
+            # Risks
             risks = plan.get("risks_and_assumptions", [])
-            if risks:
-                create_header_with_help("Risks & Assumptions", "What could impact test outcomes", icon="⚠️")
-                st.text_area("Risks (one per line)", value="\n".join(risks), key="editable_risks", height=80)
+            if risks and isinstance(risks, list):
+                create_header_with_help("Risks & Assumptions", "What could impact test outcomes (clean list)", icon="⚠️")
+                for r in risks:
+                    st.markdown(f"- {sanitize_text(r)}")
+                with st.expander("Edit Risks & Assumptions"):
+                    st.text_area("Risks (one per line)", value="\n".join(risks), key="editable_risks", height=120)
 
+            # Next steps
             next_steps = plan.get("next_steps", [])
-            if next_steps:
-                create_header_with_help("Next Steps", "Actionable tasks to start the experiment", icon="✅")
-                st.text_area("Next Steps (one per line)", value="\n".join(next_steps), key="editable_next_steps", height=80)
+            if next_steps and isinstance(next_steps, list):
+                create_header_with_help("Next Steps", "Actionable tasks to start the experiment (clean list)", icon="✅")
+                for ns in next_steps:
+                    st.markdown(f"- {sanitize_text(ns)}")
+                with st.expander("Edit Next Steps"):
+                    st.text_area("Next Steps (one per line)", value="\n".join(next_steps), key="editable_next_steps", height=120)
 
-            # Build final PRD string
+            # Build final PRD string (gather edited inputs)
             prd_parts = []
             prd_parts.append("# 🧪 Experiment PRD\n")
             prd_parts.append("## 🎯 Goal\n")
@@ -708,48 +794,87 @@ if st.session_state.get("ai_parsed"):
             prd_parts.append(f"- Effort: {effort_display}\n")
             prd_parts.append(f"- Statistical Rationale: {statistical_rationale_display}\n\n")
 
-            # Append metrics, segments, risks, next steps if present (allow edited values)
-            if metrics:
+            # Metrics: use structured edited fields if present
+            if metrics and isinstance(metrics, list):
                 prd_parts.append("## 📏 Metrics\n")
-                for mi, m in enumerate(metrics):
-                    # try to use edited value if present
-                    edited = st.session_state.get(f"metric_{mi}")
-                    if edited:
-                        try:
-                            parsed_m = json.loads(edited)
-                            prd_parts.append(f"- {parsed_m.get('name', 'Unnamed')}: {parsed_m.get('formula','N/A')}\n")
-                        except:
-                            prd_parts.append(f"- {sanitize_text(edited)}\n")
+                for mi, orig_m in enumerate(metrics):
+                    edited_name = st.session_state.get(f"metric_name_{mi}")
+                    edited_formula = st.session_state.get(f"metric_formula_{mi}")
+                    if edited_name or edited_formula:
+                        name = edited_name or (orig_m.get("name") if isinstance(orig_m, dict) else sanitize_text(orig_m))
+                        formula = edited_formula or (orig_m.get("formula") if isinstance(orig_m, dict) else "")
+                        prd_parts.append(f"- {name}: {formula}\n")
                     else:
-                        if isinstance(m, dict):
-                            prd_parts.append(f"- {m.get('name','Unnamed')}: {m.get('formula','N/A')}\n")
+                        if isinstance(orig_m, dict):
+                            prd_parts.append(f"- {orig_m.get('name','Unnamed')}: {orig_m.get('formula','N/A')}\n")
                         else:
-                            prd_parts.append(f"- {sanitize_text(m)}\n")
+                            prd_parts.append(f"- {sanitize_text(orig_m)}\n")
 
             if st.session_state.get("editable_segments"):
                 prd_parts.append("\n## 👥 Segments\n")
                 for s in st.session_state.get("editable_segments", "").splitlines():
-                    prd_parts.append(f"- {s}\n")
+                    if s.strip():
+                        prd_parts.append(f"- {s.strip()}\n")
 
             if st.session_state.get("editable_risks"):
                 prd_parts.append("\n## ⚠️ Risks\n")
                 for r in st.session_state.get("editable_risks", "").splitlines():
-                    prd_parts.append(f"- {r}\n")
+                    if r.strip():
+                        prd_parts.append(f"- {r.strip()}\n")
 
             if st.session_state.get("editable_next_steps"):
                 prd_parts.append("\n## ✅ Next Steps\n")
                 for ns in st.session_state.get("editable_next_steps", "").splitlines():
-                    prd_parts.append(f"- {ns}\n")
+                    if ns.strip():
+                        prd_parts.append(f"- {ns.strip()}\n")
 
             prd_text = "\n".join(prd_parts)
 
-            st.download_button("📄 Download PRD (.txt)", prd_text, file_name="experiment_prd.txt")
-            st.download_button("📥 Download PRD (.json)", json.dumps(plan, indent=2, ensure_ascii=False), file_name="experiment_plan.json")
+            # Show Final PRD preview (production-like)
+            create_header_with_help("Final PRD Preview", "A clean, production-style preview suitable for interviews. Export to PDF or HTML.", icon="📄")
+            # Polished preview area (larger font)
+            st.markdown(
+                f"""
+                <div style="padding:18px;border-radius:8px;background:white;">
+                    <div style="display:flex;align-items:center;gap:18px;">
+                        <div style="width:72px;height:72px;background:#1E90FF;color:white;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;">A/B</div>
+                        <div>
+                            <div style="font-size:18px;font-weight:700;">Experiment PRD</div>
+                            <div style="color:#666;">{sanitize_text(goal_with_units)}</div>
+                        </div>
+                    </div>
+                    <hr style="margin-top:12px;margin-bottom:12px;">
+                    <div style="font-size:14px;line-height:1.5;">
+                        <pre style="white-space:pre-wrap;font-family:inherit;">{sanitize_text(prd_text)}</pre>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            # Download buttons: TXT, JSON, HTML, PDF (if available)
+            col_dl1, col_dl2, col_dl3, col_dl4 = st.columns([1,1,1,1])
+            with col_dl1:
+                st.download_button("📄 Download PRD (.txt)", prd_text, file_name="experiment_prd.txt")
+            with col_dl2:
+                st.download_button("📥 Download Plan (.json)", json.dumps(plan, indent=2, ensure_ascii=False), file_name="experiment_plan.json")
+            with col_dl3:
+                html_blob = build_prd_html("Experiment PRD", prd_text)
+                st.download_button("🌐 Download PRD (.html)", html_blob, file_name="experiment_prd.html")
+            with col_dl4:
+                if REPORTLAB_AVAILABLE:
+                    pdf_bytes = generate_pdf_bytes_from_text(prd_text, title="Experiment PRD")
+                    if pdf_bytes:
+                        st.download_button("📁 Download PRD (.pdf)", pdf_bytes, file_name="experiment_prd.pdf", mime="application/pdf")
+                    else:
+                        st.warning("PDF generation currently failed — try HTML download.")
+                else:
+                    st.info("PDF export requires 'reportlab'. Click HTML or TXT to download. To enable PDF, `pip install reportlab`.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 # -------------------------
-# Raw LLM Output / Manual Repair Tab (if parsing failed)
+# Raw LLM Output / Manual Repair Tab
 # -------------------------
 if st.session_state.get("output") and not st.session_state.get("ai_parsed"):
     st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
@@ -774,7 +899,7 @@ with st.expander("⚙️ Debug & Trace"):
     st.write("AI parsed present:", bool(st.session_state.get("ai_parsed")))
     st.write("Raw output length:", len(st.session_state.get("output") or ""))
     if st.button("Clear session state"):
-        keys_to_clear = ["output", "ai_parsed", "calculated_sample_size_per_variant", "calculated_total_sample_size", "calculated_duration_days", "locked_stats", "calc_locked", "selected_index", "hypothesis_confirmed", "last_llm_hash"]
+        keys_to_clear = ["output", "ai_parsed", "calculated_sample_size_per_variant", "calculated_total_sample_size", "calculated_duration_days", "locked_stats", "calc_locked", "selected_index", "hypothesis_confirmed", "last_llm_hash", "context"]
         for k in keys_to_clear:
             if k in st.session_state:
                 del st.session_state[k]
