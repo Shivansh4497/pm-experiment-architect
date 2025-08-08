@@ -53,7 +53,8 @@ def sanitize_text(text: Any) -> str:
             text = str(text)
         except Exception:
             return ""
-    text = text.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    # **MODIFIED**: Only replace carriage returns and tabs, keep newlines (\n).
+    text = text.replace("\r", " ").replace("\t", " ")
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
@@ -320,31 +321,36 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         story.append(Paragraph(heading, styles["SectionHeading"]))
         if content is None:
             return
+        # Use a version of sanitize_text that preserves newlines for PDF
+        def pdf_sanitize(text: Any) -> str:
+            if text is None: return ""
+            return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
         if isinstance(content, str):
-            story.append(Paragraph(sanitize_text(content), styles["BodyTextCustom"]))
+            story.append(Paragraph(pdf_sanitize(content).replace('\n', '<br/>'), styles["BodyTextCustom"]))
         elif isinstance(content, dict):
             for k, v in content.items():
                 if v is None:
                     continue
-                story.append(Paragraph(f"<b>{sanitize_text(str(k))}:</b> {sanitize_text(str(v))}", styles["BodyTextCustom"]))
+                story.append(Paragraph(f"<b>{pdf_sanitize(str(k))}:</b> {pdf_sanitize(str(v))}", styles["BodyTextCustom"]))
         elif isinstance(content, list):
             for item in content:
                 if isinstance(item, dict):
                     if "hypothesis" in item and "description" in item:
-                        txt = f"{sanitize_text(item.get('hypothesis',''))}"
-                        desc = sanitize_text(item.get("description",""))
+                        txt = f"{pdf_sanitize(item.get('hypothesis',''))}"
+                        desc = pdf_sanitize(item.get("description",""))
                         if desc:
                             txt += f" — {desc}"
                         story.append(Paragraph(txt, styles["BulletText"], bulletText="•"))
                     elif "name" in item and "formula" in item:
-                        txt = f"{sanitize_text(item.get('name',''))}: {sanitize_text(item.get('formula',''))}"
+                        txt = f"{pdf_sanitize(item.get('name',''))}: {pdf_sanitize(item.get('formula',''))}"
                         story.append(Paragraph(txt, styles["BulletText"], bulletText="•"))
                     else:
                         story.append(Paragraph(json.dumps(item, ensure_ascii=False), styles["BulletText"], bulletText="•"))
                 else:
-                    story.append(Paragraph(sanitize_text(str(item)), styles["BulletText"], bulletText="•"))
+                    story.append(Paragraph(pdf_sanitize(str(item)), styles["BulletText"], bulletText="•"))
         else:
-            story.append(Paragraph(sanitize_text(str(content)), styles["BodyTextCustom"]))
+            story.append(Paragraph(pdf_sanitize(str(content)), styles["BodyTextCustom"]))
         story.append(Spacer(1, 6))
 
     # Build sections
@@ -389,6 +395,18 @@ st.markdown(
 
 st.title("💡 A/B Test Architect — AI-assisted experiment PRD generator")
 st.markdown("Create experiment PRDs, hypotheses, stats, and sample-size guidance — faster and with guardrails.")
+
+# -------------------------
+# Sidebar for API Key
+# -------------------------
+st.sidebar.title("Configuration")
+groq_api_key = st.sidebar.text_input(
+    "Groq API Key",
+    type="password",
+    help="Get your key from https://console.groq.com/keys",
+    value=os.environ.get("GROQ_API_KEY", "")
+)
+
 
 # -------------------------
 # Initialize session state defaults
@@ -523,11 +541,21 @@ required_ok = all(
         sanitized_metric_name,
         metric_inputs_valid,
         strategic_goal,
+        groq_api_key, # Check for API Key
     ]
 )
+if not groq_api_key:
+    st.warning("Please enter your Groq API Key in the sidebar to enable plan generation.")
+
 generate_btn = st.button("Generate Plan", disabled=not required_ok)
 
 if generate_btn:
+    # **FIX**: Reset selection state on new generation
+    st.session_state.selected_index = None
+    st.session_state.hypothesis_confirmed = False
+    st.session_state.calc_locked = False
+    st.session_state.locked_stats = {}
+
     context = {
         "type": product_type,
         "users": user_base_choice,
@@ -547,7 +575,8 @@ if generate_btn:
 
     with st.spinner("Generating your plan..."):
         try:
-            raw_llm = generate_experiment_plan(goal_with_units, context)
+            # **FIX**: Pass the API key to the generation function
+            raw_llm = generate_experiment_plan(goal_with_units, context, api_key=groq_api_key)
             st.session_state.output = raw_llm if raw_llm is not None else ""
             parsed = extract_json(raw_llm)
             st.session_state.ai_parsed = parsed
@@ -924,7 +953,7 @@ if st.session_state.get("ai_parsed"):
                     </div>
                     <hr style="margin-top:12px;margin-bottom:12px;">
                     <div style="font-size:14px;line-height:1.5;">
-                        <pre style="white-space:pre-wrap;font-family:inherit;">{sanitize_text(prd_text)}</pre>
+                        <pre style="white-space:pre-wrap;font-family:inherit;">{prd_text}</pre>
                     </div>
                 </div>
                 """,
@@ -973,7 +1002,7 @@ if st.session_state.get("ai_parsed"):
             with col_dl2:
                 st.download_button("📥 Download Plan (.json)", json.dumps(prd_dict, indent=2, ensure_ascii=False), file_name="experiment_plan.json")
             with col_dl3:
-                html_blob = f"<!doctype html><html><body><pre>{sanitize_text(prd_text)}</pre></body></html>"
+                html_blob = f"<!doctype html><html><body><pre>{prd_text}</pre></body></html>"
                 st.download_button("🌐 Download PRD (.html)", html_blob, file_name="experiment_prd.html")
             with col_dl4:
                 if REPORTLAB_AVAILABLE:
