@@ -883,7 +883,7 @@ if st.session_state.get("ai_parsed"):
 
             # Build final PRD structure (gather edited inputs)
             prd_parts = []
-            prd_parts.append("# 🧪 Experiment PRD\n")
+            prd_parts.append("## 🧪 Experiment PRD\n")
             prd_parts.append("## 🎯 Goal\n")
             prd_parts.append(goal_with_units + "\n\n")
             prd_parts.append("## 🧩 Problem\n")
@@ -948,7 +948,7 @@ if st.session_state.get("ai_parsed"):
                         <div style="width:72px;height:72px;background:#1E90FF;color:white;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;">A/B</div>
                         <div>
                             <div style="font-size:18px;font-weight:700;">Experiment PRD</div>
-                            <div style="color:#666;">{sanitize_text(goal_with_units)}</div>
+                            <div style="color:#000;">{sanitize_text(goal_with_units)}</div>
                         </div>
                     </div>
                     <hr style="margin-top:12px;margin-bottom:12px;">
