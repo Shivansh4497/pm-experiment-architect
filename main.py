@@ -883,38 +883,38 @@ if st.session_state.get("ai_parsed"):
 
             # Risks
             risks = plan.get("risks_and_assumptions", [])
-if risks and isinstance(risks, list):
-    create_header_with_help("Risks & Assumptions", "Potential issues and mitigation plans", icon="⚠️")
+            if risks and isinstance(risks, list):
+                create_header_with_help("Risks & Assumptions", "Potential issues and mitigation plans", icon="⚠️")
     
-    # Display risks properly
-    for risk in risks:
-        if isinstance(risk, dict):
-            # Format dictionary risks
-            risk_text = f"• {risk.get('risk', 'Risk')}"
-            if risk.get('severity'):
-                risk_text += f" (Severity: {risk['severity']})"
-            if risk.get('mitigation'):
-                risk_text += f" - Mitigation: {risk['mitigation']}"
-            st.markdown(risk_text)
-        else:
-            # Handle plain string risks
-            st.markdown(f"• {str(risk)}")
+                # Display risks properly
+                for risk in risks:
+                    if isinstance(risk, dict):
+                        # Format dictionary risks
+                        risk_text = f"• {risk.get('risk', 'Risk')}"
+                        if risk.get('severity'):
+                            risk_text += f" (Severity: {risk['severity']})"
+                        if risk.get('mitigation'):
+                            risk_text += f" - Mitigation: {risk['mitigation']}"
+                        st.markdown(risk_text)
+                    else:
+                        # Handle plain string risks
+                        st.markdown(f"• {str(risk)}")
     
-    # Prepare editable version
-    with st.expander("Edit Risks"):
-        editable_risks = []
-        for risk in risks:
-            if isinstance(risk, dict):
-                editable_risks.append(risk.get('risk', ''))
-            else:
-                editable_risks.append(str(risk))
+            # Prepare editable version
+            with st.expander("Edit Risks"):
+                editable_risks = []
+                for risk in risks:
+                    if isinstance(risk, dict):
+                        editable_risks.append(risk.get('risk', ''))
+                    else:
+                        editable_risks.append(str(risk))
         
-        edited_risks = st.text_area(
-            "Edit risks (one per line)", 
-            value="\n".join(editable_risks),
-            key="editable_risks",
-            height=120
-        )
+                edited_risks = st.text_area(
+                    "Edit risks (one per line)", 
+                    value="\n".join(editable_risks),
+                    key="editable_risks",
+                    height=120
+                )
             # Next steps
             next_steps = plan.get("next_steps", [])
             if next_steps and isinstance(next_steps, list):
