@@ -45,12 +45,7 @@ def create_header_with_help(header_text: str, help_text: str, icon: str = "🔗"
     )
 
 
-def sanitize_text(text: Any, preserve_newlines: bool = False) -> str:
-    """
-    Sanitize text for display:
-    - If preserve_newlines True: keep newline characters (for PDF and structured blocks)
-    - Otherwise collapse whitespace into a single space
-    """
+def sanitize_text(text: Any) -> str:
     if text is None:
         return ""
     if not isinstance(text, str):
@@ -58,16 +53,10 @@ def sanitize_text(text: Any, preserve_newlines: bool = False) -> str:
             text = str(text)
         except Exception:
             return ""
-    text = text.replace("\r", "")
-    text = text.replace("\t", " ")
-    if preserve_newlines:
-        # collapse repeated spaces but keep \n
-        # remove trailing/leading spaces on each line
-        lines = [re.sub(r"\s+", " ", ln).strip() for ln in text.split("\n")]
-        return "\n".join(lines).strip()
-    else:
-        text = re.sub(r"\s+", " ", text)
-        return text.strip()
+    # Keep \n for nicer PDF formatting; collapse excessive whitespace
+    text = text.replace("\r", " ").replace("\t", " ")
+    text = re.sub(r"[ \f\v]+", " ", text)  # collapse other whitespace (but keep \n)
+    return text.strip()
 
 
 def safe_display(text: Any, method=st.info):
@@ -75,10 +64,10 @@ def safe_display(text: Any, method=st.info):
 
 
 def _extract_json_first_braces(text: str) -> Optional[str]:
-    """Find the first balanced {...} block in text and return it (or None)."""
+    """Find the first balanced {...} block in text and return it."""
     if not isinstance(text, str):
         return None
-    # prefer explicit <json> tags if provided
+    # prefer explicit <json> tags
     tag_match = re.search(r"<json>([\s\S]+?)</json>", text, re.IGNORECASE)
     if tag_match:
         return tag_match.group(1).strip()
@@ -103,7 +92,7 @@ def _safe_single_to_double_quotes(s: str) -> str:
     Conservative attempt to convert single-quoted JSON-like text to double-quoted JSON.
     This is a last resort and not guaranteed to work for all cases.
     """
-    # Replace 'key': 'value' -> "key": "value" for basic cases
+    # Replace 'value' instances when they look like JSON values
     s = re.sub(r"(?<=[:\{\[,]\s*)'([^']*?)'(?=\s*[,}\]])", r'"\1"', s)  # values
     s = re.sub(r"'([A-Za-z0-9_ -]+?)'\s*:", r'"\1":', s)  # keys
     return s
@@ -111,21 +100,23 @@ def _safe_single_to_double_quotes(s: str) -> str:
 
 def extract_json(text: Any) -> Optional[Dict]:
     """
-    Robust attempt to parse JSON from various LLM outputs.
-    Steps:
-      1) json.loads(raw)
-      2) ast.literal_eval(raw)  (handles Python dict-style)
-      3) extract first {...} and try json.loads / ast.literal_eval
-      4) safe single->double quote conversion and try json.loads
-    On failure, shows helpful error + snippet.
+    Robust attempt to parse JSON from a variety of LLM outputs.
+    Tries in order:
+      1. json.loads(raw)
+      2. ast.literal_eval(raw)  (handles Python dict/list syntax)
+      3. extract first {...} balanced substring and parse it (json or ast)
+      4. attempt safe single->double quote conversion and json.loads
+    On failure, shows helpful error and a snippet in the UI.
     """
     if text is None:
         st.error("No output returned from LLM.")
         return None
 
+    # If it's already a dict, return
     if isinstance(text, dict):
         return text
 
+    # If it's a list at top-level, warn (we expect object)
     if isinstance(text, list):
         st.error("LLM returned a JSON list when an object was expected.")
         return None
@@ -136,36 +127,37 @@ def extract_json(text: Any) -> Optional[Dict]:
         st.error(f"Unexpected LLM output type: {e}")
         return None
 
-    # 1) direct json.loads
+    # STEP 1: try direct JSON parse
     try:
         parsed = json.loads(raw)
         if isinstance(parsed, dict):
             return parsed
         else:
-            st.error("Parsed JSON is not an object (top-level list or other).")
+            st.error("Parsed JSON is not an object.")
             return None
     except Exception:
         pass
 
-    # 2) try ast.literal_eval (handles Python-style dicts)
+    # STEP 2: try ast.literal_eval (handles Python dict style)
     try:
         parsed_ast = ast.literal_eval(raw)
         if isinstance(parsed_ast, dict):
             return parsed_ast
+        # if ast returns a list, reject (we expect dict)
         if isinstance(parsed_ast, list):
             st.error("LLM returned a top-level list (via ast). Expected an object.")
             return None
     except Exception:
         pass
 
-    # 3) extract first balanced braces substring and try parsing
+    # STEP 3: extract first balanced braces substring and try parsing that
     candidate = _extract_json_first_braces(raw)
     if candidate:
         candidate_clean = candidate
-        # remove surrounding code fences if present
+        # remove surrounding markdown/code fences if present
         candidate_clean = re.sub(r"^```(?:json)?\s*", "", candidate_clean).strip()
         candidate_clean = re.sub(r"\s*```$", "", candidate_clean).strip()
-        # fix common trailing commas & double commas
+        # fix common artifacts
         candidate_clean = re.sub(r',\s*,', ',', candidate_clean)
         candidate_clean = re.sub(r',\s*\}', '}', candidate_clean)
         candidate_clean = re.sub(r',\s*\]', ']', candidate_clean)
@@ -180,24 +172,25 @@ def extract_json(text: Any) -> Optional[Dict]:
                 st.code(candidate_clean[:2000] + ("..." if len(candidate_clean) > 2000 else ""))
                 return None
         except Exception:
-            # try ast.literal_eval
+            # try ast.literal_eval on candidate
             try:
                 parsed_ast = ast.literal_eval(candidate_clean)
                 if isinstance(parsed_ast, dict):
                     return parsed_ast
             except Exception:
-                # try conservative single->double conversion then json.loads
+                # try last-resort single->double quote conversion then json.loads
                 try:
                     converted = _safe_single_to_double_quotes(candidate_clean)
                     parsed = json.loads(converted)
                     if isinstance(parsed, dict):
                         return parsed
                 except Exception:
+                    # fall through to error display below
                     st.error("Could not parse extracted JSON block. See snippet below.")
                     st.code(candidate_clean[:2000] + ("..." if len(candidate_clean) > 2000 else ""))
                     return None
 
-    # 4) last-resort: attempt conversion on full raw text
+    # STEP 4: Attempt a conservative single-to-double quote conversion on the full raw text
     try:
         converted_full = _safe_single_to_double_quotes(raw)
         parsed = json.loads(converted_full)
@@ -206,9 +199,10 @@ def extract_json(text: Any) -> Optional[Dict]:
     except Exception:
         pass
 
-    # give user a helpful debug snippet
+    # If all attempts fail, show helpful error + snippet
     st.error("LLM output could not be parsed as JSON. Please inspect or edit the raw output below.")
     try:
+        # show a truncated snippet to help debugging
         st.code(raw[:3000] + ("..." if len(raw) > 3000 else ""))
     except Exception:
         st.write("LLM output could not be displayed.")
@@ -326,10 +320,9 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         story.append(Paragraph(heading, styles["SectionHeading"]))
         if content is None:
             return
-        # Use a version of sanitize_text that preserves newlines for PDF bodies
+        # Use a version of sanitize_text that preserves newlines for PDF
         def pdf_sanitize(text: Any) -> str:
-            if text is None:
-                return ""
+            if text is None: return ""
             return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
         if isinstance(content, str):
@@ -384,39 +377,94 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
 
 
 # -------------------------
-# Page Setup & Styling (embedded CSS for polished preview)
+# Page Setup & Styling
 # -------------------------
 st.set_page_config(page_title="A/B Test Architect", layout="wide")
+# Embedded CSS for polished look (ensures Final PRD preview is attractive)
 st.markdown(
     """
 <style>
-/* App sections */
-.blue-section {background-color: #f6f9ff; padding: 18px; border-radius: 10px; margin-bottom: 18px; border: 1px solid #e6f0ff;}
-.green-section {background-color: #f7fff7; padding: 18px; border-radius: 10px; margin-bottom: 18px; border: 1px solid #e6ffe6;}
-.section-title {font-size: 1.05rem; font-weight: 700; color: #1E90FF; margin-bottom: 6px;}
+/* Page-level */
+.blue-section {background-color: #f6f9ff; padding: 18px; border-radius: 8px; margin-bottom: 18px;}
+.green-section {background-color: #f7fff7; padding: 18px; border-radius: 8px; margin-bottom: 18px;}
+.section-title {font-size: 1.1rem; font-weight: 600; color: #1E90FF; margin-bottom: 8px;}
 .small-muted { color: #7a7a7a; font-size: 13px; }
 
-/* Final PRD Preview styling */
-.prd-card { padding: 22px; border-radius: 12px; background: #fff; box-shadow: 0 4px 18px rgba(18, 52, 86, 0.06); border: 1px solid #eef6ff; }
-.prd-header { display:flex; gap:16px; align-items:center; }
-.prd-logo { width:72px; height:72px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-weight:800; color:white; font-size:22px; }
-.prd-logo.ab { background: linear-gradient(135deg,#1E90FF,#0066FF); }
-.prd-title { font-size:18px; font-weight:800; }
-.prd-sub { color:#333; font-size:13px; margin-top:4px; }
-.prd-section { margin-top:12px; border-left:4px solid #f1f5f9; padding:12px 12px 12px 16px; border-radius:6px; background:#fbfdff; }
-.prd-h { font-size:14px; font-weight:700; color:#054b9f; margin-bottom:6px; }
-.prd-body { font-size:13px; color:#111827; line-height:1.45; white-space:pre-wrap; }
-.prd-bul { margin-left:18px; margin-top:6px; }
+/* Final PRD preview styling */
+.prd-card {
+  background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
+  border-radius: 12px;
+  padding: 22px;
+  box-shadow: 0 8px 24px rgba(30,144,255,0.06);
+  border: 1px solid rgba(30,144,255,0.06);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
 
-/* color codes for section headings */
-.h-goal { border-left-color: #2b9af3; }
-.h-problem { border-left-color: #ff9f43; }
-.h-hyp { border-left-color: #7b61ff; }
-.h-metrics { border-left-color: #20c997; }
-.h-risks { border-left-color: #ff6b6b; }
+.prd-header {
+  display:flex;
+  align-items:center;
+  gap:18px;
+  margin-bottom: 12px;
+}
 
-@media (max-width: 800px) {
-  .prd-header { flex-direction: column; align-items:flex-start; gap:8px; }
+.prd-logo {
+  width:72px;
+  height:72px;
+  background: linear-gradient(135deg,#1E90FF,#3AC2FF);
+  color: white;
+  border-radius: 12px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:800;
+  font-size:22px;
+  box-shadow: 0 6px 18px rgba(30,144,255,0.12);
+}
+
+.prd-title {
+  font-size:18px;
+  font-weight:700;
+  color:#0b2545;
+}
+
+.prd-subtitle {
+  font-size:13px;
+  color:#4b5563;
+  margin-top:3px;
+}
+
+/* Section headings inside preview */
+.prd-section {
+  margin-top:12px;
+  margin-bottom:8px;
+}
+
+.prd-section h3 {
+  margin:0;
+  font-size:14px;
+  color:#1E90FF;
+  font-weight:700;
+}
+
+.prd-body {
+  font-size:13px;
+  color:#111827;
+  line-height:1.5;
+  white-space: pre-wrap;
+  margin-top:8px;
+}
+
+/* Bullet lists */
+.prd-body ul {
+  padding-left:18px;
+  margin-top:6px;
+}
+
+/* small meta */
+.prd-meta {
+  color:#6b7280;
+  font-size:12px;
+  margin-top:6px;
 }
 </style>
 """,
@@ -952,83 +1000,72 @@ if st.session_state.get("ai_parsed"):
 
             prd_text = "\n".join(prd_parts)
 
-            # Final PRD preview (polished)
+            # Final PRD preview (production-like) with the polished CSS
             create_header_with_help("Final PRD Preview", "A clean, production-style preview suitable for interviews. Export to PDF or HTML.", icon="📄")
-            # build small structured html block for the preview using sanitized content (preserve new lines)
-            preview_goal = sanitize_text(goal_with_units)
-            preview_problem = sanitize_text(st.session_state.get("editable_problem", problem_statement), preserve_newlines=True)
-            preview_hypo = sanitize_text(st.session_state.get("editable_hypothesis", selected_hypo), preserve_newlines=True)
-            preview_variants = f"Control: {sanitize_text(st.session_state.get('editable_control', control))}\nVariation: {sanitize_text(st.session_state.get('editable_variation', variation))}"
-            preview_rationale = sanitize_text(st.session_state.get("editable_rationale", rationale), preserve_newlines=True)
-            preview_stats = sanitize_text(
-                f"Confidence: {confidence_str}\nMDE: {mde_display}\nSample Size: {sample_size}\nUsers/Variant: {users_per_variant}\nDuration: {duration}",
-                preserve_newlines=True
-            )
-
-            # metrics formatted
-            metrics_html = ""
-            for mm in prd_dict.get("metrics", []):
-                metrics_html += f"<div class='prd-bul'>• <b>{sanitize_text(mm.get('name'))}</b>: {sanitize_text(mm.get('formula'))}</div>"
-
-            # segments, risks, next steps as lists
-            segments_html = ""
-            for s in prd_dict.get("segments", []):
-                segments_html += f"<div class='prd-bul'>• {sanitize_text(s)}</div>"
-            risks_html = ""
-            for r in prd_dict.get("risks_and_assumptions", []):
-                risks_html += f"<div class='prd-bul'>• {sanitize_text(r)}</div>"
-            steps_html = ""
-            for s in prd_dict.get("next_steps", []):
-                steps_html += f"<div class='prd-bul'>• {sanitize_text(s)}</div>"
-
-            # polished HTML preview
+            # Polished preview
             st.markdown(
                 f"""
                 <div class="prd-card">
                   <div class="prd-header">
-                    <div class="prd-logo ab">A/B</div>
+                    <div class="prd-logo">A/B</div>
                     <div>
                       <div class="prd-title">Experiment PRD</div>
-                      <div class="prd-sub">{preview_goal}</div>
-                    </div>
-                  </div>
-
-                  <div class="prd-section h-goal">
-                    <div class="prd-h">🎯 Goal</div>
-                    <div class="prd-body">{preview_goal}</div>
-                  </div>
-
-                  <div class="prd-section h-problem">
-                    <div class="prd-h">🧩 Problem</div>
-                    <div class="prd-body">{preview_problem}</div>
-                  </div>
-
-                  <div class="prd-section h-hyp">
-                    <div class="prd-h">🧪 Hypothesis</div>
-                    <div class="prd-body">{preview_hypo}</div>
-                    <div style="margin-top:8px;"><b>Variants</b><pre style="font-family:inherit;white-space:pre-wrap;">{sanitize_text(preview_variants, preserve_newlines=True)}</pre></div>
-                  </div>
-
-                  <div class="prd-section h-metrics">
-                    <div class="prd-h">📏 Metrics</div>
-                    <div class="prd-body">
-                      {metrics_html or '<div class="prd-bul">• No metrics provided</div>'}
-                    </div>
-                  </div>
-
-                  <div class="prd-section h-risks">
-                    <div class="prd-h">⚠️ Risks & Next Steps</div>
-                    <div class="prd-body">
-                      <div style="font-weight:700;margin-bottom:6px;">Risks & Assumptions</div>
-                      {risks_html or '<div class="prd-bul">• None specified</div>'}
-                      <div style="font-weight:700;margin-top:8px;margin-bottom:6px;">Next Steps</div>
-                      {steps_html or '<div class="prd-bul">• None specified</div>'}
+                      <div class="prd-subtitle">{sanitize_text(goal_with_units)}</div>
+                      <div class="prd-meta">Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}</div>
                     </div>
                   </div>
 
                   <div class="prd-section">
-                    <div class="prd-h">📊 Experiment Stats</div>
-                    <div class="prd-body"><pre style="font-family:inherit;white-space:pre-wrap;">{sanitize_text(preview_stats, preserve_newlines=True)}</pre></div>
+                    <h3>🎯 Goal</h3>
+                    <div class="prd-body">{sanitize_text(goal_with_units)}</div>
+                  </div>
+
+                  <div class="prd-section">
+                    <h3>🧩 Problem Statement</h3>
+                    <div class="prd-body">{sanitize_text(st.session_state.get("editable_problem", problem_statement))}</div>
+                  </div>
+
+                  <div class="prd-section">
+                    <h3>🧪 Hypothesis</h3>
+                    <div class="prd-body">{sanitize_text(st.session_state.get("editable_hypothesis", selected_hypo))}</div>
+                  </div>
+
+                  <div class="prd-section">
+                    <h3>🔁 Variants</h3>
+                    <div class="prd-body">Control: {sanitize_text(st.session_state.get('editable_control', control))}<br/>Variation: {sanitize_text(st.session_state.get('editable_variation', variation))}</div>
+                  </div>
+
+                  <div class="prd-section">
+                    <h3>💡 Rationale</h3>
+                    <div class="prd-body">{sanitize_text(st.session_state.get('editable_rationale', rationale))}</div>
+                  </div>
+
+                  <div class="prd-section">
+                    <h3>📊 Experiment Stats</h3>
+                    <div class="prd-body">
+{sanitize_text(f"- Confidence Level: {confidence_str}\\n- MDE: {mde_display}\\n- Sample Size: {sample_size}\\n- Users/Variant: {users_per_variant}\\n- Duration: {duration}\\n- Effort: {effort_display}\\n- Statistical Rationale: {statistical_rationale_display}")}
+                    </div>
+                  </div>
+
+                  <div class="prd-section">
+                    <h3>📏 Metrics</h3>
+                    <div class="prd-body">
+{sanitize_text('\\n'.join([f\"- {m.get('name','Unnamed')}: {m.get('formula','')}\" for m in prd_dict.get('metrics', [])]) if prd_dict.get('metrics') else sanitize_text('\\n'.join([f\"- {sanitize_text(m) }\" for m in metrics]) if metrics else \"No metrics provided.\"))}
+                    </div>
+                  </div>
+
+                  <div class="prd-section">
+                    <h3>👥 Segments</h3>
+                    <div class="prd-body">{sanitize_text('\\n'.join(prd_dict.get('segments', [])) if prd_dict.get('segments') else 'None specified')}</div>
+                  </div>
+
+                  <div class="prd-section">
+                    <h3>🚀 Next Steps</h3>
+                    <div class="prd-body">{sanitize_text('\\n'.join(prd_dict.get('next_steps', [])) if prd_dict.get('next_steps') else 'None specified')}</div>
+                  </div>
+
+                  <div class="prd-section" style="margin-top:14px;">
+                    <div class="prd-meta">Export: TXT · HTML · JSON · PDF (if enabled)</div>
                   </div>
                 </div>
                 """,
@@ -1077,7 +1114,7 @@ if st.session_state.get("ai_parsed"):
             with col_dl2:
                 st.download_button("📥 Download Plan (.json)", json.dumps(prd_dict, indent=2, ensure_ascii=False), file_name="experiment_plan.json")
             with col_dl3:
-                html_blob = f"<!doctype html><html><head><meta charset='utf-8'></head><body><pre>{sanitize_text(prd_text, preserve_newlines=True)}</pre></body></html>"
+                html_blob = f"<!doctype html><html><head><meta charset='utf-8'></head><body>{sanitize_text(prd_text).replace('\\n','<br/>')}</body></html>"
                 st.download_button("🌐 Download PRD (.html)", html_blob, file_name="experiment_prd.html")
             with col_dl4:
                 if REPORTLAB_AVAILABLE:
@@ -1097,7 +1134,7 @@ if st.session_state.get("ai_parsed"):
 if st.session_state.get("output") and not st.session_state.get("ai_parsed"):
     st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
     create_header_with_help("Raw LLM Output (fix JSON here)", "When parsing fails you'll see the raw LLM output — edit it then click Parse JSON.", icon="🛠️")
-    raw_edit = st.text_area("Raw LLM output / edit here", value=st.session_state.get("output", ""), height=480, key="raw_llm_edit")
+    raw_edit = st.text_area("Raw LLM output / edit here", value=st.session_state.get("output", ""), height=400, key="raw_llm_edit")
     if st.button("Parse JSON"):
         parsed_try = extract_json(st.session_state.get("raw_llm_edit", raw_edit))
         if parsed_try:
