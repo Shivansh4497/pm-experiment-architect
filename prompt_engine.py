@@ -1,43 +1,30 @@
 # prompt_engine.py
 """
-Polished prompt engine for the A/B Test Architect app.
+Enhanced prompt engine for the A/B Test Architect app.
 
-Provides:
-- generate_experiment_plan(goal, context)
-  -> returns a string (LLM text) containing a JSON object (the experiment plan)
-
-Notes:
-- This function will attempt to call Groq if the Groq client is available and
-  GROQ_API_KEY is present in the environment. If Groq isn't available or key
-  missing, it will return a nicely formatted error string for display in the UI.
-- The prompt strongly emphasises using all context fields, producing personalized
-  and contextual output, strict JSON-only response, and unquoted numeric fields.
+Upgrades:
+- Forces usage of all context fields, even if empty (with impact explained in risks_and_assumptions).
+- Hypotheses now include a concrete "example_impact" field with a realistic product scenario.
+- Rationales, field_importance, and risks are more targeted and persona-aware.
+- Maintains EXACT SAME SCHEMA as before for main.py compatibility.
 """
+
 import os
 import json
 import textwrap
 
-# Attempt to import Groq client; if not present we'll surface an error message back to the UI.
+# Attempt to import Groq client
 try:
     from groq import Groq  # type: ignore
     GROQ_AVAILABLE = True
 except Exception:
     GROQ_AVAILABLE = False
 
+
 def _build_prompt(goal: str, context: dict) -> str:
     """
-    Returns the main instruction prompt for the model.
-
-    This prompt:
-    - instructs the LLM to use ALL provided context fields
-    - requests personalization and context-awareness
-    - demands strict JSON output according to the schema
-    - enforces JSON-only response (no markdown or commentary)
-    - asks the model to indicate which input fields it considered most important
-      (so downstream users can see field importance)
+    Build the main LLM instruction prompt.
     """
-    # Safely extract context values for inline prompt clarity
-    # Default safe formatting for absent keys
     ctx = {k: ("" if v is None else v) for k, v in context.items()}
 
     unit = ctx.get("metric_unit", "")
@@ -49,28 +36,26 @@ def _build_prompt(goal: str, context: dict) -> str:
     metric_type = ctx.get("metric_type", "Conversion Rate")
     std_dev = ctx.get("std_dev", None)
     users = ctx.get("users", "")
-    exact_metric = ctx.get("exact_metric", ctx.get("exact_metric", ""))
+    exact_metric = ctx.get("exact_metric", "")
     current_value = ctx.get("current_value", "")
     target_value = ctx.get("target_value", "")
 
-    # The prompt below is intentionally explicit and prescriptive.
     prompt = f"""
-You are an expert Senior Product Manager and Data Scientist tasked with producing a production-ready A/B test plan.
-Use every piece of context provided below to produce a single, valid JSON object that fully implements the schema and fields requested.
+You are an expert Senior Product Manager and Data Scientist.
+Your task: Produce a production-ready A/B test plan as a STRICT JSON object following the schema below.
 
-IMPORTANT:
-- Use ALL fields in the context when producing hypotheses, rationale, metrics, segments and the statistical rationale. If a field is missing, explain briefly in the 'risks_and_assumptions' field why that matters (but still return valid JSON).
-- Personalize each hypothesis and rationale to the target user persona and product context when available.
-- For every output field, consider its relative importance and include an explicit `field_importance` object mapping key input fields to an importance level ("High"/"Medium"/"Low") and a one-line justification.
-- Output STRICT JSON only. No markdown, no commentary, no surrounding text, no code fences, and no trailing commas.
-- Numeric fields (confidence_level, MDE, estimated_test_duration, sample sizes) must be numbers (not strings). Percent signs may be included where appropriate but do not quote numbers as strings.
-- Where lists are requested, return arrays. Where objects are requested, return objects.
-- Compose concise but concrete hypotheses (10-20 words) and a 2–4 line rationale per hypothesis grounded in user behavior or data signals in the context.
-- For the `statistical_rationale` field, explicitly reference the metric type (Conversion Rate vs Numeric Value), the test method (e.g., two-sample proportions test or t-test), and show how the MDE & user base inform sample size/duration qualitatively.
-- When you refer to the metric, include the metric unit (e.g., % or minutes) and current vs target values in the rationale when relevant.
-- If you cannot compute a numerical estimate (e.g., sample size) due to missing inputs, set those fields to null and explain which inputs are missing in `risks_and_assumptions`.
+CRITICAL:
+1. Use EVERY provided context field — if any field is missing or blank, explain its absence in `risks_and_assumptions` with specific impact.
+2. All hypotheses must be persona-aware, metric-linked, and scenario-driven.
+3. For EACH hypothesis, also include an `"example_impact"` field inside the same hypothesis object:
+   - This is a short, concrete product example showing how the change could improve the product, grounded in this context.
+4. Rationales must tie back to the strategic goal, target persona, and provided metrics.
+5. Include actual numbers (current, target, lift, unit) wherever possible in descriptions and rationales.
+6. Field importance must be precise: say why it matters for decision-making.
+7. Output must be valid JSON only — no markdown, commentary, or trailing commas.
+8. All numeric fields in success_criteria must be numbers, not strings.
 
-CONTEXT (use this verbatim when helpful):
+CONTEXT (verbatim when useful):
 - High-level business objective: {strategic_goal}
 - Product type: {ctx.get('type','')}
 - Target user persona: {persona}
@@ -85,79 +70,68 @@ CONTEXT (use this verbatim when helpful):
 - Minimum detectable effect (MDE): {mde}
 - Notes: {notes}
 
-SCHEMA: Return a JSON object with these keys (fill thoughtfully):
+SCHEMA: Return a JSON object with EXACTLY these keys:
 
 {{
-  "problem_statement": string,              // 2-3 sentences. Include metric with current and target values and a risk of not improving.
-  "field_importance": {{                     // map of input fields -> "High"/"Medium"/"Low" and a 1-line reason
-     "strategic_goal": {{"level":"High","reason":"..."}},
-     "...": {{"level":"Medium","reason":"..."}}
-  }},
-  "hypotheses": [                            // 2-3 distinct hypothesis objects
+  "problem_statement": string,              
+  "field_importance": {{ key: {{"level":"High|Medium|Low","reason":"..."}} }},
+  "hypotheses": [                            
     {{
-      "hypothesis": string,                 // 10–20 words summary of the change and why
-      "description": string                 // 1–2 sentences with persona-specific detail if available
+      "hypothesis": string,
+      "description": string,
+      "example_impact": string
     }}
   ],
-  "variants": [                              // same length as hypotheses
+  "variants": [                              
     {{
       "hypothesis": string,
       "control": string,
       "variation": string
     }}
   ],
-  "hypothesis_rationale": [                  // same order as hypotheses; must be objects
+  "hypothesis_rationale": [                  
     {{ "rationale": string }}
   ],
-  "metrics": [                               // 2–4 metrics (primary + secondaries)
+  "metrics": [                               
     {{ "name": string, "formula": string, "importance": "High|Medium|Low" }}
   ],
-  "segments": [ string ],                    // include persona as one segment if provided
+  "segments": [ string ],
   "success_criteria": {{
-    "confidence_level": number,              // e.g., 95
-    "expected_lift": number,                  // numeric percent (not string)
-    "MDE": number,                            // numeric percent (not string)
-    "sample_size_required": null|number,      // numeric total users required (or null if cannot compute)
+    "confidence_level": number,
+    "expected_lift": number,
+    "MDE": number,
+    "sample_size_required": null|number,
     "users_per_variant": null|number,
     "estimated_test_duration_days": null|number
   }},
   "effort": [ {{ "hypothesis": string, "effort": "Low|Medium|High" }} ],
   "team_involved": [ string ],
-  "risks_and_assumptions": [ string ],       // 2–4 items
-  "next_steps": [ string ],                  // 3–6 actionable steps to start
-  "statistical_rationale": string           // 2–3 sentences, reference metric type and method
+  "risks_and_assumptions": [ string ],       
+  "next_steps": [ string ],                  
+  "statistical_rationale": string           
 }}
 
-ADDITIONAL CONSTRAINTS:
-- Return exactly the keys in the schema above. Additional keys are allowed only if they add value (e.g., a small `notes` object), but avoid needless verbosity.
-- Keep text concise and professional. Use the target persona where relevant.
-- Make the output high-quality and interview-ready.
-
-Now produce the JSON plan for this product goal and context.
+ADDITIONAL REQUIREMENTS:
+- Each hypothesis must clearly connect to the metric and persona.
+- In `example_impact`, provide a specific, short story or scenario.
+- In `hypothesis_rationale`, explicitly link to strategic goal, metric type, and user behavior patterns.
+- If metric data is missing, explain in `risks_and_assumptions` what effect that has.
 """
 
-    # keep indentation clean
     return textwrap.dedent(prompt).strip()
+
 
 def generate_experiment_plan(goal: str, context: dict) -> str:
     """
-    Generate an experiment plan using an LLM.
-
-    - goal: short natural language description of the product goal.
-    - context: dictionary containing fields used by the LLM.
-
-    Returns: the raw string output from the model (expected to be JSON).
+    Generate an experiment plan using Groq or return placeholder JSON if unavailable.
     """
-    # Build prompt
     prompt = _build_prompt(goal, context)
 
-    # If Groq available and an API key in environment, call it
     if GROQ_AVAILABLE:
         api_key = os.environ.get("GROQ_API_KEY", "") or os.environ.get("GROQ_KEY", "")
         if not api_key:
-            # Return instructive error so the UI can show it
             return json.dumps({
-                "error": "GROQ_API_KEY not found in environment. To generate plans using Groq, set GROQ_API_KEY."
+                "error": "GROQ_API_KEY not found. Set it in your environment."
             })
         try:
             client = Groq(api_key=api_key)
@@ -170,19 +144,15 @@ def generate_experiment_plan(goal: str, context: dict) -> str:
                 temperature=0.18,
                 max_tokens=2000,
             )
-            content = response.choices[0].message.content.strip()
-            # If Groq's output sometimes prefixes things, try to strip leading/trailing non-json
-            return content
+            return response.choices[0].message.content.strip()
         except Exception as e:
-            # Return a clear diagnostic JSON allowing the UI to show the error
             return json.dumps({
                 "error": "Groq request failed",
                 "exception": str(e),
                 "prompt_excerpt": prompt[:800]
             })
     else:
-        # Groq isn't installed — return an instructional placeholder so the UI can show it to the user.
         return json.dumps({
-            "error": "Groq client not available. Install the Groq SDK or set up your provider integration.",
-            "note": "This placeholder is returned by prompt_engine.generate_experiment_plan when Groq isn't installed."
+            "error": "Groq client not available.",
+            "note": "This is a placeholder output when Groq isn't installed."
         })
