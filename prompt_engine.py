@@ -113,13 +113,11 @@ def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
         "google_benchmark": str,
         "monitoring_plan": str
       }},
-      "risks_and_assumptions": [
-        {{
-          "risk": str,
-          "google_red_flag": str,
-          "rollback_plan": str
-        }}
-      ],
+      "risks_and_assumptions": {{
+    "risk": "User fatigue from frequent changes",
+    "severity_indicator": "High",
+    "mitigation": "Limit to 1 test per user per week"
+}},
       "statistical_rationale": str
     }}
 
