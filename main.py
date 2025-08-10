@@ -416,6 +416,8 @@ if "last_llm_hash" not in st.session_state:
     st.session_state.last_llm_hash = None
 if "calculate_now" not in st.session_state:
     st.session_state.calculate_now = False
+if "metrics_table" not in st.session_state:
+    st.session_state.metrics_table = None
 
 # -------------------------
 # INPUTS: Business Context (in an expander)
@@ -739,34 +741,34 @@ if st.session_state.get("ai_parsed"):
             st.markdown(f"**Rationale:** {selected_hypo.get('rationale', selected_hypo.get('behavioral_basis', 'N/A'))}")
             st.markdown(f"**Example:** {selected_hypo.get('example_implementation', 'N/A')}")
 
+            # Hypothesis editing
+            with st.expander("✏️ Edit This Hypothesis"):
+                edited_hypo = {
+                    "hypothesis": st.text_area(
+                        "Hypothesis Text",
+                        value=selected_hypo.get("hypothesis", ""),
+                        key="editable_hypothesis"
+                    ),
+                    "rationale": st.text_area(
+                        "Rationale",
+                        value=selected_hypo.get("rationale", selected_hypo.get("behavioral_basis", "")),
+                        key="editable_rationale"
+                    ),
+                    "example_implementation": st.text_area(
+                        "Implementation Example",
+                        value=selected_hypo.get("example_implementation", ""),
+                        key="editable_example"
+                    )
+                }
+                
+                if st.button("Save Edits"):
+                    hypotheses[st.session_state.selected_index] = edited_hypo
+                    st.success("Hypothesis updated!")
+
         with cols[1]:
             if st.button("Clear Selection"):
                 st.session_state.selected_index = None
                 st.session_state.hypothesis_confirmed = False
-        
-        # Hypothesis editing
-        with st.expander("✏️ Edit This Hypothesis"):
-            edited_hypo = {
-                "hypothesis": st.text_area(
-                    "Hypothesis Text",
-                    value=selected_hypo.get("hypothesis", ""),
-                    key="editable_hypothesis"
-                ),
-                "rationale": st.text_area(
-                    "Rationale",
-                    value=selected_hypo.get("rationale", selected_hypo.get("behavioral_basis", "")),
-                    key="editable_rationale"
-                ),
-                "example_implementation": st.text_area(
-                    "Implementation Example",
-                    value=selected_hypo.get("example_implementation", ""),
-                    key="editable_example"
-                )
-            }
-            
-            if st.button("Save Edits"):
-                hypotheses[st.session_state.selected_index] = edited_hypo
-                st.success("Hypothesis updated!")
 
     # Metrics display and editing
     metrics = plan.get("metrics", [])
@@ -825,8 +827,9 @@ if st.session_state.get("ai_parsed"):
                 height=120
             )
 
-    # Risks display and editing - UPDATED
+    # Risks display and editing
     risks = plan.get("risks_and_assumptions", [])
+    editable_risks = []
     if risks:
         create_header_with_help("Risks & Mitigations", "Potential issues and solutions", icon="⚠️")
         
@@ -839,19 +842,14 @@ if st.session_state.get("ai_parsed"):
                 if r.get('mitigation'):
                     risk_str += f"\n  → Mitigation: {r['mitigation']}"
                 risk_text.append(risk_str)
+                editable_risks.append(r.get('risk', ''))
             else:
                 risk_text.append(f"• {str(r)}")
+                editable_risks.append(str(r))
         
         st.markdown("\n\n".join(risk_text))
         
         with st.expander("Edit Risks"):
-            editable_risks = []
-            for r in risks:
-                if isinstance(r, dict):
-                    editable_risks.append(r.get('risk', ''))
-                else:
-                    editable_risks.append(str(r))
-            
             edited_risks = st.text_area(
                 "Edit risks (one per line)", 
                 value="\n".join(editable_risks),
@@ -890,7 +888,7 @@ if st.session_state.get("ai_parsed"):
                 **({"behavioral_basis": h["behavioral_basis"]} if "behavioral_basis" in h else {})
             } for h in hypotheses
         ],
-        "metrics": st.session_state.get("metrics_table", []),
+        "metrics": st.session_state.get("metrics_table", metrics),
         "segments": [
             s.strip() for s in 
             st.session_state.get("editable_segments", "").split("\n") 
@@ -929,6 +927,18 @@ if st.session_state.get("ai_parsed"):
         html += "</ul>"
         return html
 
+    # Fixed hypotheses rendering
+    hypotheses_html = "<ul>"
+    for i, h in enumerate(prd_dict["hypotheses"]):
+        hypotheses_html += f"""
+        <li>
+            <b>H{i+1}:</b> {h["hypothesis"]}<br>
+            <i>Rationale:</i> {h.get("rationale", "")}<br>
+            <i>Example:</i> {h.get("example_implementation", "")}
+        </li>
+        """
+    hypotheses_html += "</ul>"
+
     st.markdown(
         f"""
         <div class="prd-card">
@@ -948,10 +958,7 @@ if st.session_state.get("ai_parsed"):
           <div class="prd-section">
             <h3>🧪 Hypotheses</h3>
             <div class="prd-body">
-                <ul>
-                    {"".join([f'<li><b>H{i+1}:</b> {h["hypothesis"]}<br><i>Rationale:</i> {h.get("rationale", "")}<br><i>Example:</i> {h.get("example_implementation", "")}</li>' 
-                     for i, h in enumerate(prd_dict["hypotheses"])}
-                </ul>
+                {hypotheses_html}
             </div>
           </div>
           
@@ -964,8 +971,13 @@ if st.session_state.get("ai_parsed"):
             <h3>⚠️ Risks & Mitigations</h3>
             <div class="prd-body">
                 <ul>
-                    {"".join([f'<li>{r["risk"]}{" <i>(Severity: " + r["severity"] + ")</i>" if r.get("severity") else ""}{"<br>→ " + r["mitigation"] if r.get("mitigation") else ""}</li>' 
-                     for r in prd_dict["risks_and_assumptions"]])}
+                    {"".join([
+                        f'<li>{r["risk"]}' + 
+                        (f' <i>(Severity: {r["severity"]})</i>' if r.get("severity") else "") + 
+                        (f'<br>→ {r["mitigation"]}' if r.get("mitigation") else "") + 
+                        '</li>' 
+                        for r in prd_dict["risks_and_assumptions"]
+                    ])}
                 </ul>
             </div>
           </div>
@@ -1044,7 +1056,9 @@ with st.expander("⚙️ Debug & Trace"):
             "calculated_total_sample_size", "calculated_duration_days",
             "locked_stats", "calc_locked", "selected_index",
             "hypothesis_confirmed", "last_llm_hash", "context",
-            "metrics_table"
+            "metrics_table", "editable_problem", "editable_hypothesis",
+            "editable_rationale", "editable_example", "editable_segments",
+            "editable_risks", "editable_next_steps"
         ]
         for k in keys_to_clear:
             if k in st.session_state:
