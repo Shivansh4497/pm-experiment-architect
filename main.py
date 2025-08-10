@@ -1,4 +1,4 @@
-# main.py — Bug-fixed, optimized, polished UI for A/B Test Architect
+# main.py — Updated with Progressive Disclosure Input Flow
 import streamlit as st
 import json
 import re
@@ -14,7 +14,7 @@ from datetime import datetime
 from io import BytesIO
 import ast
 
-# reportlab imports (optional) — used for PDF export
+# reportlab imports (optional)
 REPORTLAB_AVAILABLE = False
 try:
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
@@ -85,12 +85,6 @@ def _safe_single_to_double_quotes(s: str) -> str:
 def extract_json(text: Any) -> Optional[Dict]:
     """
     Robust attempt to parse JSON from a variety of LLM outputs.
-    Attempts:
-      - json.loads(raw)
-      - ast.literal_eval(raw)
-      - extract first {...} and parse
-      - safe single->double quote conversion attempts
-    If top-level list is returned, we attempt to wrap into an object where reasonable.
     """
     if text is None:
         st.error("No output returned from LLM.")
@@ -99,7 +93,6 @@ def extract_json(text: Any) -> Optional[Dict]:
     if isinstance(text, dict):
         return text
     if isinstance(text, list):
-        # If model returned a list but we expected an object, try a safe wrap if list contains a dict
         if all(isinstance(i, dict) for i in text):
             return {"items": text}
         st.error("LLM returned a JSON list when an object was expected.")
@@ -220,7 +213,6 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
         if baseline is None or mde is None:
             return None, None
 
-        # If baseline is zero, treat special-case to avoid division by zero.
         mde_relative = float(mde) / 100.0
         if metric_type == "Conversion Rate":
             try:
@@ -321,13 +313,10 @@ st.set_page_config(page_title="A/B Test Architect", layout="wide")
 st.markdown(
     """
 <style>
-/* Page-level */
 .blue-section {background-color: #f6f9ff; padding: 14px; border-radius: 10px; margin-bottom: 14px;}
 .green-section {background-color: #f7fff7; padding: 14px; border-radius: 10px; margin-bottom: 14px;}
 .section-title {font-size: 1.15rem; font-weight: 700; color: #0b63c6; margin-bottom: 6px;}
 .small-muted { color: #7a7a7a; font-size: 13px; }
-
-/* Final PRD preview styling — more polished */
 .prd-card {
   background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
   border-radius: 14px;
@@ -336,8 +325,6 @@ st.markdown(
   border: 1px solid rgba(13,60,120,0.06);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
-
-/* Header */
 .prd-header {
   display:flex;
   align-items:center;
@@ -359,8 +346,6 @@ st.markdown(
 }
 .prd-title { font-size:24px; font-weight:800; color:#052a4a; margin-bottom:4px; }
 .prd-subtitle { font-size:16px; color:#475569; margin-top:3px; }
-
-/* Section headings inside preview */
 .prd-section { margin-top:20px; margin-bottom:12px; }
 .prd-section h3 {
   margin:0;
@@ -371,15 +356,9 @@ st.markdown(
   border-bottom: 2px solid #e0e7ff;
 }
 .prd-body { font-size:15px; color:#334155; line-height:1.7; white-space: pre-wrap; margin-top:10px; }
-
-/* bullets */
 .prd-body ul { padding-left:20px; margin-top:8px; }
 .prd-body li { margin-bottom: 6px; }
-
-/* meta */
 .prd-meta { color:#6b7280; font-size:13px; margin-top:8px; }
-
-/* Footer */
 .prd-footer {
   margin-top: 28px;
   padding-top: 16px;
@@ -418,134 +397,135 @@ if "calculate_now" not in st.session_state:
     st.session_state.calculate_now = False
 
 # -------------------------
-# INPUTS: Business Context (in an expander)
+# NEW: Progressive Disclosure Input Flow
 # -------------------------
-with st.expander("💡 Product Context (click to expand)", expanded=True):
-    create_header_with_help(
-        "Product Context",
-        "Provide the product context and business goal so the AI can produce a focused experiment plan.",
-        icon="💡",
-    )
-    col_a, col_b = st.columns([2, 1])
-    with col_a:
+with st.expander("🧩 Experiment Setup (Step-by-Step)", expanded=True):
+    tab1, tab2, tab3 = st.tabs(["1. Business Goal", "2. Metric Setup", "3. Advanced"])
+    
+    with tab1:
+        st.subheader("Business Context")
+        strategic_goal = st.text_area(
+            "High-Level Business Goal *", 
+            placeholder="e.g., Increase premium tier conversions",
+            help="The broader goal this experiment supports."
+        )
         product_type = st.selectbox(
             "Product Type",
             ["SaaS", "Consumer App", "E-commerce", "Marketplace", "Gaming", "Other"],
-            index=0,
-            help="What kind of product are you testing?",
+            index=0
+        )
+        user_persona = st.text_input(
+            "Target User Persona (optional)",
+            placeholder="e.g., First-time users from India"
         )
         user_base_choice = st.selectbox(
             "User Base Size (DAU)",
             ["< 10K", "10K–100K", "100K–1M", "> 1M"],
-            index=0,
-            help="Average daily active users for the product.",
+            index=0
         )
         metric_focus = st.selectbox(
             "Primary Metric Focus",
             ["Activation", "Retention", "Monetization", "Engagement", "Virality"],
-            index=0,
-            help="The general category of metrics you're trying to move.",
+            index=0
         )
-        product_notes = st.text_area(
-            "Anything unique about your product or users? (optional)",
-            placeholder="e.g. seasonality, power users, drop-off at pricing",
-            help="Optional context to inform better suggestions.",
-        )
-    with col_b:
-        strategic_goal = st.text_area(
-            "High-Level Business Goal *",
-            placeholder="e.g., Increase overall revenue from our premium tier",
-            help="This is the broader business goal the experiment supports.",
-        )
-        user_persona = st.text_input(
-            "Target User Persona (optional)",
-            placeholder="e.g., First-time users from India, iOS users, power users",
-            help="Focus the plan on a specific user segment.",
-        )
+        
+        with st.expander("ℹ️ Examples"):
+            st.markdown("""
+            **Good Business Goals:**
+            - Increase free-to-paid conversion by 20%
+            - Reduce signup drop-off by 15%
+            - Improve 7-day retention for mobile users
+            """)
 
-# -------------------------
-# INPUTS: Metric Details (in an expander)
-# -------------------------
-with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded=True):
-    create_header_with_help(
-        "Metric Improvement Objective",
-        "Provide the exact metric and current vs target values. Use the proper units.",
-        icon="🎯",
-    )
-    col_m1, col_m2 = st.columns([2, 2])
-    with col_m1:
+    with tab2:
+        st.subheader("Metric Improvement")
         exact_metric = st.text_input(
-            "Metric to Improve * (e.g. Activation Rate, ARPU, DAU/MAU)",
-            help="Be specific — name the metric you want to shift.",
+            "Metric to Improve *", 
+            placeholder="e.g., Activation Rate, ARPU",
+            help="Be specific — name the exact metric you want to shift."
         )
-    with col_m2:
-        metric_type = st.radio("Metric Type", ["Conversion Rate", "Numeric Value"], horizontal=True)
-    col_unit, col_values = st.columns([1, 2])
-    with col_unit:
-        metric_unit = st.selectbox(
-            "Metric Unit", ["%", "USD", "minutes", "count", "other"], index=0, help="Choose the unit for clarity."
+        metric_type = st.radio(
+            "Metric Type", 
+            ["Conversion Rate", "Numeric Value"], 
+            horizontal=True,
+            help="Conversion Rate for % metrics, Numeric for absolute values"
         )
-    with col_values:
-        if metric_unit == "%":
-            current_value = st.number_input("Current Metric Value *", min_value=0.0, step=0.01, format="%.2f")
-            target_value = st.number_input("Target Metric Value *", min_value=0.0, step=0.01, format="%.2f")
-        else:
-            current_value = st.number_input("Current Metric Value *", min_value=0.0, step=0.01, format="%.2f")
-            target_value = st.number_input("Target Metric Value *", min_value=0.0, step=0.01, format="%.2f")
-
-        std_dev = None
+        
+        col_unit, col_values = st.columns([1, 2])
+        with col_unit:
+            metric_unit = st.selectbox(
+                "Metric Unit", 
+                ["%", "USD", "minutes", "count", "other"], 
+                index=0
+            )
+        with col_values:
+            if metric_unit == "%":
+                current_value = st.number_input("Current Value *", min_value=0.0, max_value=100.0, step=0.01, format="%.2f")
+                target_value = st.number_input("Target Value *", min_value=0.0, max_value=100.0, step=0.01, format="%.2f")
+            else:
+                current_value = st.number_input("Current Value *", min_value=0.0, step=0.01, format="%.2f")
+                target_value = st.number_input("Target Value *", min_value=0.0, step=0.01, format="%.2f")
+            
+            # Auto-calculate expected lift
+            if current_value and target_value and current_value != 0:
+                expected_lift_val = ((target_value - current_value) / current_value) * 100
+                st.caption(f"Expected Lift: {expected_lift_val:.1f}%")
+        
         if metric_type == "Numeric Value":
             std_dev = st.number_input(
-                "Standard Deviation of Metric * (required for numeric metrics)",
+                "Standard Deviation (required for numeric metrics)",
                 min_value=0.0,
                 step=0.01,
-                format="%.4f",
-                help="The standard deviation is required for numeric metrics to compute sample sizes.",
+                format="%.4f"
             )
-
-    # Validation: prevent equal current and target
-    metric_inputs_valid = True
-    if current_value == target_value:
-        st.warning("The target metric must be different from the current metric to measure change. Please adjust one or the other.")
-        metric_inputs_valid = False
-    
-    if metric_type == "Conversion Rate" and metric_unit != "%":
-        st.warning("For 'Conversion Rate' metric type, the unit should be '%'.")
-        metric_inputs_valid = False
-
-# -------------------------
-# GENERATE PLAN AREA
-# -------------------------
-with st.expander("🧠 Generate Experiment Plan", expanded=True):
-    create_header_with_help("Generate Experiment Plan", "When ready, click Generate to call the LLM and create a plan.", icon="🧠")
-    sanitized_metric_name = sanitize_text(exact_metric)
-    # safe expected lift calculation
-    try:
-        if current_value and current_value != 0:
-            expected_lift_val = round(((target_value - current_value) / current_value) * 100, 2)
-            mde_default = round(abs((target_value - current_value) / current_value) * 100, 2)
         else:
-            expected_lift_val = 0.0
-            mde_default = 5.0
-    except Exception:
-        expected_lift_val = 0.0
-        mde_default = 5.0
+            std_dev = None
 
-    formatted_current = format_value_with_unit(current_value, metric_unit) if sanitized_metric_name else ""
-    formatted_target = format_value_with_unit(target_value, metric_unit) if sanitized_metric_name else ""
-    goal_with_units = f"I want to improve {sanitized_metric_name} from {formatted_current} to {formatted_target}." if sanitized_metric_name else ""
+    with tab3:
+        st.subheader("Advanced Settings")
+        mde_default = st.number_input(
+            "Minimum Detectable Effect (MDE %) *", 
+            min_value=0.1, 
+            max_value=50.0, 
+            value=5.0, 
+            step=0.1,
+            help="Smallest effect size you want to detect"
+        )
+        product_notes = st.text_area(
+            "Additional Context (optional)",
+            placeholder="e.g., seasonality, technical constraints"
+        )
+        
+        with st.expander("🛠️ Debug Options"):
+            st.checkbox("Show raw JSON output", value=False, key="debug_mode")
 
-    required_ok = all(
-        [
-            product_type,
-            user_base_choice,
-            metric_focus,
-            sanitized_metric_name,
-            metric_inputs_valid,
-            strategic_goal,
-        ]
+    # Validation
+    required_fields_filled = all([
+        strategic_goal,
+        exact_metric,
+        current_value != target_value
+    ])
+    
+    if current_value == target_value:
+        st.error("Target value must differ from current value to measure impact")
+    
+    generate_btn = st.button(
+        "Generate Plan", 
+        disabled=not required_fields_filled,
+        type="primary"
     )
-    generate_btn = st.button("Generate Plan", disabled=not required_ok)
+
+# -------------------------
+# Rest of the original functionality (unchanged)
+# -------------------------
+# [Previous code for calculator, plan generation, PRD display etc. remains exactly the same]
+# ... (continues with all existing functionality)
+
+# Note: The remaining code (calculator, LLM generation, PRD display, etc.) 
+# stays identical to your original implementation - just ensure proper indentation
+# when integrating with the new input flow.
+
+# [END OF FILE]
 
     if generate_btn:
         # Reset selection state on new generation
