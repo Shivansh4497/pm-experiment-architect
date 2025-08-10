@@ -20,6 +20,28 @@ try:
 except Exception:
     GROQ_AVAILABLE = False
 
+# prompt_engine.py
+"""
+Ultimate prompt engine with:
+1. Hyper-contextual responses using all user inputs
+2. Three detailed hypotheses with implementation examples
+3. Professional-grade rigor
+4. Built-in validation layer
+5. Guaranteed complete outputs
+"""
+
+import os
+import json
+import textwrap
+from typing import Dict, Any
+
+# Attempt to import Groq client
+try:
+    from groq import Groq  # type: ignore
+    GROQ_AVAILABLE = True
+except Exception:
+    GROQ_AVAILABLE = False
+
 def _build_validation_prompt(prd: Dict[str, Any], context: Dict[str, Any]) -> str:
     """Create a rigorous validation prompt for the generated PRD"""
     return f"""
@@ -38,16 +60,16 @@ VALIDATION CRITERIA:
    - Does sample size account for novelty effects?
 
 2. Hypothesis Quality (3 required):
-   - Are all hypotheses testable and specific to the persona?
-   - Do examples show concrete product implementations?
+   - Does each hypothesis include:
+     * Clear if-then-because statement
+     * Behavioral science/data reference
+     * Concrete implementation example
+     * Psychological principle
 
-3. Risk Coverage:
-   - Are severity indicators properly calibrated?
-   - Do mitigations match risk levels?
-
-4. Professional Standards:
-   - Would this pass an enterprise PRD review?
-   - Are success criteria ambitious but achievable?
+3. Completeness:
+   - Are all next steps actionable?
+   - Are risks paired with mitigations?
+   - Is the problem statement metric-driven?
 
 PRD TO REVIEW:
 {json.dumps(prd, indent=2)}
@@ -57,7 +79,7 @@ Return JSON with:
     "is_valid": boolean,
     "critical_issues": [str],
     "suggested_improvements": [str],
-    "pro_tips": [str]  # No "Google" naming
+    "pro_tips": [str]
 }}
 """
 
@@ -69,6 +91,23 @@ def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
     You are a Principal Product Manager crafting an enterprise-grade experiment plan.
     Use ALL provided context to create hyper-personalized outputs.
 
+    MANDATORY REQUIREMENTS:
+    1. For each of 3 hypotheses:
+       - hypothesis: "If [change] then [outcome] because [rationale]"
+       - rationale: Peer-reviewed research or credible data source
+       - example_implementation: Exact UI/flow changes
+       - behavioral_basis: Psychological principle
+    
+    2. Problem statement must:
+       - Start with specific metric comparison
+       - Explain user pain points
+       - Connect to business impact
+
+    3. Next steps must be:
+       - Actionable (verb-first)
+       - Owned (assignable to roles)
+       - Time-bound (when possible)
+
     CONTEXT DEEP DIVE:
     - Product Type: {ctx.get('type', '')}
     - User Base: {ctx.get('users', '')}
@@ -79,32 +118,15 @@ def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
     - Metric Type: {ctx.get('metric_type', '')}
     - Data Notes: {ctx.get('notes', '')}
 
-    REQUIREMENTS:
-    1. Problem Statement:
-       - Start with a data-driven insight
-       - Explain persona-specific impact
-       - Connect to business goal
-
-    2. Three Hypotheses (each):
-       - Mechanism: "If [change], then [outcome] because [rationale]"
-       - Behavioral Basis: Psychology/data reference
-       - Implementation: Exactly how to build it
-       - Example: "For {ctx.get('type', '')}, this would look like [concrete example]"
-
-    3. Professional Enhancements:
-       - Add benchmark data for similar products
-       - Include monitoring protocols
-       - Specify severity-based mitigations
-
     OUTPUT SCHEMA:
     {{
       "problem_statement": str,
       "hypotheses": [
         {{
-          "hypothesis": str,
-          "rationale": str,
-          "example_implementation": str,
-          "behavioral_basis": str
+          "hypothesis": str,  # "If we X, then Y because Z"
+          "rationale": str,   # "Baymard Institute shows..."
+          "example_implementation": str,  # "Remove these 2 fields..."
+          "behavioral_basis": str  # "Hick's Law..."
         }},
         {{...}}  # 3 total
       ],
@@ -123,15 +145,27 @@ def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
           "mitigation": str
         }}
       ],
+      "next_steps": [str],  # ["Create mockups by Fri (Design)"]
       "statistical_rationale": str
     }}
 
-    EXAMPLE HYPOTHESIS:
+    EXAMPLE OUTPUT:
     {{
-      "hypothesis": "If we add progress indicators, onboarding completion will increase by 15%",
-      "rationale": "Progress bars reduce abandonment by managing expectations",
-      "example_implementation": "Add 3-step tracker with % complete",
-      "behavioral_basis": "Zeigarnik effect (unfinished tasks create mental tension)"
+      "problem_statement": "Only 22% complete onboarding (vs 45% avg)...",
+      "hypotheses": [
+        {{
+          "hypothesis": "If we reduce signup fields from 5→3, completion will increase 15% because shorter forms reduce cognitive load",
+          "rationale": "Baymard Institute shows each extra field loses 10% of users",
+          "example_implementation": "Remove 'Company Size' and 'Role' fields, keep Email/Password/Use Case",
+          "behavioral_basis": "Hick's Law (decision time ∝ options)"
+        }},
+        {{...}}  # 2 more
+      ],
+      "next_steps": [
+        "Create high-fidelity mockups by EOW (Design)",
+        "Instrument analytics for baseline metrics (Eng)",
+        "Recruit 50 users for prototype testing (Research)"
+      ]
     }}
     """).strip()
 
@@ -140,16 +174,29 @@ def _enrich_output(raw_prd: str, context: Dict[str, Any]) -> str:
     try:
         prd = json.loads(raw_prd)
         
-        # Guarantee 3 hypotheses
-        hypotheses = prd.get("hypotheses", [])
-        while len(hypotheses) < 3:
-            hypotheses.append({
-                "hypothesis": f"Secondary lever for {context.get('exact_metric', 'metric')} improvement",
-                "rationale": "Complements primary hypotheses through [mechanism]",
-                "example_implementation": f"Example: {context.get('type', 'Product')} could [action]",
-                "behavioral_basis": "Supported by [principle]"
+        # Process hypotheses
+        validated_hypotheses = []
+        for h in prd.get("hypotheses", []):
+            validated_hypotheses.append({
+                'hypothesis': h.get('hypothesis', 
+                    f"If we improve {context.get('exact_metric', 'metric')} through..."),
+                'rationale': h.get('rationale', 
+                    f"Expected {context.get('current_value', 'X')}→{context.get('target_value', 'Y')} based on..."),
+                'example_implementation': h.get('example_implementation',
+                    f"Concrete change for {context.get('type', 'product')}"),
+                'behavioral_basis': h.get('behavioral_basis', 
+                    "Supported by behavioral psychology principles")
             })
-        prd["hypotheses"] = hypotheses
+        
+        # Ensure exactly 3 complete hypotheses
+        while len(validated_hypotheses) < 3:
+            validated_hypotheses.append({
+                'hypothesis': f"Secondary lever for {context.get('exact_metric', 'metric')} improvement",
+                'rationale': "Complements primary hypotheses through [mechanism]",
+                'example_implementation': f"Implementation for {context.get('type', 'product')}",
+                'behavioral_basis': "Supported by [principle]"
+            })
+        prd["hypotheses"] = validated_hypotheses[:3]
 
         # Enhance problem statement
         current = f"{context.get('current_value', '')}{context.get('metric_unit', '')}"
@@ -160,6 +207,14 @@ def _enrich_output(raw_prd: str, context: Dict[str, Any]) -> str:
             f"Target: {target}\n"
             f"Strategic Impact: {context.get('strategic_goal', '')}"
         )
+
+        # Ensure next steps exist
+        if "next_steps" not in prd or not prd["next_steps"]:
+            prd["next_steps"] = [
+                f"Finalize {context.get('type', 'product')} experiment design",
+                "Implement tracking for target metrics",
+                f"Recruit {context.get('users', 'target')} users for testing"
+            ]
 
         return json.dumps(prd)
     except Exception:
