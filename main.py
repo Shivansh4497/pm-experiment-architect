@@ -45,7 +45,12 @@ def create_header_with_help(header_text: str, help_text: str, icon: str = "🔗"
     )
 
 
-def sanitize_text(text: Any) -> str:
+def sanitize_text(text: Any, preserve_newlines: bool = False) -> str:
+    """
+    Sanitize text for display:
+    - If preserve_newlines True: keep newline characters (for PDF and structured blocks)
+    - Otherwise collapse whitespace into a single space
+    """
     if text is None:
         return ""
     if not isinstance(text, str):
@@ -53,10 +58,16 @@ def sanitize_text(text: Any) -> str:
             text = str(text)
         except Exception:
             return ""
-    # **MODIFIED**: Only replace carriage returns and tabs, keep newlines (\n).
-    text = text.replace("\r", " ").replace("\t", " ")
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    text = text.replace("\r", "")
+    text = text.replace("\t", " ")
+    if preserve_newlines:
+        # collapse repeated spaces but keep \n
+        # remove trailing/leading spaces on each line
+        lines = [re.sub(r"\s+", " ", ln).strip() for ln in text.split("\n")]
+        return "\n".join(lines).strip()
+    else:
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
 
 
 def safe_display(text: Any, method=st.info):
@@ -64,10 +75,10 @@ def safe_display(text: Any, method=st.info):
 
 
 def _extract_json_first_braces(text: str) -> Optional[str]:
-    """Find the first balanced {...} block in text and return it."""
+    """Find the first balanced {...} block in text and return it (or None)."""
     if not isinstance(text, str):
         return None
-    # prefer explicit <json> tags
+    # prefer explicit <json> tags if provided
     tag_match = re.search(r"<json>([\s\S]+?)</json>", text, re.IGNORECASE)
     if tag_match:
         return tag_match.group(1).strip()
@@ -92,8 +103,7 @@ def _safe_single_to_double_quotes(s: str) -> str:
     Conservative attempt to convert single-quoted JSON-like text to double-quoted JSON.
     This is a last resort and not guaranteed to work for all cases.
     """
-    # Replace things that look like Python dict strings: 'key': 'value' -> "key": "value"
-    # But avoid touching apostrophes inside words by only replacing quote patterns around word chars / spaces / punctuation.
+    # Replace 'key': 'value' -> "key": "value" for basic cases
     s = re.sub(r"(?<=[:\{\[,]\s*)'([^']*?)'(?=\s*[,}\]])", r'"\1"', s)  # values
     s = re.sub(r"'([A-Za-z0-9_ -]+?)'\s*:", r'"\1":', s)  # keys
     return s
@@ -101,23 +111,21 @@ def _safe_single_to_double_quotes(s: str) -> str:
 
 def extract_json(text: Any) -> Optional[Dict]:
     """
-    Robust attempt to parse JSON from a variety of LLM outputs.
-    Tries in order:
-      1. json.loads(raw)
-      2. ast.literal_eval(raw)  (handles Python dict/list syntax)
-      3. extract first {...} balanced substring and parse it (json or ast)
-      4. attempt safe single->double quote conversion and json.loads
-    On failure, shows helpful error and a snippet in the UI.
+    Robust attempt to parse JSON from various LLM outputs.
+    Steps:
+      1) json.loads(raw)
+      2) ast.literal_eval(raw)  (handles Python dict-style)
+      3) extract first {...} and try json.loads / ast.literal_eval
+      4) safe single->double quote conversion and try json.loads
+    On failure, shows helpful error + snippet.
     """
     if text is None:
         st.error("No output returned from LLM.")
         return None
 
-    # If it's already a dict, return
     if isinstance(text, dict):
         return text
 
-    # If it's a list at top-level, warn (we expect object)
     if isinstance(text, list):
         st.error("LLM returned a JSON list when an object was expected.")
         return None
@@ -128,37 +136,36 @@ def extract_json(text: Any) -> Optional[Dict]:
         st.error(f"Unexpected LLM output type: {e}")
         return None
 
-    # STEP 1: try direct JSON parse
+    # 1) direct json.loads
     try:
         parsed = json.loads(raw)
         if isinstance(parsed, dict):
             return parsed
         else:
-            st.error("Parsed JSON is not an object.")
+            st.error("Parsed JSON is not an object (top-level list or other).")
             return None
     except Exception:
         pass
 
-    # STEP 2: try ast.literal_eval (handles Python dict style)
+    # 2) try ast.literal_eval (handles Python-style dicts)
     try:
         parsed_ast = ast.literal_eval(raw)
         if isinstance(parsed_ast, dict):
             return parsed_ast
-        # if ast returns a list, reject (we expect dict)
         if isinstance(parsed_ast, list):
             st.error("LLM returned a top-level list (via ast). Expected an object.")
             return None
     except Exception:
         pass
 
-    # STEP 3: extract first balanced braces substring and try parsing that
+    # 3) extract first balanced braces substring and try parsing
     candidate = _extract_json_first_braces(raw)
     if candidate:
         candidate_clean = candidate
-        # remove surrounding markdown/code fences if present
+        # remove surrounding code fences if present
         candidate_clean = re.sub(r"^```(?:json)?\s*", "", candidate_clean).strip()
         candidate_clean = re.sub(r"\s*```$", "", candidate_clean).strip()
-        # fix common artifacts
+        # fix common trailing commas & double commas
         candidate_clean = re.sub(r',\s*,', ',', candidate_clean)
         candidate_clean = re.sub(r',\s*\}', '}', candidate_clean)
         candidate_clean = re.sub(r',\s*\]', ']', candidate_clean)
@@ -173,25 +180,24 @@ def extract_json(text: Any) -> Optional[Dict]:
                 st.code(candidate_clean[:2000] + ("..." if len(candidate_clean) > 2000 else ""))
                 return None
         except Exception:
-            # try ast.literal_eval on candidate
+            # try ast.literal_eval
             try:
                 parsed_ast = ast.literal_eval(candidate_clean)
                 if isinstance(parsed_ast, dict):
                     return parsed_ast
             except Exception:
-                # try last-resort single->double quote conversion then json.loads
+                # try conservative single->double conversion then json.loads
                 try:
                     converted = _safe_single_to_double_quotes(candidate_clean)
                     parsed = json.loads(converted)
                     if isinstance(parsed, dict):
                         return parsed
                 except Exception:
-                    # fall through to error display below
                     st.error("Could not parse extracted JSON block. See snippet below.")
                     st.code(candidate_clean[:2000] + ("..." if len(candidate_clean) > 2000 else ""))
                     return None
 
-    # STEP 4: Attempt a conservative single-to-double quote conversion on the full raw text
+    # 4) last-resort: attempt conversion on full raw text
     try:
         converted_full = _safe_single_to_double_quotes(raw)
         parsed = json.loads(converted_full)
@@ -200,10 +206,9 @@ def extract_json(text: Any) -> Optional[Dict]:
     except Exception:
         pass
 
-    # If all attempts fail, show helpful error + snippet
+    # give user a helpful debug snippet
     st.error("LLM output could not be parsed as JSON. Please inspect or edit the raw output below.")
     try:
-        # show a truncated snippet to help debugging
         st.code(raw[:3000] + ("..." if len(raw) > 3000 else ""))
     except Exception:
         st.write("LLM output could not be displayed.")
@@ -321,9 +326,10 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         story.append(Paragraph(heading, styles["SectionHeading"]))
         if content is None:
             return
-        # Use a version of sanitize_text that preserves newlines for PDF
+        # Use a version of sanitize_text that preserves newlines for PDF bodies
         def pdf_sanitize(text: Any) -> str:
-            if text is None: return ""
+            if text is None:
+                return ""
             return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
         if isinstance(content, str):
@@ -378,16 +384,40 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
 
 
 # -------------------------
-# Page Setup & Styling
+# Page Setup & Styling (embedded CSS for polished preview)
 # -------------------------
 st.set_page_config(page_title="A/B Test Architect", layout="wide")
 st.markdown(
     """
 <style>
-.blue-section {background-color: #f6f9ff; padding: 18px; border-radius: 8px; margin-bottom: 18px;}
-.green-section {background-color: #f7fff7; padding: 18px; border-radius: 8px; margin-bottom: 18px;}
-.section-title {font-size: 1.1rem; font-weight: 600; color: #1E90FF; margin-bottom: 8px;}
+/* App sections */
+.blue-section {background-color: #f6f9ff; padding: 18px; border-radius: 10px; margin-bottom: 18px; border: 1px solid #e6f0ff;}
+.green-section {background-color: #f7fff7; padding: 18px; border-radius: 10px; margin-bottom: 18px; border: 1px solid #e6ffe6;}
+.section-title {font-size: 1.05rem; font-weight: 700; color: #1E90FF; margin-bottom: 6px;}
 .small-muted { color: #7a7a7a; font-size: 13px; }
+
+/* Final PRD Preview styling */
+.prd-card { padding: 22px; border-radius: 12px; background: #fff; box-shadow: 0 4px 18px rgba(18, 52, 86, 0.06); border: 1px solid #eef6ff; }
+.prd-header { display:flex; gap:16px; align-items:center; }
+.prd-logo { width:72px; height:72px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-weight:800; color:white; font-size:22px; }
+.prd-logo.ab { background: linear-gradient(135deg,#1E90FF,#0066FF); }
+.prd-title { font-size:18px; font-weight:800; }
+.prd-sub { color:#333; font-size:13px; margin-top:4px; }
+.prd-section { margin-top:12px; border-left:4px solid #f1f5f9; padding:12px 12px 12px 16px; border-radius:6px; background:#fbfdff; }
+.prd-h { font-size:14px; font-weight:700; color:#054b9f; margin-bottom:6px; }
+.prd-body { font-size:13px; color:#111827; line-height:1.45; white-space:pre-wrap; }
+.prd-bul { margin-left:18px; margin-top:6px; }
+
+/* color codes for section headings */
+.h-goal { border-left-color: #2b9af3; }
+.h-problem { border-left-color: #ff9f43; }
+.h-hyp { border-left-color: #7b61ff; }
+.h-metrics { border-left-color: #20c997; }
+.h-risks { border-left-color: #ff6b6b; }
+
+@media (max-width: 800px) {
+  .prd-header { flex-direction: column; align-items:flex-start; gap:8px; }
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -395,18 +425,6 @@ st.markdown(
 
 st.title("💡 A/B Test Architect — AI-assisted experiment PRD generator")
 st.markdown("Create experiment PRDs, hypotheses, stats, and sample-size guidance — faster and with guardrails.")
-
-# -------------------------
-# Sidebar for API Key
-# -------------------------
-st.sidebar.title("Configuration")
-groq_api_key = st.sidebar.text_input(
-    "Groq API Key",
-    type="password",
-    help="Get your key from https://console.groq.com/keys",
-    value=os.environ.get("GROQ_API_KEY", "")
-)
-
 
 # -------------------------
 # Initialize session state defaults
@@ -541,16 +559,12 @@ required_ok = all(
         sanitized_metric_name,
         metric_inputs_valid,
         strategic_goal,
-        groq_api_key, # Check for API Key
     ]
 )
-if not groq_api_key:
-    st.warning("Please enter your Groq API Key in the sidebar to enable plan generation.")
-
 generate_btn = st.button("Generate Plan", disabled=not required_ok)
 
 if generate_btn:
-    # **FIX**: Reset selection state on new generation
+    # Reset selection state on new generation
     st.session_state.selected_index = None
     st.session_state.hypothesis_confirmed = False
     st.session_state.calc_locked = False
@@ -575,8 +589,7 @@ if generate_btn:
 
     with st.spinner("Generating your plan..."):
         try:
-            # **FIX**: Pass the API key to the generation function
-            raw_llm = generate_experiment_plan(goal_with_units, context, api_key=groq_api_key)
+            raw_llm = generate_experiment_plan(goal_with_units, context)
             st.session_state.output = raw_llm if raw_llm is not None else ""
             parsed = extract_json(raw_llm)
             st.session_state.ai_parsed = parsed
@@ -939,22 +952,84 @@ if st.session_state.get("ai_parsed"):
 
             prd_text = "\n".join(prd_parts)
 
-            # Final PRD preview (production-like)
+            # Final PRD preview (polished)
             create_header_with_help("Final PRD Preview", "A clean, production-style preview suitable for interviews. Export to PDF or HTML.", icon="📄")
+            # build small structured html block for the preview using sanitized content (preserve new lines)
+            preview_goal = sanitize_text(goal_with_units)
+            preview_problem = sanitize_text(st.session_state.get("editable_problem", problem_statement), preserve_newlines=True)
+            preview_hypo = sanitize_text(st.session_state.get("editable_hypothesis", selected_hypo), preserve_newlines=True)
+            preview_variants = f"Control: {sanitize_text(st.session_state.get('editable_control', control))}\nVariation: {sanitize_text(st.session_state.get('editable_variation', variation))}"
+            preview_rationale = sanitize_text(st.session_state.get("editable_rationale", rationale), preserve_newlines=True)
+            preview_stats = sanitize_text(
+                f"Confidence: {confidence_str}\nMDE: {mde_display}\nSample Size: {sample_size}\nUsers/Variant: {users_per_variant}\nDuration: {duration}",
+                preserve_newlines=True
+            )
+
+            # metrics formatted
+            metrics_html = ""
+            for mm in prd_dict.get("metrics", []):
+                metrics_html += f"<div class='prd-bul'>• <b>{sanitize_text(mm.get('name'))}</b>: {sanitize_text(mm.get('formula'))}</div>"
+
+            # segments, risks, next steps as lists
+            segments_html = ""
+            for s in prd_dict.get("segments", []):
+                segments_html += f"<div class='prd-bul'>• {sanitize_text(s)}</div>"
+            risks_html = ""
+            for r in prd_dict.get("risks_and_assumptions", []):
+                risks_html += f"<div class='prd-bul'>• {sanitize_text(r)}</div>"
+            steps_html = ""
+            for s in prd_dict.get("next_steps", []):
+                steps_html += f"<div class='prd-bul'>• {sanitize_text(s)}</div>"
+
+            # polished HTML preview
             st.markdown(
                 f"""
-                <div style="padding:18px;border-radius:8px;background:white;">
-                    <div style="display:flex;align-items:center;gap:18px;">
-                        <div style="width:72px;height:72px;background:#1E90FF;color:white;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;">A/B</div>
-                        <div>
-                            <div style="font-size:18px;font-weight:700;">Experiment PRD</div>
-                            <div style="color:#000;">{sanitize_text(goal_with_units)}</div>
-                        </div>
+                <div class="prd-card">
+                  <div class="prd-header">
+                    <div class="prd-logo ab">A/B</div>
+                    <div>
+                      <div class="prd-title">Experiment PRD</div>
+                      <div class="prd-sub">{preview_goal}</div>
                     </div>
-                    <hr style="margin-top:12px;margin-bottom:12px;">
-                    <div style="font-size:14px;line-height:1.5;">
-                        <pre style="white-space:pre-wrap;font-family:inherit;">{prd_text}</pre>
+                  </div>
+
+                  <div class="prd-section h-goal">
+                    <div class="prd-h">🎯 Goal</div>
+                    <div class="prd-body">{preview_goal}</div>
+                  </div>
+
+                  <div class="prd-section h-problem">
+                    <div class="prd-h">🧩 Problem</div>
+                    <div class="prd-body">{preview_problem}</div>
+                  </div>
+
+                  <div class="prd-section h-hyp">
+                    <div class="prd-h">🧪 Hypothesis</div>
+                    <div class="prd-body">{preview_hypo}</div>
+                    <div style="margin-top:8px;"><b>Variants</b><pre style="font-family:inherit;white-space:pre-wrap;">{sanitize_text(preview_variants, preserve_newlines=True)}</pre></div>
+                  </div>
+
+                  <div class="prd-section h-metrics">
+                    <div class="prd-h">📏 Metrics</div>
+                    <div class="prd-body">
+                      {metrics_html or '<div class="prd-bul">• No metrics provided</div>'}
                     </div>
+                  </div>
+
+                  <div class="prd-section h-risks">
+                    <div class="prd-h">⚠️ Risks & Next Steps</div>
+                    <div class="prd-body">
+                      <div style="font-weight:700;margin-bottom:6px;">Risks & Assumptions</div>
+                      {risks_html or '<div class="prd-bul">• None specified</div>'}
+                      <div style="font-weight:700;margin-top:8px;margin-bottom:6px;">Next Steps</div>
+                      {steps_html or '<div class="prd-bul">• None specified</div>'}
+                    </div>
+                  </div>
+
+                  <div class="prd-section">
+                    <div class="prd-h">📊 Experiment Stats</div>
+                    <div class="prd-body"><pre style="font-family:inherit;white-space:pre-wrap;">{sanitize_text(preview_stats, preserve_newlines=True)}</pre></div>
+                  </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1002,7 +1077,7 @@ if st.session_state.get("ai_parsed"):
             with col_dl2:
                 st.download_button("📥 Download Plan (.json)", json.dumps(prd_dict, indent=2, ensure_ascii=False), file_name="experiment_plan.json")
             with col_dl3:
-                html_blob = f"<!doctype html><html><body><pre>{prd_text}</pre></body></html>"
+                html_blob = f"<!doctype html><html><head><meta charset='utf-8'></head><body><pre>{sanitize_text(prd_text, preserve_newlines=True)}</pre></body></html>"
                 st.download_button("🌐 Download PRD (.html)", html_blob, file_name="experiment_prd.html")
             with col_dl4:
                 if REPORTLAB_AVAILABLE:
@@ -1022,7 +1097,7 @@ if st.session_state.get("ai_parsed"):
 if st.session_state.get("output") and not st.session_state.get("ai_parsed"):
     st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
     create_header_with_help("Raw LLM Output (fix JSON here)", "When parsing fails you'll see the raw LLM output — edit it then click Parse JSON.", icon="🛠️")
-    raw_edit = st.text_area("Raw LLM output / edit here", value=st.session_state.get("output", ""), height=400, key="raw_llm_edit")
+    raw_edit = st.text_area("Raw LLM output / edit here", value=st.session_state.get("output", ""), height=480, key="raw_llm_edit")
     if st.button("Parse JSON"):
         parsed_try = extract_json(st.session_state.get("raw_llm_edit", raw_edit))
         if parsed_try:
