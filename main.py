@@ -1,4 +1,4 @@
-# main.py — Bug-fixed, optimized, polished UI for A/B Test Architect
+# main.py — Final A/B Test Architect
 import streamlit as st
 import json
 import re
@@ -14,7 +14,7 @@ from datetime import datetime
 from io import BytesIO
 import ast
 
-# reportlab imports (optional) — used for PDF export
+# PDF Export Setup
 REPORTLAB_AVAILABLE = False
 try:
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
@@ -26,9 +26,6 @@ try:
 except Exception:
     REPORTLAB_AVAILABLE = False
 
-# -------------------------
-# Helpers / Utilities
-# -------------------------
 def create_header_with_help(header_text: str, help_text: str, icon: str = "🔗"):
     st.markdown(
         f"""
@@ -51,7 +48,7 @@ def sanitize_text(text: Any) -> str:
             text = str(text)
         except Exception:
             return ""
-    text = text.replace("\r", " ").replace("\t", " ")
+    text = text.replace("\r", ").replace("\t", " ")
     text = re.sub(r"[ \f\v]+", " ", text)
     return text.strip()
 
@@ -83,15 +80,6 @@ def _safe_single_to_double_quotes(s: str) -> str:
     return s
 
 def extract_json(text: Any) -> Optional[Dict]:
-    """
-    Robust attempt to parse JSON from a variety of LLM outputs.
-    Attempts:
-      - json.loads(raw)
-      - ast.literal_eval(raw)
-      - extract first {...} and parse
-      - safe single->double quote conversion attempts
-    If top-level list is returned, we attempt to wrap into an object where reasonable.
-    """
     if text is None:
         st.error("No output returned from LLM.")
         return None
@@ -99,7 +87,6 @@ def extract_json(text: Any) -> Optional[Dict]:
     if isinstance(text, dict):
         return text
     if isinstance(text, list):
-        # If model returned a list but we expected an object, try a safe wrap if list contains a dict
         if all(isinstance(i, dict) for i in text):
             return {"items": text}
         st.error("LLM returned a JSON list when an object was expected.")
@@ -111,7 +98,6 @@ def extract_json(text: Any) -> Optional[Dict]:
         st.error(f"Unexpected LLM output type: {e}")
         return None
 
-    # 1) direct JSON
     try:
         parsed = json.loads(raw)
         if isinstance(parsed, dict):
@@ -123,7 +109,6 @@ def extract_json(text: Any) -> Optional[Dict]:
     except Exception:
         pass
 
-    # 2) ast.literal_eval
     try:
         parsed_ast = ast.literal_eval(raw)
         if isinstance(parsed_ast, dict):
@@ -133,7 +118,6 @@ def extract_json(text: Any) -> Optional[Dict]:
     except Exception:
         pass
 
-    # 3) extract first balanced braces substring
     candidate = _extract_json_first_braces(raw)
     if candidate:
         candidate_clean = candidate
@@ -171,7 +155,6 @@ def extract_json(text: Any) -> Optional[Dict]:
                     st.code(candidate_clean[:3000] + ("..." if len(candidate_clean) > 3000 else ""))
                     return None
 
-    # 4) conservative single->double quotes on full raw
     try:
         converted_full = _safe_single_to_double_quotes(raw)
         parsed = json.loads(converted_full)
@@ -220,7 +203,6 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
         if baseline is None or mde is None:
             return None, None
 
-        # If baseline is zero, treat special-case to avoid division by zero.
         mde_relative = float(mde) / 100.0
         if metric_type == "Conversion Rate":
             try:
@@ -256,9 +238,6 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
     except Exception:
         return None, None
 
-# -------------------------
-# PDF export
-# -------------------------
 def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -> Optional[bytes]:
     if not REPORTLAB_AVAILABLE:
         return None
@@ -314,20 +293,14 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     buffer.close()
     return pdf_bytes
 
-# -------------------------
-# Page setup & styling
-# -------------------------
 st.set_page_config(page_title="A/B Test Architect", layout="wide")
 st.markdown(
     """
 <style>
-/* Page-level */
 .blue-section {background-color: #f6f9ff; padding: 14px; border-radius: 10px; margin-bottom: 14px;}
 .green-section {background-color: #f7fff7; padding: 14px; border-radius: 10px; margin-bottom: 14px;}
 .section-title {font-size: 1.15rem; font-weight: 700; color: #0b63c6; margin-bottom: 6px;}
 .small-muted { color: #7a7a7a; font-size: 13px; }
-
-/* Final PRD preview styling — more polished */
 .prd-card {
   background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
   border-radius: 14px;
@@ -336,8 +309,6 @@ st.markdown(
   border: 1px solid rgba(13,60,120,0.06);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
-
-/* Header */
 .prd-header {
   display:flex;
   align-items:center;
@@ -359,8 +330,6 @@ st.markdown(
 }
 .prd-title { font-size:24px; font-weight:800; color:#052a4a; margin-bottom:4px; }
 .prd-subtitle { font-size:16px; color:#475569; margin-top:3px; }
-
-/* Section headings inside preview */
 .prd-section { margin-top:20px; margin-bottom:12px; }
 .prd-section h3 {
   margin:0;
@@ -371,15 +340,9 @@ st.markdown(
   border-bottom: 2px solid #e0e7ff;
 }
 .prd-body { font-size:15px; color:#334155; line-height:1.7; white-space: pre-wrap; margin-top:10px; }
-
-/* bullets */
 .prd-body ul { padding-left:20px; margin-top:8px; }
 .prd-body li { margin-bottom: 6px; }
-
-/* meta */
 .prd-meta { color:#6b7280; font-size:13px; margin-top:8px; }
-
-/* Footer */
 .prd-footer {
   margin-top: 28px;
   padding-top: 16px;
@@ -397,9 +360,6 @@ st.markdown(
 st.title("💡 A/B Test Architect — AI-assisted experiment PRD generator")
 st.markdown("Create experiment PRDs, hypotheses, stats, and sample-size guidance — faster and with guardrails.")
 
-# -------------------------
-# Session state defaults
-# -------------------------
 if "output" not in st.session_state:
     st.session_state.output = None
 if "ai_parsed" not in st.session_state:
@@ -419,9 +379,6 @@ if "calculate_now" not in st.session_state:
 if "metrics_table" not in st.session_state:
     st.session_state.metrics_table = None
 
-# -------------------------
-# INPUTS: Business Context (in an expander)
-# -------------------------
 with st.expander("💡 Product Context (click to expand)", expanded=True):
     create_header_with_help(
         "Product Context",
@@ -465,9 +422,6 @@ with st.expander("💡 Product Context (click to expand)", expanded=True):
             help="Focus the plan on a specific user segment.",
         )
 
-# -------------------------
-# INPUTS: Metric Details (in an expander)
-# -------------------------
 with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded=True):
     create_header_with_help(
         "Metric Improvement Objective",
@@ -505,7 +459,6 @@ with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded
                 help="The standard deviation is required for numeric metrics to compute sample sizes.",
             )
 
-    # Validation: prevent equal current and target
     metric_inputs_valid = True
     if current_value == target_value:
         st.warning("The target metric must be different from the current metric to measure change. Please adjust one or the other.")
@@ -515,13 +468,9 @@ with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded
         st.warning("For 'Conversion Rate' metric type, the unit should be '%'.")
         metric_inputs_valid = False
 
-# -------------------------
-# GENERATE PLAN AREA
-# -------------------------
 with st.expander("🧠 Generate Experiment Plan", expanded=True):
     create_header_with_help("Generate Experiment Plan", "When ready, click Generate to call the LLM and create a plan.", icon="🧠")
     sanitized_metric_name = sanitize_text(exact_metric)
-    # safe expected lift calculation
     try:
         if current_value and current_value != 0:
             expected_lift_val = round(((target_value - current_value) / current_value) * 100, 2)
@@ -550,7 +499,6 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
     generate_btn = st.button("Generate Plan", disabled=not required_ok)
 
     if generate_btn:
-        # Reset selection state on new generation
         st.session_state.selected_index = None
         st.session_state.hypothesis_confirmed = False
         st.session_state.calc_locked = False
@@ -593,9 +541,6 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
                 st.session_state.output = ""
                 st.session_state.ai_parsed = None
 
-# -------------------------
-# Calculator (Sample size)
-# -------------------------
 if st.session_state.get("ai_parsed") is not None or st.session_state.get("output"):
     st.markdown("<hr>", unsafe_allow_html=True)
     with st.expander("🔢 A/B Test Calculator: Fine-tune sample size", expanded=True):
@@ -615,12 +560,13 @@ if st.session_state.get("ai_parsed") is not None or st.session_state.get("output
         if metric_type == "Numeric Value" and std_dev is not None:
             st.info(f"Standard Deviation pre-filled: {std_dev}")
 
-        # visually grouped action buttons
         col_act1, col_act2 = st.columns([1, 1])
         with col_act1:
-            refresh_btn = st.button("Refresh Calculator")
+            btn_label = "Calculate" if not st.session_state.get("calculated_sample_size_per_variant") else "Refresh Calculator"
+            refresh_btn = st.button(btn_label)
         with col_act2:
-            lock_btn = st.button("Lock Values for Plan")
+            if st.session_state.get("calculated_sample_size_per_variant"):
+                lock_btn = st.button("Lock Values for Plan")
 
         if refresh_btn or st.session_state.get("calculate_now", False):
             st.session_state.calculate_now = False
@@ -658,7 +604,7 @@ if st.session_state.get("ai_parsed") is not None or st.session_state.get("output
             st.metric("Estimated Test Duration", duration_display)
             st.caption("Assumes all DAU are eligible and evenly split across variants.")
         else:
-            st.info("Click 'Refresh Calculator' to compute sample size with current inputs.")
+            st.info("Click 'Calculate' to compute sample size with current inputs.")
 
         if lock_btn:
             if st.session_state.get("calculated_sample_size_per_variant") is not None:
@@ -676,9 +622,6 @@ if st.session_state.get("ai_parsed") is not None or st.session_state.get("output
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# -------------------------
-# DISPLAY AI-GENERATED PLAN (editable + final view)
-# -------------------------
 if st.session_state.get("ai_parsed") is None and st.session_state.get("output"):
     st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
     create_header_with_help("Raw LLM Output (fix JSON here)", "When parsing fails you'll see the raw LLM output — edit it then click Parse JSON.", icon="🛠️")
@@ -694,7 +637,6 @@ if st.session_state.get("ai_parsed") is None and st.session_state.get("output"):
 
 if st.session_state.get("ai_parsed"):
     plan = st.session_state.ai_parsed
-    # ensure context exists
     if "context" not in st.session_state:
         st.session_state.context = {"metric_unit": metric_unit}
 
@@ -705,7 +647,7 @@ if st.session_state.get("ai_parsed"):
     safe_display(post_process_llm_text(goal_with_units, unit))
 
     create_header_with_help("Problem Statement", "Clear description of the gap and why it matters.", icon="🧩")
-    problem_statement = post_process_llm_text(plan.get("problem_statement", ""), unit)
+    problem_statement = generate_problem_statement(plan, current_value, target_value, unit)
     st.markdown(problem_statement or "⚠️ Problem statement not generated by the model.")
     with st.expander("Edit Problem Statement"):
         st.text_area("Problem Statement (edit)", value=problem_statement, key="editable_problem", height=160)
@@ -716,15 +658,15 @@ if st.session_state.get("ai_parsed"):
         st.warning("No hypotheses found in the generated plan.")
         hypotheses = []
 
-    # Display hypotheses with expandable details
     for i, h in enumerate(hypotheses):
         with st.container():
             cols = st.columns([5, 1])
             with cols[0]:
-                with st.expander(f"H{i+1}: {h.get('hypothesis', '')[:60]}...", expanded=False):
-                    st.markdown(f"**Hypothesis:** {h.get('hypothesis', 'N/A')}")
-                    st.markdown(f"**Rationale:** {h.get('rationale', h.get('behavioral_basis', 'N/A'))}")
-                    st.markdown(f"**Example Implementation:** {h.get('example_implementation', 'N/A')}")
+                st.markdown(f"""
+                    **H{i+1}:** {h.get('hypothesis', '')}  
+                    *Rationale:* {h.get('rationale', h.get('behavioral_basis', ''))}  
+                    *Example:* {h.get('example_implementation', '')}
+                """)
             with cols[1]:
                 if st.button("Select", key=f"select_{i}"):
                     st.session_state.selected_index = i
@@ -740,7 +682,6 @@ if st.session_state.get("ai_parsed"):
             st.markdown(f"**Rationale:** {selected_hypo.get('rationale', selected_hypo.get('behavioral_basis', 'N/A'))}")
             st.markdown(f"**Example:** {selected_hypo.get('example_implementation', 'N/A')}")
 
-            # Hypothesis editing
             with st.expander("✏️ Edit This Hypothesis"):
                 edited_hypo = {
                     "hypothesis": st.text_area(
@@ -769,13 +710,11 @@ if st.session_state.get("ai_parsed"):
                 st.session_state.selected_index = None
                 st.session_state.hypothesis_confirmed = False
 
-    # Metrics display and editing
     metrics = plan.get("metrics", [])
     if metrics:
         create_header_with_help("Metrics", "Primary and secondary metrics", icon="📏")
         
         try:
-            # Normalize metrics data
             normalized = []
             for m in metrics:
                 if isinstance(m, dict):
@@ -791,7 +730,6 @@ if st.session_state.get("ai_parsed"):
                         "importance": "Medium"
                     })
 
-            # Enhanced metrics editor
             if hasattr(st, "data_editor"):
                 df_metrics = pd.DataFrame(normalized)
                 edited_df = st.data_editor(
@@ -813,7 +751,6 @@ if st.session_state.get("ai_parsed"):
             st.error(f"Metrics display error: {e}")
             st.json(metrics)
 
-    # Segments display and editing
     segments = plan.get("segments", [])
     if segments:
         create_header_with_help("Segments", "User segments for analysis", icon="👥")
@@ -826,7 +763,6 @@ if st.session_state.get("ai_parsed"):
                 height=120
             )
 
-    # Risks display and editing - FIXED VERSION
     risks = plan.get("risks_and_assumptions", [])
     if risks:
         create_header_with_help("Risks & Mitigations", "Potential issues and solutions", icon="⚠️")
@@ -878,14 +814,11 @@ if st.session_state.get("ai_parsed"):
                     "mitigation": mitigation
                 })
 
-    # Next steps - GUARANTEED to appear
-    next_steps = plan.get("next_steps", [])
-    if not next_steps:  # Fallback if empty
-        next_steps = [
-            "Finalize experiment design",
-            "Implement tracking metrics",
-            "Recruit users for testing"
-        ]
+    next_steps = plan.get("next_steps", [
+        "Finalize experiment design",
+        "Implement tracking metrics",
+        "Recruit users for testing"
+    ])
 
     create_header_with_help("Next Steps", "Action items to execute the test", icon="✅")
     st.markdown("\n".join([f"- {step}" for step in next_steps]))
@@ -897,7 +830,6 @@ if st.session_state.get("ai_parsed"):
             height=120
         )
 
-    # Calculations Display - RESTORED SECTION
     if st.session_state.get("calculated_sample_size_per_variant") and st.session_state.get("calculated_total_sample_size"):
         st.markdown("---")
         create_header_with_help("Experiment Calculations", "Statistical requirements for valid results", icon="🧮")
@@ -914,7 +846,6 @@ if st.session_state.get("ai_parsed"):
         
         st.caption("Assumes all DAU are eligible and evenly split across variants.")
 
-    # Build final PRD dict
     prd_dict = {
         "goal": goal_with_units,
         "problem_statement": st.session_state.get("editable_problem", problem_statement),
@@ -942,7 +873,6 @@ if st.session_state.get("ai_parsed"):
         "statistical_rationale": plan.get("statistical_rationale", "")
     }
 
-    # Final PRD preview - FIXED VERSION
     create_header_with_help("Final PRD Preview", "Production-ready experiment document", icon="📄")
     
     def render_list(items):
@@ -959,7 +889,6 @@ if st.session_state.get("ai_parsed"):
         html += "</ul>"
         return html
 
-    # Fixed hypotheses rendering
     hypotheses_html = "<ol>"
     for i, h in enumerate(prd_dict["hypotheses"], 1):
         hypotheses_html += f"""
@@ -971,7 +900,6 @@ if st.session_state.get("ai_parsed"):
         """
     hypotheses_html += "</ol>"
 
-    # Fixed risks rendering
     risks_html = "<ul>"
     for r in prd_dict.get("risks_and_assumptions", []):
         risks_html += f"""
@@ -1018,7 +946,6 @@ if st.session_state.get("ai_parsed"):
     """
     st.markdown(prd_html, unsafe_allow_html=True)
 
-    # Download buttons
     col_dl1, col_dl2, col_dl3, col_dl4 = st.columns([1,1,1,1])
     with col_dl1:
         st.download_button(
@@ -1065,9 +992,6 @@ if st.session_state.get("ai_parsed"):
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# -------------------------
-# Footer / Debug info
-# -------------------------
 st.markdown("<hr>", unsafe_allow_html=True)
 with st.expander("⚙️ Debug & Trace"):
     st.write("Last LLM hash:", st.session_state.get("last_llm_hash"))
