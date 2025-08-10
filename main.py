@@ -334,7 +334,7 @@ st.markdown(
   padding: 28px;
   box-shadow: 0 12px 36px rgba(13,60,120,0.08);
   border: 1px solid rgba(13,60,120,0.06);
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 /* Header */
@@ -342,7 +342,7 @@ st.markdown(
   display:flex;
   align-items:center;
   gap:18px;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 .prd-logo {
   width:84px;
@@ -357,20 +357,39 @@ st.markdown(
   font-size:28px;
   box-shadow: 0 10px 26px rgba(10,120,200,0.12);
 }
-.prd-title { font-size:22px; font-weight:800; color:#052a4a; margin-bottom:4px; }
-.prd-subtitle { font-size:14px; color:#475569; margin-top:3px; }
+.prd-title { font-size:24px; font-weight:800; color:#052a4a; margin-bottom:4px; }
+.prd-subtitle { font-size:16px; color:#475569; margin-top:3px; }
 
 /* Section headings inside preview */
-.prd-section { margin-top:14px; margin-bottom:10px; }
-.prd-section h3 { margin:0; font-size:15px; color:#0b63c6; font-weight:800; }
-.prd-body { font-size:14px; color:#0f1724; line-height:1.6; white-space: pre-wrap; margin-top:8px; }
+.prd-section { margin-top:20px; margin-bottom:12px; }
+.prd-section h3 {
+  margin:0;
+  font-size:18px;
+  color:#0b63c6;
+  font-weight:700;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #e0e7ff;
+}
+.prd-body { font-size:15px; color:#334155; line-height:1.7; white-space: pre-wrap; margin-top:10px; }
 
 /* bullets */
-.prd-body ul { padding-left:18px; margin-top:6px; }
+.prd-body ul { padding-left:20px; margin-top:8px; }
+.prd-body li { margin-bottom: 6px; }
 
 /* meta */
 .prd-meta { color:#6b7280; font-size:13px; margin-top:8px; }
+
+/* Footer */
+.prd-footer {
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+  text-align: center;
+  font-size: 12px;
+  color: #94a3b8;
+}
 </style>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
 """,
     unsafe_allow_html=True,
 )
@@ -488,6 +507,10 @@ with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded
     metric_inputs_valid = True
     if current_value == target_value:
         st.warning("The target metric must be different from the current metric to measure change. Please adjust one or the other.")
+        metric_inputs_valid = False
+    
+    if metric_type == "Conversion Rate" and metric_unit != "%":
+        st.warning("For 'Conversion Rate' metric type, the unit should be '%'.")
         metric_inputs_valid = False
 
 # -------------------------
@@ -643,7 +666,7 @@ if st.session_state.get("ai_parsed") is not None or st.session_state.get("output
                     "MDE": st.session_state.last_calc_mde,
                     "sample_size_required": st.session_state.calculated_total_sample_size,
                     "users_per_variant": st.session_state.calculated_sample_size_per_variant,
-                    "estimated_test_duration_days": st.session_state.calculated_duration_days,
+                    "estimated_test_duration_days": st.session_state.calculated_duration_days if np.isfinite(st.session_state.calculated_duration_days) else 'Not applicable',
                 }
                 st.success("Calculator values locked and will be used in the final plan.")
             else:
@@ -772,7 +795,9 @@ if st.session_state.get("ai_parsed"):
 
             sample_size = criteria_display.get("sample_size_required", "N/A")
             users_per_variant = criteria_display.get("users_per_variant", "N/A")
-            duration = criteria_display.get("estimated_test_duration_days", criteria_display.get("estimated_test_duration", "N/A"))
+            duration_raw = criteria_display.get("estimated_test_duration_days", criteria_display.get("estimated_test_duration", "N/A"))
+            duration = f"{duration_raw:,.0f} days" if isinstance(duration_raw, (int, float)) and np.isfinite(duration_raw) else "N/A"
+
 
             try:
                 mde_val = float(criteria_display.get("MDE", 0))
@@ -963,6 +988,21 @@ if st.session_state.get("ai_parsed"):
 
             # Final PRD preview (polished)
             create_header_with_help("Final PRD Preview", "A clean, production-style preview suitable for interviews. Export to PDF or HTML.", icon="📄")
+            
+            def render_list(items):
+                if not items or not any(str(item).strip() for item in items):
+                    return "None specified"
+                html = "<ul>"
+                for item in items:
+                    if isinstance(item, dict):
+                        item_text = f"<b>{sanitize_text(item.get('name','Unnamed'))}:</b> {sanitize_text(item.get('formula',''))}"
+                    else:
+                        item_text = sanitize_text(item)
+                    if item_text:
+                        html += f"<li>{item_text}</li>"
+                html += "</ul>"
+                return html
+
             st.markdown(
                 f"""
                 <div class="prd-card">
@@ -971,17 +1011,11 @@ if st.session_state.get("ai_parsed"):
                     <div>
                       <div class="prd-title">Experiment PRD</div>
                       <div class="prd-subtitle">{sanitize_text(goal_with_units)}</div>
-                      <div class="prd-meta">Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}</div>
                     </div>
                   </div>
 
                   <div class="prd-section">
-                    <h3>🎯 Goal</h3>
-                    <div class="prd-body">{sanitize_text(goal_with_units)}</div>
-                  </div>
-
-                  <div class="prd-section">
-                    <h3>🧩 Problem Statement</h3>
+                    <h3>🎯 Problem Statement</h3>
                     <div class="prd-body">{sanitize_text(st.session_state.get("editable_problem", problem_statement))}</div>
                   </div>
 
@@ -989,10 +1023,15 @@ if st.session_state.get("ai_parsed"):
                     <h3>🧪 Hypothesis</h3>
                     <div class="prd-body">{sanitize_text(st.session_state.get("editable_hypothesis", selected_hypo))}</div>
                   </div>
-
+                  
                   <div class="prd-section">
                     <h3>🔁 Variants</h3>
-                    <div class="prd-body">Control: {sanitize_text(st.session_state.get('editable_control', control))}<br/>Variation: {sanitize_text(st.session_state.get('editable_variation', variation))}</div>
+                    <div class="prd-body">
+                        <ul>
+                            <li><b>Control:</b> {sanitize_text(st.session_state.get('editable_control', control))}</li>
+                            <li><b>Variation:</b> {sanitize_text(st.session_state.get('editable_variation', variation))}</li>
+                        </ul>
+                    </div>
                   </div>
 
                   <div class="prd-section">
@@ -1003,27 +1042,40 @@ if st.session_state.get("ai_parsed"):
                   <div class="prd-section">
                     <h3>📊 Experiment Stats</h3>
                     <div class="prd-body">
-{sanitize_text(f"- Confidence Level: {confidence_str}\\n- MDE: {mde_display}\\n- Sample Size: {sample_size}\\n- Users/Variant: {users_per_variant}\\n- Duration: {duration}\\n- Effort: {effort_display}\\n- Statistical Rationale: {statistical_rationale_display}")}
+                        <ul>
+                            <li><b>Confidence Level:</b> {confidence_str}</li>
+                            <li><b>MDE:</b> {mde_display}</li>
+                            <li><b>Sample Size Required:</b> {sample_size}</li>
+                            <li><b>Users per Variant:</b> {users_per_variant}</li>
+                            <li><b>Estimated Duration:</b> {duration}</li>
+                            <li><b>Estimated Effort:</b> {effort_display}</li>
+                        </ul>
+                        <b>Statistical Rationale:</b> {sanitize_text(statistical_rationale_display)}
                     </div>
                   </div>
 
                   <div class="prd-section">
                     <h3>📏 Metrics</h3>
-                    <div class="prd-body">{sanitize_text('\\n'.join([f\"- {m.get('name','Unnamed')}: {m.get('formula','')}\" for m in prd_dict.get('metrics', [])]) if prd_dict.get('metrics') else 'No metrics provided.')}</div>
+                    <div class="prd-body">{render_list(prd_dict.get('metrics', []))}</div>
                   </div>
 
                   <div class="prd-section">
                     <h3>👥 Segments</h3>
-                    <div class="prd-body">{sanitize_text('\\n'.join(prd_dict.get('segments', [])) if prd_dict.get('segments') else 'None specified')}</div>
+                    <div class="prd-body">{render_list(prd_dict.get('segments', []))}</div>
+                  </div>
+                  
+                  <div class="prd-section">
+                    <h3>⚠️ Risks & Assumptions</h3>
+                    <div class="prd-body">{render_list(prd_dict.get('risks_and_assumptions', []))}</div>
                   </div>
 
                   <div class="prd-section">
                     <h3>🚀 Next Steps</h3>
-                    <div class="prd-body">{sanitize_text('\\n'.join(prd_dict.get('next_steps', [])) if prd_dict.get('next_steps') else 'None specified')}</div>
+                    <div class="prd-body">{render_list(prd_dict.get('next_steps', []))}</div>
                   </div>
 
-                  <div class="prd-section" style="margin-top:14px;">
-                    <div class="prd-meta">Export: TXT · HTML · JSON · PDF (if enabled)</div>
+                  <div class="prd-footer">
+                    Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}
                   </div>
                 </div>
                 """,
