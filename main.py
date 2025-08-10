@@ -730,7 +730,6 @@ if st.session_state.get("ai_parsed"):
                     st.session_state.selected_index = i
                     st.session_state.hypothesis_confirmed = True
 
-    # Selected hypothesis details
     if st.session_state.get("hypothesis_confirmed") and st.session_state.get("selected_index") is not None:
         selected_hypo = hypotheses[st.session_state.selected_index]
         
@@ -827,9 +826,8 @@ if st.session_state.get("ai_parsed"):
                 height=120
             )
 
-    # Risks display and editing
+    # Risks display and editing - FIXED VERSION
     risks = plan.get("risks_and_assumptions", [])
-    editable_risks = []
     if risks:
         create_header_with_help("Risks & Mitigations", "Potential issues and solutions", icon="⚠️")
         
@@ -841,21 +839,44 @@ if st.session_state.get("ai_parsed"):
                     risk_str += f" (Severity: {r['severity']})"
                 if r.get('mitigation'):
                     risk_str += f"\n  → Mitigation: {r['mitigation']}"
+                else:
+                    risk_str += "\n  → Mitigation: To be determined"
                 risk_text.append(risk_str)
-                editable_risks.append(r.get('risk', ''))
             else:
-                risk_text.append(f"• {str(r)}")
-                editable_risks.append(str(r))
+                risk_text.append(f"• {str(r)}\n  → Mitigation: To be determined")
         
         st.markdown("\n\n".join(risk_text))
         
         with st.expander("Edit Risks"):
-            edited_risks = st.text_area(
-                "Edit risks (one per line)", 
-                value="\n".join(editable_risks),
-                key="editable_risks",
-                height=120
-            )
+            edited_risks = []
+            for i, r in enumerate(risks):
+                cols = st.columns([3, 1, 3])
+                with cols[0]:
+                    risk = st.text_input(
+                        f"Risk {i+1}", 
+                        value=r.get('risk', '') if isinstance(r, dict) else str(r),
+                        key=f"risk_{i}"
+                    )
+                with cols[1]:
+                    severity = st.selectbox(
+                        "Severity",
+                        ["High", "Medium", "Low"],
+                        index=["High", "Medium", "Low"].index(
+                            r.get('severity', 'Medium') if isinstance(r, dict) else 'Medium'
+                        ),
+                        key=f"severity_{i}"
+                    )
+                with cols[2]:
+                    mitigation = st.text_input(
+                        "Mitigation",
+                        value=r.get('mitigation', 'To be determined') if isinstance(r, dict) else 'To be determined',
+                        key=f"mitigation_{i}"
+                    )
+                edited_risks.append({
+                    "risk": risk,
+                    "severity": severity,
+                    "mitigation": mitigation
+                })
 
     # Next steps - GUARANTEED to appear
     next_steps = plan.get("next_steps", [])
@@ -876,6 +897,23 @@ if st.session_state.get("ai_parsed"):
             height=120
         )
 
+    # Calculations Display - RESTORED SECTION
+    if st.session_state.get("calculated_sample_size_per_variant") and st.session_state.get("calculated_total_sample_size"):
+        st.markdown("---")
+        create_header_with_help("Experiment Calculations", "Statistical requirements for valid results", icon="🧮")
+        
+        cols = st.columns(3)
+        with cols[0]:
+            st.metric("Users Per Variant", f"{st.session_state.calculated_sample_size_per_variant:,}")
+        with cols[1]:
+            st.metric("Total Sample Size", f"{st.session_state.calculated_total_sample_size:,}")
+        with cols[2]:
+            duration = st.session_state.calculated_duration_days
+            duration_str = f"{duration:,.0f} days" if np.isfinite(duration) else "∞"
+            st.metric("Estimated Duration", duration_str)
+        
+        st.caption("Assumes all DAU are eligible and evenly split across variants.")
+
     # Build final PRD dict
     prd_dict = {
         "goal": goal_with_units,
@@ -895,13 +933,7 @@ if st.session_state.get("ai_parsed"):
             if s.strip()
         ],
         "success_criteria": st.session_state.get("locked_stats", plan.get("success_criteria", {})),
-        "risks_and_assumptions": [
-            {
-                "risk": r.strip(),
-                "severity": "Medium",
-                "mitigation": "To be determined"
-            } for r in edited_risks.split("\n") if r.strip()
-        ] if 'edited_risks' in locals() else [],
+        "risks_and_assumptions": edited_risks if 'edited_risks' in locals() else [],
         "next_steps": [
             ns.strip() for ns in 
             st.session_state.get("editable_next_steps", "").split("\n")
@@ -910,7 +942,7 @@ if st.session_state.get("ai_parsed"):
         "statistical_rationale": plan.get("statistical_rationale", "")
     }
 
-    # Final PRD preview
+    # Final PRD preview - FIXED VERSION
     create_header_with_help("Final PRD Preview", "Production-ready experiment document", icon="📄")
     
     def render_list(items):
@@ -928,72 +960,63 @@ if st.session_state.get("ai_parsed"):
         return html
 
     # Fixed hypotheses rendering
-    hypotheses_html = "<ul>"
-    for i, h in enumerate(prd_dict["hypotheses"]):
+    hypotheses_html = "<ol>"
+    for i, h in enumerate(prd_dict["hypotheses"], 1):
         hypotheses_html += f"""
         <li>
-            <b>H{i+1}:</b> {h["hypothesis"]}<br>
-            <i>Rationale:</i> {h.get("rationale", "")}<br>
-            <i>Example:</i> {h.get("example_implementation", "")}
+            <b>{h.get('hypothesis', '')}</b><br>
+            <i>Rationale:</i> {h.get('rationale', '')}<br>
+            <i>Example:</i> {h.get('example_implementation', '')}
         </li>
         """
-    hypotheses_html += "</ul>"
+    hypotheses_html += "</ol>"
 
-    st.markdown(
-        f"""
-        <div class="prd-card">
-          <div class="prd-header">
+    # Fixed risks rendering
+    risks_html = "<ul>"
+    for r in prd_dict.get("risks_and_assumptions", []):
+        risks_html += f"""
+        <li>
+            {r.get('risk', '')} <i>(Severity: {r.get('severity', 'Medium')})</i><br>
+            → Mitigation: {r.get('mitigation', 'To be determined')}
+        </li>
+        """
+    risks_html += "</ul>"
+
+    prd_html = f"""
+    <div class="prd-card">
+        <div class="prd-header">
             <div class="prd-logo">A/B</div>
             <div>
-              <div class="prd-title">Experiment PRD</div>
-              <div class="prd-subtitle">{sanitize_text(goal_with_units)}</div>
+                <div class="prd-title">Experiment PRD</div>
+                <div class="prd-subtitle">{sanitize_text(prd_dict.get('goal', ''))}</div>
             </div>
-          </div>
-
-          <div class="prd-section">
+        </div>
+        <div class="prd-section">
             <h3>🎯 Problem Statement</h3>
-            <div class="prd-body">{sanitize_text(st.session_state.get("editable_problem", problem_statement))}</div>
-          </div>
-
-          <div class="prd-section">
+            <div class="prd-body">{sanitize_text(prd_dict.get('problem_statement', ''))}</div>
+        </div>
+        <div class="prd-section">
             <h3>🧪 Hypotheses</h3>
-            <div class="prd-body">
-                {hypotheses_html}
-            </div>
-          </div>
-          
-          <div class="prd-section">
+            <div class="prd-body">{hypotheses_html}</div>
+        </div>
+        <div class="prd-section">
             <h3>📊 Metrics</h3>
             <div class="prd-body">{render_list(prd_dict.get('metrics', []))}</div>
-          </div>
-
-          <div class="prd-section">
+        </div>
+        <div class="prd-section">
             <h3>⚠️ Risks & Mitigations</h3>
-            <div class="prd-body">
-                <ul>
-                    {"".join([
-                        f'<li>{r["risk"]}' + 
-                        (f' <i>(Severity: {r["severity"]})</i>' if r.get("severity") else "") + 
-                        (f'<br>→ {r["mitigation"]}' if r.get("mitigation") else "") + 
-                        '</li>' 
-                        for r in prd_dict["risks_and_assumptions"]
-                    ])}
-                </ul>
-            </div>
-          </div>
-
-          <div class="prd-section">
+            <div class="prd-body">{risks_html}</div>
+        </div>
+        <div class="prd-section">
             <h3>🚀 Next Steps</h3>
             <div class="prd-body">{render_list(prd_dict.get('next_steps', []))}</div>
-          </div>
-
-          <div class="prd-footer">
-            Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}
-          </div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        <div class="prd-footer">
+            Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}
+        </div>
+    </div>
+    """
+    st.markdown(prd_html, unsafe_allow_html=True)
 
     # Download buttons
     col_dl1, col_dl2, col_dl3, col_dl4 = st.columns([1,1,1,1])
