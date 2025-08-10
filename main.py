@@ -561,80 +561,80 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
 if st.session_state.get("ai_parsed") is not None or st.session_state.get("output"):
     st.markdown("<hr>", unsafe_allow_html=True)
 
-    with st.expander("🔢 A/B Test Calculator: Fine-tune sample size", expanded=True):
-    calc_mde = st.session_state.get("calc_mde", st.session_state.get("ai_parsed", {}).get("success_criteria", {}).get("MDE", mde_default) if st.session_state.get("ai_parsed") else mde_default)
-    calc_conf = st.session_state.get("calc_confidence", 95)
-    calc_power = st.session_state.get("calc_power", 80)
-    calc_variants = st.session_state.get("calc_variants", 2)
+        with st.expander("🔢 A/B Test Calculator: Fine-tune sample size", expanded=True):
+            calc_mde = st.session_state.get("calc_mde", st.session_state.get("ai_parsed", {}).get("success_criteria", {}).get("MDE", mde_default) if st.session_state.get("ai_parsed") else mde_default)
+            calc_conf = st.session_state.get("calc_confidence", 95)
+            calc_power = st.session_state.get("calc_power", 80)
+            calc_variants = st.session_state.get("calc_variants", 2)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        calc_mde = st.number_input("Minimum Detectable Effect (MDE) %", min_value=0.1, max_value=50.0, value=float(calc_mde), step=0.1)
-        calc_conf = st.number_input("Confidence Level (%)", min_value=80, max_value=99, value=int(calc_conf), step=1)
-    with col2:
-        calc_power = st.number_input("Statistical Power (%)", min_value=70, max_value=95, value=int(calc_power), step=1)
-        calc_variants = st.number_input("Number of Variants (Control + Variations)", min_value=2, max_value=5, value=int(calc_variants), step=1)
+            col1, col2 = st.columns(2)
+            with col1:
+                calc_mde = st.number_input("Minimum Detectable Effect (MDE) %", min_value=0.1, max_value=50.0, value=float(calc_mde), step=0.1)
+                calc_conf = st.number_input("Confidence Level (%)", min_value=80, max_value=99, value=int(calc_conf), step=1)
+            with col2:
+                calc_power = st.number_input("Statistical Power (%)", min_value=70, max_value=95, value=int(calc_power), step=1)
+                calc_variants = st.number_input("Number of Variants (Control + Variations)", min_value=2, max_value=5, value=int(calc_variants), step=1)
 
-    if metric_type == "Numeric Value" and std_dev is not None:
-        st.info(f"Standard Deviation pre-filled: {std_dev}")
+            if metric_type == "Numeric Value" and std_dev is not None:
+                st.info(f"Standard Deviation pre-filled: {std_dev}")
 
-    col_act1, col_act2 = st.columns([1, 1])
-    with col_act1:
-        btn_label = "Calculate" if not st.session_state.get("calculated_sample_size_per_variant") else "Refresh Calculator"
-        refresh_btn = st.button(btn_label)
-    with col_act2:
-        lock_btn = False
-        if st.session_state.get("calculated_sample_size_per_variant"):
-            lock_btn = st.button("Lock Values for Plan")
+            col_act1, col_act2 = st.columns([1, 1])
+            with col_act1:
+                btn_label = "Calculate" if not st.session_state.get("calculated_sample_size_per_variant") else "Refresh Calculator"
+                refresh_btn = st.button(btn_label)
+            with col_act2:
+                lock_btn = False
+                if st.session_state.get("calculated_sample_size_per_variant"):
+                    lock_btn = st.button("Lock Values for Plan")
 
-    if refresh_btn or st.session_state.get("calculate_now", False):
-        st.session_state.calculate_now = False
-        st.session_state.last_calc_mde = float(calc_mde)
-        st.session_state.last_calc_confidence = int(calc_conf)
-        st.session_state.last_calc_power = int(calc_power)
-        st.session_state.last_calc_variants = int(calc_variants)
+            if refresh_btn or st.session_state.get("calculate_now", False):
+                st.session_state.calculate_now = False
+                st.session_state.last_calc_mde = float(calc_mde)
+                st.session_state.last_calc_confidence = int(calc_conf)
+                st.session_state.last_calc_power = int(calc_power)
+                st.session_state.last_calc_variants = int(calc_variants)
 
-        alpha_calc = 1 - (st.session_state.last_calc_confidence / 100.0)
-        power_calc = st.session_state.last_calc_power / 100.0
+                alpha_calc = 1 - (st.session_state.last_calc_confidence / 100.0)
+                power_calc = st.session_state.last_calc_power / 100.0
 
-        sample_per_variant, total_sample = calculate_sample_size(
-            baseline=current_value,
-            mde=st.session_state.last_calc_mde,
-            alpha=alpha_calc,
-            power=power_calc,
-            num_variants=st.session_state.last_calc_variants,
-            metric_type=metric_type,
-            std_dev=std_dev,
-        )
+                sample_per_variant, total_sample = calculate_sample_size(
+                    baseline=current_value,
+                    mde=st.session_state.last_calc_mde,
+                    alpha=alpha_calc,
+                    power=power_calc,
+                    num_variants=st.session_state.last_calc_variants,
+                    metric_type=metric_type,
+                    std_dev=std_dev,
+                )
 
-        st.session_state.calculated_sample_size_per_variant = sample_per_variant
-        st.session_state.calculated_total_sample_size = total_sample
+                st.session_state.calculated_sample_size_per_variant = sample_per_variant
+                st.session_state.calculated_total_sample_size = total_sample
 
-        dau_map = {"< 10K": 5000, "10K–100K": 50000, "100K–1M": 500000, "> 1M": 2000000}
-        dau = dau_map.get(user_base_choice, 10000)
-        users_to_test = st.session_state.calculated_total_sample_size or 0
-        st.session_state.calculated_duration_days = (users_to_test / dau) if dau > 0 and users_to_test else float("inf")
+                dau_map = {"< 10K": 5000, "10K–100K": 50000, "100K–1M": 500000, "> 1M": 2000000}
+                dau = dau_map.get(user_base_choice, 10000)
+                users_to_test = st.session_state.calculated_total_sample_size or 0
+                st.session_state.calculated_duration_days = (users_to_test / dau) if dau > 0 and users_to_test else float("inf")
 
-    if st.session_state.get("calculated_sample_size_per_variant") and st.session_state.get("calculated_total_sample_size"):
-        st.markdown("---")
-        st.metric("Users Per Variant", f"{st.session_state.calculated_sample_size_per_variant:,} users")
-        st.metric("Total Sample Size", f"{st.session_state.calculated_total_sample_size:,} users")
-        duration_display = f"{st.session_state.calculated_duration_days:,.0f} days" if np.isfinite(st.session_state.calculated_duration_days) else "∞"
-        st.metric("Estimated Test Duration", duration_display)
-        st.caption("Assumes all DAU are eligible and evenly split across variants.")
-    else:
-        st.info("Click 'Calculate' to compute sample size with current inputs.")
+            if st.session_state.get("calculated_sample_size_per_variant") and st.session_state.get("calculated_total_sample_size"):
+                st.markdown("---")
+                st.metric("Users Per Variant", f"{st.session_state.calculated_sample_size_per_variant:,} users")
+                st.metric("Total Sample Size", f"{st.session_state.calculated_total_sample_size:,} users")
+                duration_display = f"{st.session_state.calculated_duration_days:,.0f} days" if np.isfinite(st.session_state.calculated_duration_days) else "∞"
+                st.metric("Estimated Test Duration", duration_display)
+                st.caption("Assumes all DAU are eligible and evenly split across variants.")
+            else:
+                st.info("Click 'Calculate' to compute sample size with current inputs.")
 
-    if lock_btn and st.session_state.get("calculated_sample_size_per_variant"):
-        st.session_state.calc_locked = True
-        st.session_state.locked_stats = {
-            "confidence_level": st.session_state.last_calc_confidence,
-            "MDE": st.session_state.last_calc_mde,
-            "sample_size_required": st.session_state.calculated_total_sample_size,
-            "users_per_variant": st.session_state.calculated_sample_size_per_variant,
-            "estimated_test_duration_days": st.session_state.calculated_duration_days if np.isfinite(st.session_state.calculated_duration_days) else 'Not applicable',
-        }
-        st.success("Calculator values locked and will be used in the final plan.")
+            if lock_btn and st.session_state.get("calculated_sample_size_per_variant"):
+                st.session_state.calc_locked = True
+                st.session_state.locked_stats = {
+                    "confidence_level": st.session_state.last_calc_confidence,
+                    "MDE": st.session_state.last_calc_mde,
+                    "sample_size_required": st.session_state.calculated_total_sample_size,
+                    "users_per_variant": st.session_state.calculated_sample_size_per_variant,
+                    "estimated_test_duration_days": st.session_state.calculated_duration_days if np.isfinite(st.session_state.calculated_duration_days) else 'Not applicable',
+                }
+                st.success("Calculator values locked and will be used in the final plan.")
             else:
                 st.error("Cannot lock values. Run the calculator first.")
 
