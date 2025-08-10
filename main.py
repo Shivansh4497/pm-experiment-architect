@@ -708,423 +708,325 @@ if st.session_state.get("ai_parsed"):
     with st.expander("Edit Problem Statement"):
         st.text_area("Problem Statement (edit)", value=problem_statement, key="editable_problem", height=160)
 
-    create_header_with_help("Hypotheses", "Editable list of testable hypotheses.", icon="🧪")
+    create_header_with_help("Hypotheses", "Testable hypotheses with full details.", icon="🧪")
     hypotheses = plan.get("hypotheses", [])
     if not hypotheses or not isinstance(hypotheses, list):
         st.warning("No hypotheses found in the generated plan.")
         hypotheses = []
 
-    # display hypotheses with inline selection (no forced rerun)
+    # Display hypotheses with expandable details
     for i, h in enumerate(hypotheses):
-        if isinstance(h, dict):
-            hypo_text = sanitize_text(h.get("hypothesis") or h.get("description") or json.dumps(h))
-        else:
-            hypo_text = sanitize_text(h)
-        cols = st.columns([9, 1])
-        cols[0].write(f"**H{i+1}:** {hypo_text}")
-        if cols[1].button("Select", key=f"select_{i}"):
-            st.session_state.selected_index = i
-            st.session_state.hypothesis_confirmed = True
-            st.session_state.calc_locked = False
-            try:
-                llm_mde = plan.get("success_criteria", {}).get("MDE", st.session_state.get("calc_mde", mde_default))
-                st.session_state.calc_mde = float(llm_mde)
-            except Exception:
-                pass
+        with st.container():
+            cols = st.columns([5, 1])
+            with cols[0]:
+                with st.expander(f"H{i+1}: {h.get('hypothesis', '')[:60]}...", expanded=False):
+                    st.markdown(f"**Hypothesis:** {h.get('hypothesis', 'N/A')}")
+                    st.markdown(f"**Rationale:** {h.get('rationale', h.get('behavioral_basis', 'N/A'))}")
+                    st.markdown(f"**Example Implementation:** {h.get('example_implementation', 'N/A')}")
+            with cols[1]:
+                if st.button("Select", key=f"select_{i}"):
+                    st.session_state.selected_index = i
+                    st.session_state.hypothesis_confirmed = True
 
-    # If selected, show details inline
+    # Selected hypothesis details
     if st.session_state.get("hypothesis_confirmed") and st.session_state.get("selected_index") is not None:
-        idx = st.session_state.selected_index
-        if idx < 0 or idx >= len(hypotheses):
-            st.error("Selected hypothesis index out of range.")
-        else:
-            h_obj = hypotheses[idx] if isinstance(hypotheses[idx], dict) else {"hypothesis": hypotheses[idx]}
-            selected_hypo = sanitize_text(h_obj.get("hypothesis", "N/A"))
-
-            raw_rationales = plan.get("hypothesis_rationale", [])
-            rationale = "N/A"
-            if isinstance(raw_rationales, list) and idx < len(raw_rationales):
-                r_item = raw_rationales[idx]
-                if isinstance(r_item, dict):
-                    rationale = sanitize_text(r_item.get("rationale", "N/A"))
-                else:
-                    rationale = sanitize_text(r_item)
-
-            raw_variants = plan.get("variants", [])
-            control = "Not specified"
-            variation = "Not specified"
-            if isinstance(raw_variants, list) and idx < len(raw_variants):
-                v = raw_variants[idx]
-                if isinstance(v, dict):
-                    control = sanitize_text(v.get("control", "Not specified"))
-                    variation = sanitize_text(v.get("variation", "Not specified"))
-                else:
-                    variation = sanitize_text(v)
-
-            raw_efforts = plan.get("effort", [])
-            effort_display = "N/A"
-            if isinstance(raw_efforts, list) and idx < len(raw_efforts):
-                e = raw_efforts[idx]
-                if isinstance(e, dict):
-                    effort_display = sanitize_text(e.get("effort", "N/A"))
-                else:
-                    effort_display = sanitize_text(e)
-
-            # criteria (locked or from plan)
-            if st.session_state.get("calc_locked", False):
-                criteria_display = st.session_state.get("locked_stats", {})
-            else:
-                criteria_display = plan.get("success_criteria", {})
-
-            if not criteria_display:
-                criteria_display = {}
-
-            statistical_rationale_display = (
-                criteria_display.get("statistical_rationale")
-                or plan.get("statistical_rationale")
-                or plan.get("success_criteria", {}).get("statistical_rationale")
-                or "The experiment is designed with a specified MDE, confidence level, and power to detect meaningful changes."
-            )
-
-            try:
-                confidence_raw = criteria_display.get("confidence_level", 0)
-                confidence = float(confidence_raw)
-                confidence_str = f"{round(confidence)}%" if confidence > 1 else f"{round(confidence * 100)}%"
-            except Exception:
-                confidence_str = "N/A"
-
-            sample_size = criteria_display.get("sample_size_required", "N/A")
-            users_per_variant = criteria_display.get("users_per_variant", "N/A")
-            duration_raw = criteria_display.get("estimated_test_duration_days", criteria_display.get("estimated_test_duration", "N/A"))
-            duration = f"{duration_raw:,.0f} days" if isinstance(duration_raw, (int, float)) and np.isfinite(duration_raw) else "N/A"
-
-
-            try:
-                mde_val = float(criteria_display.get("MDE", 0))
-                mde_display = f"{mde_val}%"
-            except Exception:
-                mde_display = "N/A"
-
-            # Display and edit sections
-            create_header_with_help("Selected Hypothesis", "This is the hypothesis you selected from the generated options.", icon="🧪")
-            st.markdown(f"**Hypothesis:** {selected_hypo}")
-            with st.expander("Edit Hypothesis"):
-                st.text_area("Hypothesis (edit)", value=selected_hypo, key="editable_hypothesis", height=100)
-
-            create_header_with_help("Variants", "Control vs Variation", icon="🔁")
-            st.markdown(f"- **Control:** {control}\n- **Variation:** {variation}")
-            with st.expander("Edit Variants"):
-                st.text_input("Control (editable)", value=control, key="editable_control")
-                st.text_input("Variation (editable)", value=variation, key="editable_variation")
-
-            create_header_with_help("Rationale", "Why this hypothesis is worth testing", icon="💡")
-            st.markdown(rationale)
-            with st.expander("Edit Rationale"):
-                st.text_area("Rationale (editable)", value=rationale, key="editable_rationale", height=120)
-
-            create_header_with_help("Experiment Stats", "Review/lock the final experiment stats used in the PRD", icon="📊")
-            if not st.session_state.get("calc_locked", False):
-                st.warning("Adjust the calculator above and Lock values for the plan to finalize experiment stats.")
-            st.markdown(
-                f"""
-- Confidence Level: **{confidence_str}**
-- Minimum Detectable Effect (MDE): **{mde_display}**
-- Sample Size Required: **{sample_size}**
-- Users per Variant: **{users_per_variant}**
-- Estimated Duration: **{duration}**
-- Estimated Effort: **{effort_display}**
-**Statistical Rationale:** {statistical_rationale_display}
-"""
-            )
-
-            # Metrics — structured editor (name/formula) + nice table
-            metrics = plan.get("metrics", [])
-            if metrics and isinstance(metrics, list):
-                create_header_with_help("Metrics", "Primary and secondary metrics (structured editor)", icon="📏")
-                normalized: List[Dict[str, str]] = []
-                for m in metrics:
-                    if isinstance(m, dict):
-                        normalized.append({"name": m.get("name", "Unnamed"), "formula": m.get("formula", ""), "importance": m.get("importance", "Medium")})
-                    else:
-                        try:
-                            parsed_m = json.loads(m)
-                            normalized.append({"name": parsed_m.get("name", "Unnamed"), "formula": parsed_m.get("formula", ""), "importance": parsed_m.get("importance", "Medium")})
-                        except Exception:
-                            normalized.append({"name": sanitize_text(m), "formula": "", "importance": "Medium"})
-
-                # Use data editor if available (Streamlit >= 1.18+)
-                try:
-                    if hasattr(st, "data_editor"):
-                        df_metrics = pd.DataFrame(normalized)
-                        edited_df = st.data_editor(df_metrics, num_rows="dynamic", key="metrics_data_editor")
-                        # ensure list in session for later PRD
-                        st.session_state.metrics_table = edited_df.to_dict(orient="records")
-                        st.table(edited_df)
-                    else:
-                        df_metrics = pd.DataFrame(normalized)
-                        st.table(df_metrics)
-                        with st.expander("Edit Metrics (structured)"):
-                            for mi, m in enumerate(normalized):
-                                st.text_input(f"Metric {mi+1} Name", value=m.get("name", ""), key=f"metric_name_{mi}")
-                                st.text_input(f"Metric {mi+1} Formula", value=m.get("formula", ""), key=f"metric_formula_{mi}")
-                except Exception:
-                    # fallback to simple display
-                    for nm in normalized:
-                        st.markdown(f"- **{nm.get('name')}**: {nm.get('formula')}")
-
-            # Segments
-            segments = plan.get("segments", [])
-            if segments and isinstance(segments, list):
-                create_header_with_help("Segments", "User segments for analysis (clean list)", icon="👥")
-                for s in segments:
-                    st.markdown(f"- {sanitize_text(s)}")
-                with st.expander("Edit Segments"):
-                    st.text_area("Segments (one per line)", value="\n".join(segments), key="editable_segments", height=120)
-
-            # Risks
-            risks = plan.get("risks_and_assumptions", [])
-            if risks and isinstance(risks, list):
-                create_header_with_help("Risks & Assumptions", "Potential issues and mitigation plans", icon="⚠️")
-    
-                # Display risks properly
-                for risk in risks:
-                    if isinstance(risk, dict):
-                        # Format dictionary risks
-                        risk_text = f"• {risk.get('risk', 'Risk')}"
-                        if risk.get('severity'):
-                            risk_text += f" (Severity: {risk['severity']})"
-                        if risk.get('mitigation'):
-                            risk_text += f" - Mitigation: {risk['mitigation']}"
-                        st.markdown(risk_text)
-                    else:
-                        # Handle plain string risks
-                        st.markdown(f"• {str(risk)}")
-    
-            # Prepare editable version
-            with st.expander("Edit Risks"):
-                editable_risks = []
-                for risk in risks:
-                    if isinstance(risk, dict):
-                        editable_risks.append(risk.get('risk', ''))
-                    else:
-                        editable_risks.append(str(risk))
+        selected_hypo = hypotheses[st.session_state.selected_index]
         
-                edited_risks = st.text_area(
-                    "Edit risks (one per line)", 
-                    value="\n".join(editable_risks),
-                    key="editable_risks",
-                    height=120
+        st.subheader("🔍 Selected Hypothesis Details")
+        cols = st.columns([4, 1])
+        with cols[0]:
+            st.markdown(f"**Hypothesis:** {selected_hypo.get('hypothesis', 'N/A')}")
+            st.markdown(f"**Rationale:** {selected_hypo.get('rationale', selected_hypo.get('behavioral_basis', 'N/A'))}")
+            st.markdown(f"**Example:** {selected_hypo.get('example_implementation', 'N/A')}")
+
+        with cols[1]:
+            if st.button("Clear Selection"):
+                st.session_state.selected_index = None
+                st.session_state.hypothesis_confirmed = False
+        
+        # Hypothesis editing
+        with st.expander("✏️ Edit This Hypothesis"):
+            edited_hypo = {
+                "hypothesis": st.text_area(
+                    "Hypothesis Text",
+                    value=selected_hypo.get("hypothesis", ""),
+                    key="editable_hypothesis"
+                ),
+                "rationale": st.text_area(
+                    "Rationale",
+                    value=selected_hypo.get("rationale", selected_hypo.get("behavioral_basis", "")),
+                    key="editable_rationale"
+                ),
+                "example_implementation": st.text_area(
+                    "Implementation Example",
+                    value=selected_hypo.get("example_implementation", ""),
+                    key="editable_example"
                 )
-            # Next steps
-            next_steps = plan.get("next_steps", [])
-            if next_steps and isinstance(next_steps, list):
-                create_header_with_help("Next Steps", "Actionable tasks to start the experiment (clean list)", icon="✅")
-                for ns in next_steps:
-                    st.markdown(f"- {sanitize_text(ns)}")
-                with st.expander("Edit Next Steps"):
-                    st.text_area("Next Steps (one per line)", value="\n".join(next_steps), key="editable_next_steps", height=120)
-
-            # Build structured PRD dict for export (build BEFORE rendering preview)
-            prd_dict: Dict[str, Any] = {
-                "goal": goal_with_units,
-                "problem_statement": st.session_state.get("editable_problem", problem_statement),
-                "hypotheses": [],
-                "metrics": [],
-                "segments": (st.session_state.get("editable_segments") or "\n".join(segments) if segments else "").splitlines() if (st.session_state.get("editable_segments") or segments) else [],
-                "success_criteria": criteria_display or {},
-                "effort": raw_efforts if raw_efforts else [],
-                "team_involved": plan.get("team_involved", []),
-                "hypothesis_rationale": raw_rationales if raw_rationales else [],
-                "risks_and_assumptions": (st.session_state.get("editable_risks") or "\n".join(risks) if risks else "").splitlines() if (st.session_state.get("editable_risks") or risks) else [],
-                "next_steps": (st.session_state.get("editable_next_steps") or "\n".join(next_steps) if next_steps else "").splitlines() if (st.session_state.get("editable_next_steps") or next_steps) else [],
-                "statistical_rationale": statistical_rationale_display,
             }
-
-            # populate hypotheses list (respect original items and edited hypothesis)
-            for i_h, h in enumerate(hypotheses):
-                if isinstance(h, dict):
-                    ph = {"hypothesis": h.get("hypothesis", ""), "description": h.get("description", "")}
-                else:
-                    ph = {"hypothesis": sanitize_text(h), "description": ""}
-                # replace the selected hypothesis text if edited
-                if i_h == idx:
-                    ph["hypothesis"] = st.session_state.get("editable_hypothesis", ph["hypothesis"])
-                    ph["description"] = st.session_state.get("editable_rationale", ph.get("description", ""))
-                prd_dict["hypotheses"].append(ph)
-
-            # populate metrics list (use data editor if present)
-            metrics_source = []
-            if st.session_state.get("metrics_table"):
-                metrics_source = st.session_state.metrics_table
-            elif metrics and isinstance(metrics, list):
-                for mi, orig_m in enumerate(metrics):
-                    if isinstance(orig_m, dict):
-                        metrics_source.append({"name": orig_m.get("name","Unnamed"), "formula": orig_m.get("formula",""), "importance": orig_m.get("importance","Medium")})
-                    else:
-                        metrics_source.append({"name": sanitize_text(orig_m), "formula": "", "importance": "Medium"})
-            prd_dict["metrics"] = metrics_source
-
-            # Build PRD text for download
-            prd_parts = []
-            prd_parts.append("## 🧪 Experiment PRD\n")
-            prd_parts.append("## 🎯 Goal\n")
-            prd_parts.append(goal_with_units + "\n\n")
-            prd_parts.append("## 🧩 Problem\n")
-            prd_parts.append(st.session_state.get("editable_problem", problem_statement) + "\n\n")
-            prd_parts.append("## 🧪 Hypothesis\n")
-            prd_parts.append(st.session_state.get("editable_hypothesis", selected_hypo) + "\n\n")
-            prd_parts.append("## 🔁 Variants\n")
-            prd_parts.append(f"- Control: {st.session_state.get('editable_control', control)}\n- Variation: {st.session_state.get('editable_variation', variation)}\n\n")
-            prd_parts.append("## 💡 Rationale\n")
-            prd_parts.append(st.session_state.get("editable_rationale", rationale) + "\n\n")
-            prd_parts.append("## 📊 Experiment Stats\n")
-            prd_parts.append(f"- Confidence Level: {confidence_str}\n")
-            prd_parts.append(f"- MDE: {mde_display}\n")
-            prd_parts.append(f"- Sample Size: {sample_size}\n")
-            prd_parts.append(f"- Users/Variant: {users_per_variant}\n")
-            prd_parts.append(f"- Duration: {duration}\n")
-            prd_parts.append(f"- Effort: {effort_display}\n")
-            prd_parts.append(f"- Statistical Rationale: {statistical_rationale_display}\n\n")
-
-            if prd_dict.get("metrics"):
-                prd_parts.append("## 📏 Metrics\n")
-                for m in prd_dict["metrics"]:
-                    prd_parts.append(f"- {m.get('name','Unnamed')}: {m.get('formula','')}\n")
-
-            if prd_dict.get("segments"):
-                prd_parts.append("\n## 👥 Segments\n")
-                for s in prd_dict.get("segments", []):
-                    if s.strip():
-                        prd_parts.append(f"- {s.strip()}\n")
-
-            if prd_dict.get("risks_and_assumptions"):
-                prd_parts.append("\n## ⚠️ Risks\n")
-                for r in prd_dict.get("risks_and_assumptions", []):
-                    if r.strip():
-                        prd_parts.append(f"- {r.strip()}\n")
-
-            if prd_dict.get("next_steps"):
-                prd_parts.append("\n## ✅ Next Steps\n")
-                for ns in prd_dict.get("next_steps", []):
-                    if ns.strip():
-                        prd_parts.append(f"- {ns.strip()}\n")
-
-            prd_text = "\n".join(prd_parts)
-
-            # Final PRD preview (polished)
-            create_header_with_help("Final PRD Preview", "A clean, production-style preview suitable for interviews. Export to PDF or HTML.", icon="📄")
             
-            def render_list(items):
-                if not items or not any(str(item).strip() for item in items):
-                    return "None specified"
-                html = "<ul>"
-                for item in items:
-                    if isinstance(item, dict):
-                        item_text = f"<b>{sanitize_text(item.get('name','Unnamed'))}:</b> {sanitize_text(item.get('formula',''))}"
-                    else:
-                        item_text = sanitize_text(item)
-                    if item_text:
-                        html += f"<li>{item_text}</li>"
-                html += "</ul>"
-                return html
+            if st.button("Save Edits"):
+                hypotheses[st.session_state.selected_index] = edited_hypo
+                st.success("Hypothesis updated!")
 
-            st.markdown(
-                f"""
-                <div class="prd-card">
-                  <div class="prd-header">
-                    <div class="prd-logo">A/B</div>
-                    <div>
-                      <div class="prd-title">Experiment PRD</div>
-                      <div class="prd-subtitle">{sanitize_text(goal_with_units)}</div>
-                    </div>
-                  </div>
+    # Metrics display and editing
+    metrics = plan.get("metrics", [])
+    if metrics:
+        create_header_with_help("Metrics", "Primary and secondary metrics", icon="📏")
+        
+        try:
+            # Normalize metrics data
+            normalized = []
+            for m in metrics:
+                if isinstance(m, dict):
+                    normalized.append({
+                        "name": m.get("name", "Unnamed"),
+                        "formula": m.get("formula", ""),
+                        "importance": m.get("importance", "Medium")
+                    })
+                else:
+                    normalized.append({
+                        "name": str(m),
+                        "formula": "",
+                        "importance": "Medium"
+                    })
 
-                  <div class="prd-section">
-                    <h3>🎯 Problem Statement</h3>
-                    <div class="prd-body">{sanitize_text(st.session_state.get("editable_problem", problem_statement))}</div>
-                  </div>
+            # Enhanced metrics editor
+            if hasattr(st, "data_editor"):
+                df_metrics = pd.DataFrame(normalized)
+                edited_df = st.data_editor(
+                    df_metrics,
+                    column_config={
+                        "importance": st.column_config.SelectboxColumn(
+                            "Importance",
+                            options=["High", "Medium", "Low"],
+                            required=True
+                        )
+                    },
+                    num_rows="dynamic",
+                    key="metrics_data_editor"
+                )
+                st.session_state.metrics_table = edited_df.to_dict(orient="records")
+            else:
+                st.table(pd.DataFrame(normalized))
+        except Exception as e:
+            st.error(f"Metrics display error: {e}")
+            st.json(metrics)
 
-                  <div class="prd-section">
-                    <h3>🧪 Hypothesis</h3>
-                    <div class="prd-body">{sanitize_text(st.session_state.get("editable_hypothesis", selected_hypo))}</div>
-                  </div>
-                  
-                  <div class="prd-section">
-                    <h3>🔁 Variants</h3>
-                    <div class="prd-body">
-                        <ul>
-                            <li><b>Control:</b> {sanitize_text(st.session_state.get('editable_control', control))}</li>
-                            <li><b>Variation:</b> {sanitize_text(st.session_state.get('editable_variation', variation))}</li>
-                        </ul>
-                    </div>
-                  </div>
-
-                  <div class="prd-section">
-                    <h3>💡 Rationale</h3>
-                    <div class="prd-body">{sanitize_text(st.session_state.get('editable_rationale', rationale))}</div>
-                  </div>
-
-                  <div class="prd-section">
-                    <h3>📊 Experiment Stats</h3>
-                    <div class="prd-body">
-                        <ul>
-                            <li><b>Confidence Level:</b> {confidence_str}</li>
-                            <li><b>MDE:</b> {mde_display}</li>
-                            <li><b>Sample Size Required:</b> {sample_size}</li>
-                            <li><b>Users per Variant:</b> {users_per_variant}</li>
-                            <li><b>Estimated Duration:</b> {duration}</li>
-                            <li><b>Estimated Effort:</b> {effort_display}</li>
-                        </ul>
-                        <b>Statistical Rationale:</b> {sanitize_text(statistical_rationale_display)}
-                    </div>
-                  </div>
-
-                  <div class="prd-section">
-                    <h3>📏 Metrics</h3>
-                    <div class="prd-body">{render_list(prd_dict.get('metrics', []))}</div>
-                  </div>
-
-                  <div class="prd-section">
-                    <h3>👥 Segments</h3>
-                    <div class="prd-body">{render_list(prd_dict.get('segments', []))}</div>
-                  </div>
-                  
-                  <div class="prd-section">
-                    <h3>⚠️ Risks & Assumptions</h3>
-                    <div class="prd-body">{render_list(prd_dict.get('risks_and_assumptions', []))}</div>
-                  </div>
-
-                  <div class="prd-section">
-                    <h3>🚀 Next Steps</h3>
-                    <div class="prd-body">{render_list(prd_dict.get('next_steps', []))}</div>
-                  </div>
-
-                  <div class="prd-footer">
-                    Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
+    # Segments display and editing
+    segments = plan.get("segments", [])
+    if segments:
+        create_header_with_help("Segments", "User segments for analysis", icon="👥")
+        st.markdown("\n".join([f"- {s}" for s in segments if str(s).strip()]))
+        with st.expander("Edit Segments"):
+            st.text_area(
+                "Segments (one per line)",
+                value="\n".join(segments),
+                key="editable_segments",
+                height=120
             )
 
-            # Download buttons (keep original functionality)
-            col_dl1, col_dl2, col_dl3, col_dl4 = st.columns([1,1,1,1])
-            with col_dl1:
-                st.download_button("📄 Download PRD (.txt)", prd_text, file_name="experiment_prd.txt")
-            with col_dl2:
-                st.download_button("📥 Download Plan (.json)", json.dumps(prd_dict, indent=2, ensure_ascii=False), file_name="experiment_plan.json")
-            with col_dl3:
-                html_blob = f"<!doctype html><html><head><meta charset='utf-8'></head><body>{sanitize_text(prd_text).replace('\\n','<br/>')}</body></html>"
-                st.download_button("🌐 Download PRD (.html)", html_blob, file_name="experiment_prd.html")
-            with col_dl4:
-                if REPORTLAB_AVAILABLE:
-                    pdf_bytes = generate_pdf_bytes_from_prd_dict(prd_dict, title="Experiment PRD")
-                    if pdf_bytes:
-                        st.download_button("📁 Download PRD (.pdf)", pdf_bytes, file_name="experiment_prd.pdf", mime="application/pdf")
-                    else:
-                        st.warning("PDF generation currently failed — try HTML or TXT download.")
+    # Risks display and editing - UPDATED
+    risks = plan.get("risks_and_assumptions", [])
+    if risks:
+        create_header_with_help("Risks & Mitigations", "Potential issues and solutions", icon="⚠️")
+        
+        risk_text = []
+        for r in risks:
+            if isinstance(r, dict):
+                risk_str = f"• {r.get('risk', 'Risk')}"
+                if r.get('severity'):
+                    risk_str += f" (Severity: {r['severity']})"
+                if r.get('mitigation'):
+                    risk_str += f"\n  → Mitigation: {r['mitigation']}"
+                risk_text.append(risk_str)
+            else:
+                risk_text.append(f"• {str(r)}")
+        
+        st.markdown("\n\n".join(risk_text))
+        
+        with st.expander("Edit Risks"):
+            editable_risks = []
+            for r in risks:
+                if isinstance(r, dict):
+                    editable_risks.append(r.get('risk', ''))
                 else:
-                    st.info("PDF export requires 'reportlab'. To enable PDF, add 'reportlab' to requirements.txt and redeploy.")
+                    editable_risks.append(str(r))
+            
+            edited_risks = st.text_area(
+                "Edit risks (one per line)", 
+                value="\n".join(editable_risks),
+                key="editable_risks",
+                height=120
+            )
+
+    # Next steps - GUARANTEED to appear
+    next_steps = plan.get("next_steps", [])
+    if not next_steps:  # Fallback if empty
+        next_steps = [
+            "Finalize experiment design",
+            "Implement tracking metrics",
+            "Recruit users for testing"
+        ]
+
+    create_header_with_help("Next Steps", "Action items to execute the test", icon="✅")
+    st.markdown("\n".join([f"- {step}" for step in next_steps]))
+    with st.expander("Edit Next Steps"):
+        edited_steps = st.text_area(
+            "Next Steps (one per line)",
+            value="\n".join(next_steps),
+            key="editable_next_steps",
+            height=120
+        )
+
+    # Build final PRD dict
+    prd_dict = {
+        "goal": goal_with_units,
+        "problem_statement": st.session_state.get("editable_problem", problem_statement),
+        "hypotheses": [
+            {
+                "hypothesis": h.get("hypothesis", ""),
+                "rationale": h.get("rationale", h.get("behavioral_basis", "")),
+                "example_implementation": h.get("example_implementation", ""),
+                **({"behavioral_basis": h["behavioral_basis"]} if "behavioral_basis" in h else {})
+            } for h in hypotheses
+        ],
+        "metrics": st.session_state.get("metrics_table", []),
+        "segments": [
+            s.strip() for s in 
+            st.session_state.get("editable_segments", "").split("\n") 
+            if s.strip()
+        ],
+        "success_criteria": st.session_state.get("locked_stats", plan.get("success_criteria", {})),
+        "risks_and_assumptions": [
+            {
+                "risk": r.strip(),
+                "severity": "Medium",
+                "mitigation": "To be determined"
+            } for r in edited_risks.split("\n") if r.strip()
+        ] if 'edited_risks' in locals() else [],
+        "next_steps": [
+            ns.strip() for ns in 
+            st.session_state.get("editable_next_steps", "").split("\n")
+            if ns.strip()
+        ],
+        "statistical_rationale": plan.get("statistical_rationale", "")
+    }
+
+    # Final PRD preview
+    create_header_with_help("Final PRD Preview", "Production-ready experiment document", icon="📄")
+    
+    def render_list(items):
+        if not items or not any(str(item).strip() for item in items):
+            return "None specified"
+        html = "<ul>"
+        for item in items:
+            if isinstance(item, dict):
+                item_text = f"<b>{sanitize_text(item.get('name','Unnamed'))}:</b> {sanitize_text(item.get('formula',''))}"
+            else:
+                item_text = sanitize_text(item)
+            if item_text:
+                html += f"<li>{item_text}</li>"
+        html += "</ul>"
+        return html
+
+    st.markdown(
+        f"""
+        <div class="prd-card">
+          <div class="prd-header">
+            <div class="prd-logo">A/B</div>
+            <div>
+              <div class="prd-title">Experiment PRD</div>
+              <div class="prd-subtitle">{sanitize_text(goal_with_units)}</div>
+            </div>
+          </div>
+
+          <div class="prd-section">
+            <h3>🎯 Problem Statement</h3>
+            <div class="prd-body">{sanitize_text(st.session_state.get("editable_problem", problem_statement))}</div>
+          </div>
+
+          <div class="prd-section">
+            <h3>🧪 Hypotheses</h3>
+            <div class="prd-body">
+                <ul>
+                    {"".join([f'<li><b>H{i+1}:</b> {h["hypothesis"]}<br><i>Rationale:</i> {h.get("rationale", "")}<br><i>Example:</i> {h.get("example_implementation", "")}</li>' 
+                     for i, h in enumerate(prd_dict["hypotheses"])}
+                </ul>
+            </div>
+          </div>
+          
+          <div class="prd-section">
+            <h3>📊 Metrics</h3>
+            <div class="prd-body">{render_list(prd_dict.get('metrics', []))}</div>
+          </div>
+
+          <div class="prd-section">
+            <h3>⚠️ Risks & Mitigations</h3>
+            <div class="prd-body">
+                <ul>
+                    {"".join([f'<li>{r["risk"]}{" <i>(Severity: " + r["severity"] + ")</i>" if r.get("severity") else ""}{"<br>→ " + r["mitigation"] if r.get("mitigation") else ""}</li>' 
+                     for r in prd_dict["risks_and_assumptions"]])}
+                </ul>
+            </div>
+          </div>
+
+          <div class="prd-section">
+            <h3>🚀 Next Steps</h3>
+            <div class="prd-body">{render_list(prd_dict.get('next_steps', []))}</div>
+          </div>
+
+          <div class="prd-footer">
+            Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Download buttons
+    col_dl1, col_dl2, col_dl3, col_dl4 = st.columns([1,1,1,1])
+    with col_dl1:
+        st.download_button(
+            "📄 Download PRD (.txt)",
+            json.dumps(prd_dict, indent=2),
+            file_name="experiment_prd.txt"
+        )
+    with col_dl2:
+        st.download_button(
+            "📥 Download Plan (.json)",
+            json.dumps(prd_dict, indent=2),
+            file_name="experiment_plan.json"
+        )
+    with col_dl3:
+        html_blob = f"""
+        <!doctype html>
+        <html>
+        <head><meta charset='utf-8'></head>
+        <body>
+            <h1>Experiment PRD</h1>
+            <pre>{json.dumps(prd_dict, indent=2)}</pre>
+        </body>
+        </html>
+        """
+        st.download_button(
+            "🌐 Download PRD (.html)",
+            html_blob,
+            file_name="experiment_prd.html"
+        )
+    with col_dl4:
+        if REPORTLAB_AVAILABLE:
+            pdf_bytes = generate_pdf_bytes_from_prd_dict(prd_dict)
+            if pdf_bytes:
+                st.download_button(
+                    "📁 Download PRD (.pdf)",
+                    pdf_bytes,
+                    file_name="experiment_prd.pdf",
+                    mime="application/pdf"
+                )
+            else:
+                st.warning("PDF generation failed")
+        else:
+            st.info("PDF export requires reportlab")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1137,7 +1039,13 @@ with st.expander("⚙️ Debug & Trace"):
     st.write("AI parsed present:", bool(st.session_state.get("ai_parsed")))
     st.write("Raw output length:", len(st.session_state.get("output") or ""))
     if st.button("Clear session state"):
-        keys_to_clear = ["output", "ai_parsed", "calculated_sample_size_per_variant", "calculated_total_sample_size", "calculated_duration_days", "locked_stats", "calc_locked", "selected_index", "hypothesis_confirmed", "last_llm_hash", "context", "metrics_table"]
+        keys_to_clear = [
+            "output", "ai_parsed", "calculated_sample_size_per_variant",
+            "calculated_total_sample_size", "calculated_duration_days",
+            "locked_stats", "calc_locked", "selected_index",
+            "hypothesis_confirmed", "last_llm_hash", "context",
+            "metrics_table"
+        ]
         for k in keys_to_clear:
             if k in st.session_state:
                 del st.session_state[k]
