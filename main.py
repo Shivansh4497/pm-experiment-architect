@@ -683,7 +683,7 @@ if st.session_state.get("ai_parsed"):
         with col_ps_1:
             if st.button("Save Problem Statement"):
                 st.session_state.stage = "hypotheses"
-                st.experimental_rerun()
+                st.rerun()
 
     elif st.session_state.stage == "hypotheses":
         st.subheader("Step 2: Choose or Create a Hypothesis")
@@ -699,7 +699,7 @@ if st.session_state.get("ai_parsed"):
                 if st.button(f"Select Hypothesis {i+1}", key=f"select_hyp_{i}"):
                     st.session_state.ai_parsed['hypotheses'].append(h)
                     st.session_state.stage = "full_plan"
-                    st.experimental_rerun()
+                    st.rerun()
         
         st.markdown("---")
         st.markdown("Or, if none of these fit...")
@@ -729,7 +729,7 @@ if st.session_state.get("ai_parsed"):
                                 # Update the main plan with the new hypothesis
                                 st.session_state.ai_parsed['hypotheses'].append(hyp_details_parsed)
                                 st.session_state.stage = "full_plan"
-                                st.experimental_rerun()
+                                st.rerun()
                             else:
                                 st.error("Failed to generate details for your hypothesis. Please try again.")
                         except Exception as e:
@@ -914,10 +914,10 @@ if st.session_state.get("ai_parsed"):
                         edited_plan['hypotheses'][i]['example_implementation'] = st.text_area("Implementation Example", value=h.get('example_implementation', ''), key=f"edit_impl_{i}", height=50)
                         if st.button(f"Delete Hypothesis {i+1}", key=f"del_hyp_{i}"):
                             edited_plan['hypotheses'].pop(i)
-                            st.experimental_rerun()
+                            st.rerun()
                 if st.button("Add New Hypothesis", key="add_hyp"):
                     edited_plan['hypotheses'].append({"hypothesis": "New Hypothesis", "rationale": "", "example_implementation": "", "behavioral_basis": ""})
-                    st.experimental_rerun()
+                    st.rerun()
                 st.markdown("---")
                 st.subheader("3. Risks and Assumptions")
                 if 'risks_and_assumptions' not in edited_plan: edited_plan['risks_and_assumptions'] = []
@@ -928,10 +928,10 @@ if st.session_state.get("ai_parsed"):
                         edited_plan['risks_and_assumptions'][i]['mitigation'] = st.text_area("Mitigation", value=r.get('mitigation', ''), height=50, key=f"edit_mit_{i}")
                         if st.button(f"Delete Risk {i+1}", key=f"del_risk_{i}"):
                             edited_plan['risks_and_assumptions'].pop(i)
-                            st.experimental_rerun()
+                            st.rerun()
                 if st.button("Add New Risk", key="add_risk"):
                     edited_plan['risks_and_assumptions'].append({"risk": "", "severity": "Medium", "mitigation": ""})
-                    st.experimental_rerun()
+                    st.rerun()
                 st.markdown("---")
                 st.subheader("4. Next Steps")
                 if 'next_steps' not in edited_plan: edited_plan['next_steps'] = []
@@ -942,15 +942,15 @@ if st.session_state.get("ai_parsed"):
                     with col_s2:
                         if st.button("Delete", key=f"del_step_{i}"):
                             edited_plan['next_steps'].pop(i)
-                            st.experimental_rerun()
+                            st.rerun()
                 if st.button("Add New Next Step", key="add_step"):
                     edited_plan['next_steps'].append("")
-                    st.experimental_rerun()
+                    st.rerun()
                 st.markdown("---")
                 if st.button("Save Changes and Close"):
                     st.session_state.ai_parsed = edited_plan
                     st.session_state.edit_modal_open = False
-                    st.experimental_rerun()
+                    st.rerun()
         
         with col_export:
             col_exp1, col_exp2 = st.columns([1,1])
