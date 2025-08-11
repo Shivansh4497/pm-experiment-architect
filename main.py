@@ -234,7 +234,7 @@ def extract_json(text: Any) -> Optional[Dict]:
     except Exception:
         st.write("LLM output could not be displayed.")
     return None
-    def post_process_llm_text(text: Any, unit: str) -> str:
+def post_process_llm_text(text: Any, unit: str) -> str:
     if text is None:
         return ""
     s = sanitize_text(text)
