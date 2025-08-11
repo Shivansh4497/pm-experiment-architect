@@ -334,6 +334,18 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     story.append(Paragraph(f"<b>Statistical Rationale:</b> {pdf_sanitize(prd.get('statistical_rationale', ''))}", styles["BodyTextCustom"]))
     story.append(Paragraph(f"<b>Benchmark:</b> {pdf_sanitize(criteria.get('benchmark', ''))}", styles["BodyTextCustom"]))
     story.append(Paragraph(f"<b>Monitoring:</b> {pdf_sanitize(criteria.get('monitoring', ''))}", styles["BodyTextCustom"]))
+    
+    # Add calculator values if available
+    sample_size_per_variant = st.session_state.get('calculated_sample_size_per_variant')
+    if sample_size_per_variant:
+        story.append(Paragraph(f"<b>Sample Size per Variant:</b> {sample_size_per_variant:,}", styles["BodyTextCustom"]))
+    total_sample_size = st.session_state.get('calculated_total_sample_size')
+    if total_sample_size:
+        story.append(Paragraph(f"<b>Total Sample Size:</b> {total_sample_size:,}", styles["BodyTextCustom"]))
+    duration_days = st.session_state.get('calculated_duration_days')
+    if duration_days:
+        story.append(Paragraph(f"<b>Estimated Duration:</b> {round(duration_days, 1)} days", styles["BodyTextCustom"]))
+        
     add_section_header("6. Risks and Assumptions")
     risks_data = [['Risk', 'Severity', 'Mitigation']]
     for r in prd.get("risks_and_assumptions", []):
@@ -593,12 +605,7 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
     try:
         if current_value is not None and current_value != 0:
             expected_lift_val = round(((target_value - current_value) / current_value) * 100, 2)
-            
-            # --- FIX: Ensure mde_default is never below the widget's min_value (0.1) ---
             mde_default = round(abs((target_value - current_value) / current_value) * 100, 2)
-            mde_default = max(mde_default, 0.1)
-            # --- END OF FIX ---
-            
         else:
             expected_lift_val = 0.0
             mde_default = 5.0
@@ -606,9 +613,8 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
         expected_lift_val = 0.0
         mde_default = 5.0
 
-    formatted_current = format_value_with_unit(current_value, metric_unit) if sanitized_metric_name and current_value is not None else ""
-    formatted_target = format_value_with_unit(target_value, metric_unit) if sanitized_metric_name and target_value is not None else ""
-    goal_with_units = f"I want to improve {sanitized_metric_name} from {formatted_current} to {formatted_target}." if sanitized_metric_name else ""
+    # Ensure the default MDE value is never below the min_value of 0.1 for the number_input widget
+    mde_default = max(mde_default, 0.1)
 
     formatted_current = format_value_with_unit(current_value, metric_unit) if sanitized_metric_name and current_value is not None else ""
     formatted_target = format_value_with_unit(target_value, metric_unit) if sanitized_metric_name and target_value is not None else ""
@@ -747,7 +753,7 @@ if st.session_state.get("ai_parsed"):
         st.subheader("Step 3: Refine the Full Plan")
         st.info("Your experiment plan is ready! Now you can edit any of the sections, starting with the A/B test calculator.")
         
-        # --- A/B Test Calculator Section (Unchanged, now part of the flow) ---
+        # --- A/B Test Calculator Section ---
         with st.expander("🔢 A/B Test Calculator: Fine-tune sample size", expanded=True):
             plan = st.session_state.ai_parsed
             calc_mde = st.session_state.get("calc_mde", plan.get("success_criteria", {}).get("MDE", 5.0))
@@ -757,7 +763,8 @@ if st.session_state.get("ai_parsed"):
             
             col1, col2 = st.columns(2)
             with col1:
-                calc_mde = st.number_input("Minimum Detectable Effect (MDE) %", min_value=0.1, max_value=50.0, value=float(calc_mde), step=0.1, key="calc_mde_key")
+                # --- FINAL FIX: Enforce min_value with max() directly in the widget ---
+                calc_mde = st.number_input("Minimum Detectable Effect (MDE) %", min_value=0.1, max_value=50.0, value=float(max(0.1, float(calc_mde))), step=0.1, key="calc_mde_key")
                 calc_conf = st.number_input("Confidence Level (%)", min_value=80, max_value=99, value=int(calc_conf), step=1, key="calc_conf_key")
             with col2:
                 calc_power = st.number_input("Statistical Power (%)", min_value=70, max_value=95, value=int(calc_power), step=1, key="calc_power_key")
@@ -842,22 +849,27 @@ if st.session_state.get("ai_parsed"):
         
         # Build HTML for Success Criteria
         criteria = plan.get('success_criteria', {})
-        sample_size_per_variant_text = f"Sample Size per Variant: {st.session_state.get('calculated_sample_size_per_variant', 'N/A'):,}"
-        total_sample_size_text = f"Total Sample Size: {st.session_state.get('calculated_total_sample_size', 'N/A'):,}"
-        duration_days_text = f"Estimated Duration: {st.session_state.get('calculated_duration_days', 'N/A')}"
-        if duration_days_text != "N/A":
-            duration_days_text += " days"
+        
+        # Add calculator values to the display
+        sample_size_per_variant = st.session_state.get('calculated_sample_size_per_variant')
+        total_sample_size = st.session_state.get('calculated_total_sample_size')
+        duration_days = st.session_state.get('calculated_duration_days')
 
         stats_html = f"""
             <div class='section-list-item'>
                 <p><strong>Confidence:</strong> {criteria.get('confidence_level', '')}%</p>
                 <p><strong>MDE:</strong> {criteria.get('MDE', '')}%</p>
-                <p><strong>{sample_size_per_variant_text}</strong></p>
-                <p><strong>{total_sample_size_text}</strong></p>
-                <p><strong>{duration_days_text}</strong></p>
                 <p><strong>Statistical Rationale:</strong> {html_sanitize(plan.get('statistical_rationale', 'No rationale provided.'))}</p>
-            </div>
         """
+
+        if sample_size_per_variant is not None:
+            stats_html += f"<p><strong>Sample Size per Variant:</strong> {sample_size_per_variant:,}</p>"
+        if total_sample_size is not None:
+            stats_html += f"<p><strong>Total Sample Size:</strong> {total_sample_size:,}</p>"
+        if duration_days is not None:
+            stats_html += f"<p><strong>Estimated Duration:</strong> {round(duration_days, 1)} days</p>"
+
+        stats_html += "</div>"
 
         # Build HTML for Risks
         risks_html = ""
