@@ -209,11 +209,25 @@ def format_value_with_unit(value: Any, unit: str) -> str:
             v_str = str(value)
     except Exception:
         v_str = str(value)
-    units_with_space = ["USD", "count", "minutes", "hours", "days"]
+    units_with_space = ["USD", "count", "minutes", "hours", "days", "INR"]
     if unit in units_with_space:
         return f"{v_str} {unit}"
     else:
         return f"{v_str}{unit}"
+        
+def _parse_value_from_text(text: str, default_unit: str = '%') -> Tuple[Optional[float], str]:
+    """Extracts a numeric value and unit from a string."""
+    text = sanitize_text(text)
+    match = re.match(r"([\d\.]+)\s*(\w+|%)?", text)
+    if match:
+        value = float(match.group(1))
+        unit = match.group(2) if match.group(2) else default_unit
+        return value, unit
+    
+    try:
+        return float(text), default_unit
+    except ValueError:
+        return None, default_unit
 
 def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type, std_dev=None) -> Tuple[Optional[int], Optional[int]]:
     try:
@@ -290,20 +304,6 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         else:
             story.append(Paragraph(pdf_sanitize(str(content)), styles["BodyTextCustom"]))
         story.append(Spacer(1, 6))
-    add_paragraph("🎯 Goal", prd.get("goal", ""))
-    add_paragraph("🧩 Problem Statement", prd.get("problem_statement", ""))
-    add_paragraph("💡 Hypotheses", prd.get("hypotheses", []))
-    add_paragraph("📏 Metrics", prd.get("metrics", []))
-    add_paragraph("👥 Segments", prd.get("segments", []))
-    add_paragraph("✅ Success Criteria", [f"{k}: {v}" for k, v in (prd.get("success_criteria", {}) or {}).items()])
-    add_paragraph("⚙️ Effort", prd.get("effort", []))
-    add_paragraph("🧑‍💻 Team Involved", prd.get("team_involved", []))
-    add_paragraph("🔍 Hypothesis Rationale", prd.get("hypothesis_rationale", []))
-    add_paragraph("⚠️ Risks & Assumptions", prd.get("risks_and_assumptions", []))
-    add_paragraph("🚀 Next Steps", prd.get("next_steps", []))
-    add_paragraph("📈 Statistical Rationale", prd.get("statistical_rationale", ""))
-    story.append(Spacer(1, 12))
-    story.append(Paragraph(f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}", styles["BodyTextCustom"]))
     doc.build(story)
     buffer.seek(0)
     pdf_bytes = buffer.getvalue()
@@ -395,6 +395,8 @@ if "calculate_now" not in st.session_state:
     st.session_state.calculate_now = False
 if "metrics_table" not in st.session_state:
     st.session_state.metrics_table = None
+if "raw_llm_edit" not in st.session_state:
+    st.session_state.raw_llm_edit = ""
 
 with st.expander("💡 Product Context (click to expand)", expanded=True):
     create_header_with_help(
@@ -453,18 +455,23 @@ with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded
         )
     with col_m2:
         metric_type = st.radio("Metric Type", ["Conversion Rate", "Numeric Value"], horizontal=True)
+    
     col_unit, col_values = st.columns([1, 2])
     with col_unit:
         metric_unit = st.selectbox(
-            "Metric Unit", ["%", "USD", "minutes", "count", "other"], index=0, help="Choose the unit for clarity."
+            "Metric Unit", ["%", "USD", "INR", "minutes", "count", "other"], index=0, help="Choose the unit for clarity."
         )
     with col_values:
-        if metric_unit == "%":
-            current_value = st.number_input("Current Metric Value *", min_value=0.0, step=0.01, format="%.2f")
-            target_value = st.number_input("Target Metric Value *", min_value=0.0, step=0.01, format="%.2f")
-        else:
-            current_value = st.number_input("Current Metric Value *", min_value=0.0, step=0.01, format="%.2f")
-            target_value = st.number_input("Target Metric Value *", min_value=0.0, step=0.01, format="%.2f")
+        current_value_raw = st.text_input("Current Metric Value *", placeholder="e.g., 55.0 or 55.0 INR")
+        target_value_raw = st.text_input("Target Metric Value *", placeholder="e.g., 60.0 or 60.0 INR")
+
+        current_value, current_unit = _parse_value_from_text(current_value_raw, metric_unit)
+        target_value, target_unit = _parse_value_from_text(target_value_raw, metric_unit)
+
+        if current_value is None and current_value_raw:
+            st.error("Invalid format for Current Metric Value. Please enter a number.")
+        if target_value is None and target_value_raw:
+            st.error("Invalid format for Target Metric Value. Please enter a number.")
 
         std_dev = None
         if metric_type == "Numeric Value":
@@ -477,7 +484,7 @@ with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded
             )
 
     metric_inputs_valid = True
-    if current_value == target_value:
+    if current_value == target_value and current_value is not None:
         st.warning("The target metric must be different from the current metric to measure change. Please adjust one or the other.")
         metric_inputs_valid = False
     
@@ -488,8 +495,9 @@ with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded
 with st.expander("🧠 Generate Experiment Plan", expanded=True):
     create_header_with_help("Generate Experiment Plan", "When ready, click Generate to call the LLM and create a plan.", icon="🧠")
     sanitized_metric_name = sanitize_text(exact_metric)
+    
     try:
-        if current_value and current_value != 0:
+        if current_value is not None and current_value != 0:
             expected_lift_val = round(((target_value - current_value) / current_value) * 100, 2)
             mde_default = round(abs((target_value - current_value) / current_value) * 100, 2)
         else:
@@ -499,8 +507,8 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
         expected_lift_val = 0.0
         mde_default = 5.0
 
-    formatted_current = format_value_with_unit(current_value, metric_unit) if sanitized_metric_name else ""
-    formatted_target = format_value_with_unit(target_value, metric_unit) if sanitized_metric_name else ""
+    formatted_current = format_value_with_unit(current_value, metric_unit) if sanitized_metric_name and current_value is not None else ""
+    formatted_target = format_value_with_unit(target_value, metric_unit) if sanitized_metric_name and target_value is not None else ""
     goal_with_units = f"I want to improve {sanitized_metric_name} from {formatted_current} to {formatted_target}." if sanitized_metric_name else ""
 
     required_ok = all(
@@ -511,6 +519,8 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
             sanitized_metric_name,
             metric_inputs_valid,
             strategic_goal,
+            current_value is not None,
+            target_value is not None
         ]
     )
     generate_btn = st.button("Generate Plan", disabled=not required_ok)
@@ -542,6 +552,7 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
             try:
                 raw_llm = generate_experiment_plan(goal_with_units, context)
                 st.session_state.output = raw_llm if raw_llm is not None else ""
+                st.session_state.raw_llm_edit = st.session_state.output
                 parsed = extract_json(raw_llm)
                 st.session_state.ai_parsed = parsed
                 try:
@@ -640,7 +651,7 @@ st.markdown("<hr>", unsafe_allow_html=True)
 if st.session_state.get("ai_parsed") is None and st.session_state.get("output"):
     st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
     create_header_with_help("Raw LLM Output (fix JSON here)", "When parsing fails you'll see the raw LLM output — edit it then click Parse JSON.", icon="🛠️")
-    raw_edit = st.text_area("Raw LLM output / edit here", value=st.session_state.get("output", ""), height=400, key="raw_llm_edit")
+    raw_edit = st.text_area("Raw LLM output / edit here", value=st.session_state.get("raw_llm_edit", ""), height=400, key="raw_llm_edit")
     if st.button("Parse JSON"):
         parsed_try = extract_json(st.session_state.get("raw_llm_edit", raw_edit))
         if parsed_try:
@@ -672,7 +683,7 @@ if st.session_state.get("ai_parsed"):
     if not hypotheses or not isinstance(hypotheses, list):
         st.warning("No hypotheses found in the generated plan.")
         hypotheses = []
-
+        
     for i, h in enumerate(hypotheses):
         with st.container():
             cols = st.columns([5, 1])
@@ -688,8 +699,10 @@ if st.session_state.get("ai_parsed"):
                     st.session_state.hypothesis_confirmed = True
 
     if st.session_state.get("hypothesis_confirmed") and st.session_state.get("selected_index") is not None:
-        selected_hypo = hypotheses[st.session_state.selected_index]
         
+        # Get the selected hypothesis from session state, which may have been edited
+        selected_hypo = hypotheses[st.session_state.selected_index]
+
         st.subheader("🔍 Selected Hypothesis Details")
         cols = st.columns([4, 1])
         with cols[0]:
@@ -725,7 +738,6 @@ if st.session_state.get("ai_parsed"):
                 st.session_state.selected_index = None
                 st.session_state.hypothesis_confirmed = False
 
-   
     metrics = plan.get("metrics", [])
     if metrics:
         create_header_with_help("Metrics", "Primary and secondary metrics", icon="📏")
@@ -784,6 +796,7 @@ if st.session_state.get("ai_parsed"):
         create_header_with_help("Risks & Mitigations", "Potential issues and solutions", icon="⚠️")
         
         risk_text = []
+        edited_risks = []
         for r in risks:
             if isinstance(r, dict):
                 risk_str = f"• {r.get('risk', 'Risk')}"
@@ -1021,7 +1034,7 @@ with st.expander("⚙️ Debug & Trace"):
             "hypothesis_confirmed", "last_llm_hash", "context",
             "metrics_table", "editable_problem", "editable_hypothesis",
             "editable_rationale", "editable_example", "editable_segments",
-            "editable_risks", "editable_next_steps"
+            "editable_risks", "editable_next_steps", "raw_llm_edit"
         ]
         for k in keys_to_clear:
             if k in st.session_state:
