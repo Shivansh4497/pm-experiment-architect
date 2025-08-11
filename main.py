@@ -593,7 +593,8 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
     try:
         if current_value is not None and current_value != 0:
             expected_lift_val = round(((target_value - current_value) / current_value) * 100, 2)
-            mde_default = round(abs((target_value - current_value) / current_value) * 100, 2)
+            # Ensure mde_default is never below the widget's min_value
+            mde_default = max(round(abs((target_value - current_value) / current_value) * 100, 2), 0.1)
         else:
             expected_lift_val = 0.0
             mde_default = 5.0
