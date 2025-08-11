@@ -159,6 +159,8 @@ def extract_json(text: Any) -> Optional[Dict]:
                     return parsed_ast
                 if isinstance(parsed_ast, list) and all(isinstance(i, dict) for i in parsed_ast):
                     return {"items": parsed_ast}
+                else:
+                    raise ValueError("Extracted JSON parsed as a list but was expected to be an object.")
             except Exception:
                 try:
                     converted = _safe_single_to_double_quotes(candidate_clean)
@@ -167,6 +169,8 @@ def extract_json(text: Any) -> Optional[Dict]:
                         return parsed
                     if isinstance(parsed, list) and all(isinstance(i, dict) for i in parsed):
                         return {"items": parsed}
+                    else:
+                        raise ValueError("Extracted JSON with single quotes parsed but was not an object.")
                 except Exception:
                     st.error("Could not parse extracted JSON block. See snippet below.")
                     st.code(candidate_clean[:3000] + ("..." if len(candidate_clean) > 3000 else ""))
@@ -475,13 +479,15 @@ with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded
 
         std_dev = None
         if metric_type == "Numeric Value":
-            std_dev = st.number_input(
+            std_dev_raw = st.text_input(
                 "Standard Deviation of Metric * (required for numeric metrics)",
-                min_value=0.0,
-                step=0.01,
-                format="%.4f",
+                placeholder="e.g., 10.5",
                 help="The standard deviation is required for numeric metrics to compute sample sizes.",
             )
+            std_dev, _ = _parse_value_from_text(std_dev_raw)
+            if std_dev is None and std_dev_raw:
+                st.error("Invalid format for Standard Deviation. Please enter a number.")
+
 
     metric_inputs_valid = True
     if current_value == target_value and current_value is not None:
@@ -524,12 +530,13 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
         ]
     )
     generate_btn = st.button("Generate Plan", disabled=not required_ok)
-
+    
     if generate_btn:
         st.session_state.selected_index = None
         st.session_state.hypothesis_confirmed = False
         st.session_state.calc_locked = False
         st.session_state.locked_stats = {}
+        st.session_state.ai_parsed = None # Clear old plan
 
         context = {
             "type": product_type,
@@ -653,7 +660,7 @@ if st.session_state.get("ai_parsed") is None and st.session_state.get("output"):
     create_header_with_help("Raw LLM Output (fix JSON here)", "When parsing fails you'll see the raw LLM output — edit it then click Parse JSON.", icon="🛠️")
     raw_edit = st.text_area("Raw LLM output / edit here", value=st.session_state.get("raw_llm_edit", ""), height=400, key="raw_llm_edit")
     if st.button("Parse JSON"):
-        parsed_try = extract_json(st.session_state.get("raw_llm_edit", raw_edit))
+        parsed_try = extract_json(raw_edit)
         if parsed_try:
             st.session_state.ai_parsed = parsed_try
             st.success("Manual parse succeeded — plan is now usable.")
