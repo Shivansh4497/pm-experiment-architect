@@ -440,18 +440,22 @@ st.markdown(
     border-radius: 8px;
     line-height: 1.8;
     color: #1f2937;
+    margin-bottom: 1.5rem;
+}
+.prd-section-content:last-child {
+    margin-bottom: 0;
 }
 .problem-statement {
     font-weight: 500;
     font-style: italic;
+    color: #4b5563;
 }
-.hypotheses-list, .risks-list, .metrics-list, .next-steps-list, .stats-list, .variants-list {
+.section-list {
     list-style: none;
     padding-left: 0;
-    margin: 0.5rem 0 0;
+    margin: 0;
 }
-.hypotheses-list .list-item, .risks-list .list-item, .metrics-list .list-item, .next-steps-list .list-item, .stats-list .list-item, .variants-list .list-item {
-    margin-bottom: 1.5rem;
+.section-list .list-item {
     padding: 1rem;
     background: #fdfefe;
     border-radius: 8px;
@@ -459,22 +463,19 @@ st.markdown(
     border: 1px solid #e5e7eb;
     position: relative;
     line-height: 1.6;
+    margin-bottom: 1rem;
 }
-.hypotheses-list .list-item:last-child, .risks-list .list-item:last-child, .metrics-list .list-item:last-child, .next-steps-list .list-item:last-child, .stats-list .list-item:last-child, .variants-list .list-item:last-child {
+.section-list .list-item:last-child {
     margin-bottom: 0;
 }
-.hypotheses-list .list-item p {
+.section-list .list-item p {
     margin: 0;
     color: #4b5563;
 }
-.hypotheses-list .list-item p strong {
+.section-list .list-item p strong {
     display: block;
     margin-bottom: 0.5rem;
     color: #052a4a;
-}
-.hypotheses-list .list-item p.rationale, .hypotheses-list .list-item p.example {
-    font-size: 0.9rem;
-    color: #4b5563;
 }
 .hypothesis-title {
     font-size: 1.1rem;
@@ -484,6 +485,14 @@ st.markdown(
 .metrics-list .list-item p, .stats-list .list-item p, .risks-list .list-item p, .next-steps-list .list-item p, .variants-list .list-item p {
     margin: 0;
     color: #4b5563; /* Ensure consistent text color */
+}
+.section-list .list-item p code {
+    background-color: #eef2ff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    color: #3b5998;
 }
 .metrics-list .list-item span.importance {
     font-weight: 600;
@@ -503,25 +512,17 @@ st.markdown(
     font-size: 0.875rem;
     color: #6b7280;
 }
-.edit-buttons {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: 1rem;
-}
-.stats-list .list-item p code {
-    background-color: #eef2ff;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 0.9em;
-    color: #3b5998;
-}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
 """,
     unsafe_allow_html=True,
 )
+
+# --- Session State Initialization ---
+if "edit_modal_open" not in st.session_state:
+    st.session_state.edit_modal_open = False
+if "stage" not in st.session_state:
+    st.session_state.stage = "input"
 
 st.title("💡 A/B Test Architect — AI-assisted experiment PRD generator")
 st.markdown("Create experiment PRDs, hypotheses, stats, and sample-size guidance — faster and with guardrails.")
@@ -790,42 +791,68 @@ if st.session_state.get("ai_parsed"):
         # --- Final Plan Preview (Read-Only) ---
         plan = st.session_state.ai_parsed
         
-        # Build HTML list items for all sections
-        hypotheses_html = "".join([f"""
-            <div class='list-item'>
-                <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
-                <p class='rationale'><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
-                <p class='example'><strong>Example:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
-                <p class='behavioral-basis'><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
-            </div>
-        """ for h in plan.get("hypotheses", [])])
+        # Build HTML for Hypotheses
+        hypotheses_html = ""
+        for h in plan.get("hypotheses", []):
+            hypotheses_html += f"""
+                <div class='section-list-item'>
+                    <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
+                    <p class='rationale'><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
+                    <p class='example'><strong>Example:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
+                    <p class='behavioral-basis'><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
+                </div>
+            """
+
+        # Build HTML for Variants
+        variants_html = ""
+        for v in plan.get("variants", []):
+            variants_html += f"""
+                <div class='section-list-item'>
+                    <p><strong>Control:</strong> {html_sanitize(v.get('control', ''))}</p>
+                    <p><strong>Variation:</strong> {html_sanitize(v.get('variation', ''))}</p>
+                </div>
+            """
+
+        # Build HTML for Metrics
+        metrics_html = ""
+        for m in plan.get("metrics", []):
+            metrics_html += f"""
+                <div class='section-list-item'>
+                    <p><strong>Name:</strong> {html_sanitize(m.get('name', ''))}</p>
+                    <p><strong>Formula:</strong> <code>{html_sanitize(m.get('formula', ''))}</code></p>
+                    <p><strong>Importance:</strong> <span class='importance'>{html_sanitize(m.get('importance', ''))}</span></p>
+                </div>
+            """
         
-        variants_html = "".join([f"""
-            <div class='list-item'>
-                <p><strong>Control:</strong> {html_sanitize(v.get('control', ''))}</p>
-                <p><strong>Variation:</strong> {html_sanitize(v.get('variation', ''))}</p>
+        # Build HTML for Success Criteria
+        criteria = plan.get('success_criteria', {})
+        stats_html = f"""
+            <div class='section-list-item'>
+                <p><strong>Confidence:</strong> {criteria.get('confidence_level', '')}%</p>
+                <p><strong>MDE:</strong> {criteria.get('MDE', '')}%</p>
+                <p><strong>Statistical Rationale:</strong> {html_sanitize(plan.get('statistical_rationale', 'No rationale provided.'))}</p>
             </div>
-        """ for v in plan.get("variants", [])])
+        """
 
-        metrics_html = "".join([f"""
-            <div class='list-item'>
-                <p><strong>Name:</strong> {html_sanitize(m.get('name', ''))}</p>
-                <p><strong>Formula:</strong> <code>{html_sanitize(m.get('formula', ''))}</code></p>
-                <p><strong>Importance:</strong> <span class='importance'>{html_sanitize(m.get('importance', ''))}</span></p>
-            </div>
-        """ for m in plan.get("metrics", [])])
+        # Build HTML for Risks
+        risks_html = ""
+        for r in plan.get("risks_and_assumptions", []):
+            severity_class = r.get('severity', 'medium').lower()
+            risks_html += f"""
+                <div class='section-list-item'>
+                    <p><strong>Risk:</strong> {html_sanitize(r.get('risk', ''))}</p>
+                    <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(r.get('severity', ''))}</span></p>
+                    <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', ''))}</p>
+                </div>
+            """
+        
+        # Build HTML for Next Steps
+        next_steps_html = ""
+        for step in plan.get("next_steps", []):
+            next_steps_html += f"<div class='section-list-item'><p>{html_sanitize(step)}</p></div>"
 
-        risks_html = "".join([f"""
-            <div class='list-item'>
-                <p><strong>Risk:</strong> {html_sanitize(r.get('risk', ''))}</p>
-                <p><strong>Severity:</strong> <span class='severity {r.get('severity', 'Medium').lower()}'>{html_sanitize(r.get('severity', ''))}</span></p>
-                <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', ''))}</p>
-            </div>
-        """ for r in plan.get("risks_and_assumptions", [])])
 
-        next_steps_html = "".join([f"<div class='list-item'><p>{html_sanitize(step)}</p></div>" for step in plan.get("next_steps", [])])
-
-        # Generate a single HTML string for the entire card
+        # Generate a single HTML string for the entire card with consistent formatting
         plan_html = f"""
             <div class='prd-card'>
                 <div class="prd-header">
@@ -841,33 +868,39 @@ if st.session_state.get("ai_parsed"):
                 </div>
                 <div class="prd-section">
                     <div class="prd-section-title"><h2>2. Hypotheses</h2></div>
-                    <div class="hypotheses-list">{hypotheses_html}</div>
+                    <div class="prd-section-content">
+                        <div class="section-list">{hypotheses_html}</div>
+                    </div>
                 </div>
                 <div class="prd-section">
                     <div class="prd-section-title"><h2>3. Variants</h2></div>
-                    <div class="variants-list">{variants_html}</div>
+                    <div class="prd-section-content">
+                        <div class="section-list">{variants_html}</div>
+                    </div>
                 </div>
                 <div class="prd-section">
                     <div class="prd-section-title"><h2>4. Metrics</h2></div>
-                    <div class="metrics-list">{metrics_html}</div>
+                    <div class="prd-section-content">
+                        <div class="section-list">{metrics_html}</div>
+                    </div>
                 </div>
                 <div class="prd-section">
                     <div class="prd-section-title"><h2>5. Success Criteria & Statistical Rationale</h2></div>
-                    <div class="stats-list">
-                        <div class='list-item'>
-                            <p><strong>Confidence:</strong> {plan.get('success_criteria', {}).get('confidence_level', '')}%</p>
-                            <p><strong>MDE:</strong> {plan.get('success_criteria', {}).get('MDE', '')}%</p>
-                            <p><strong>Statistical Rationale:</strong> {html_sanitize(plan.get('statistical_rationale', ''))}</p>
-                        </div>
+                    <div class="prd-section-content">
+                        <div class="section-list">{stats_html}</div>
                     </div>
                 </div>
                 <div class="prd-section">
                     <div class="prd-section-title"><h2>6. Risks and Assumptions</h2></div>
-                    <div class="risks-list">{risks_html}</div>
+                    <div class="prd-section-content">
+                        <div class="section-list">{risks_html}</div>
+                    </div>
                 </div>
                 <div class="prd-section">
                     <div class="prd-section-title"><h2>7. Next Steps</h2></div>
-                    <div class="next-steps-list">{next_steps_html}</div>
+                    <div class="prd-section-content">
+                        <div class="section-list">{next_steps_html}</div>
+                    </div>
                 </div>
                 <div class='prd-footer'>Generated by A/B Test Architect on """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """</div>
             </div>
@@ -881,13 +914,16 @@ if st.session_state.get("ai_parsed"):
                 st.session_state.edit_modal_open = True
                 st.session_state.temp_plan_edit = plan.copy()
                 edit_modal.open()
+        
         if st.session_state.edit_modal_open:
             with edit_modal.container():
                 st.header("Edit Plan")
                 edited_plan = st.session_state.temp_plan_edit
+                
                 st.subheader("1. Problem Statement")
                 edited_plan['problem_statement'] = st.text_area("Problem Statement", value=edited_plan.get('problem_statement', ''), height=100, key="edit_prob_stmt")
                 st.markdown("---")
+                
                 st.subheader("2. Hypotheses")
                 if 'hypotheses' not in edited_plan: edited_plan['hypotheses'] = []
                 for i, h in enumerate(edited_plan.get("hypotheses", [])):
@@ -903,7 +939,43 @@ if st.session_state.get("ai_parsed"):
                     edited_plan['hypotheses'].append({"hypothesis": "New Hypothesis", "rationale": "", "example_implementation": "", "behavioral_basis": ""})
                     st.rerun()
                 st.markdown("---")
-                st.subheader("3. Risks and Assumptions")
+                
+                st.subheader("3. Variants")
+                if 'variants' not in edited_plan: edited_plan['variants'] = []
+                for i, v in enumerate(edited_plan.get('variants', [])):
+                    with st.expander(f"Variant {i+1}", expanded=True):
+                        edited_plan['variants'][i]['control'] = st.text_input("Control", value=v.get('control', ''), key=f'edit_control_{i}')
+                        edited_plan['variants'][i]['variation'] = st.text_input("Variation", value=v.get('variation', ''), key=f'edit_variation_{i}')
+                        if st.button(f"Delete Variant {i+1}", key=f"del_variant_{i}"):
+                            edited_plan['variants'].pop(i)
+                            st.rerun()
+                if st.button("Add New Variant", key="add_variant"):
+                    edited_plan['variants'].append({"control": "", "variation": ""})
+                    st.rerun()
+                st.markdown("---")
+                
+                st.subheader("4. Metrics")
+                if 'metrics' not in edited_plan: edited_plan['metrics'] = []
+                for i, m in enumerate(edited_plan.get("metrics", [])):
+                    with st.expander(f"Metric {i+1}", expanded=True):
+                        edited_plan['metrics'][i]['name'] = st.text_input("Name", value=m.get('name', ''), key=f"edit_metric_name_{i}")
+                        edited_plan['metrics'][i]['formula'] = st.text_input("Formula", value=m.get('formula', ''), key=f"edit_metric_formula_{i}")
+                        edited_plan['metrics'][i]['importance'] = st.selectbox("Importance", options=["Primary", "Secondary", "Guardrail"], index=["Primary", "Secondary", "Guardrail"].index(m.get('importance', 'Primary')), key=f"edit_metric_imp_{i}")
+                        if st.button(f"Delete Metric {i+1}", key=f"del_metric_{i}"):
+                            edited_plan['metrics'].pop(i)
+                            st.rerun()
+                if st.button("Add New Metric", key="add_metric"):
+                    edited_plan['metrics'].append({"name": "", "formula": "", "importance": "Primary"})
+                    st.rerun()
+                st.markdown("---")
+                
+                st.subheader("5. Success Criteria & Statistical Rationale")
+                edited_plan['success_criteria']['confidence_level'] = st.number_input("Confidence Level (%)", value=edited_plan.get('success_criteria', {}).get('confidence_level', 95), key="edit_conf")
+                edited_plan['success_criteria']['MDE'] = st.number_input("Minimum Detectable Effect (%)", value=edited_plan.get('success_criteria', {}).get('MDE', 5.0), key="edit_mde")
+                edited_plan['statistical_rationale'] = st.text_area("Statistical Rationale", value=edited_plan.get('statistical_rationale', ''), key="edit_rationale", height=100)
+                st.markdown("---")
+                
+                st.subheader("6. Risks and Assumptions")
                 if 'risks_and_assumptions' not in edited_plan: edited_plan['risks_and_assumptions'] = []
                 for i, r in enumerate(edited_plan.get("risks_and_assumptions", [])):
                     with st.expander(f"Risk {i+1}", expanded=True):
@@ -917,7 +989,8 @@ if st.session_state.get("ai_parsed"):
                     edited_plan['risks_and_assumptions'].append({"risk": "", "severity": "Medium", "mitigation": ""})
                     st.rerun()
                 st.markdown("---")
-                st.subheader("4. Next Steps")
+                
+                st.subheader("7. Next Steps")
                 if 'next_steps' not in edited_plan: edited_plan['next_steps'] = []
                 for i, step in enumerate(edited_plan.get("next_steps", [])):
                     col_s1, col_s2 = st.columns([5,1])
@@ -931,6 +1004,7 @@ if st.session_state.get("ai_parsed"):
                     edited_plan['next_steps'].append("")
                     st.rerun()
                 st.markdown("---")
+                
                 if st.button("Save Changes and Close"):
                     st.session_state.ai_parsed = edited_plan
                     st.session_state.edit_modal_open = False
