@@ -485,7 +485,7 @@ def generate_ultimate_prd(prd_dict: Dict, context: Dict) -> str:
             <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
             <script>
                 const metricsData = {json.dumps(metrics_data)};
-                
+        
                 const layout = {{
                     scene: {{
                         xaxis: {{ title: 'Metric' }},
@@ -497,7 +497,7 @@ def generate_ultimate_prd(prd_dict: Dict, context: Dict) -> str:
                     }},
                     margin: {{ t: 0, b: 0 }}
                 }};
-                
+        
                 Plotly.newPlot('metrics-3d', [{{
                     type: 'scatter3d',
                     mode: 'markers',
@@ -513,8 +513,10 @@ def generate_ultimate_prd(prd_dict: Dict, context: Dict) -> str:
                     }},
                     hoverinfo: 'x+y+z+text',
                     hovertext: metricsData.map(m => 
-                        `Target: ${m.value * 1.2} (${m.importance === 3 ? 'High' : 
-                        m.importance === 2 ? 'Medium' : 'Low'} priority)`)
+                        `Target: ${m.value * 1.2} (${{
+                            m.importance === 3 ? 'High' : 
+                            m.importance === 2 ? 'Medium' : 'Low'
+                        }} priority)`)
                 }}], layout);
             </script>
         </div>
