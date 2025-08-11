@@ -706,7 +706,7 @@ if st.session_state.get("ai_parsed"):
     unit = st.session_state.context.get("metric_unit", metric_unit)
 
     st.markdown("<div class='green-section'>", unsafe_allow_html=True)
-    create_header_with_help("Inferred Product Goal", "The AI's interpretation of your goal. Edit if needed.", icon="�")
+    create_header_with_help("Inferred Product Goal", "The AI's interpretation of your goal. Edit if needed.", icon="🎯")
     safe_display(post_process_llm_text(goal_with_units, unit))
 
     create_header_with_help("Problem Statement", "Clear description of the gap and why it matters.", icon="🧩")
@@ -777,7 +777,7 @@ if st.session_state.get("ai_parsed"):
 
     metrics = plan.get("metrics", [])
     if metrics:
-        create_header_with_help("Metrics", "Primary and secondary metrics", icon="📏")
+        create_header_with_help("Metrics", "Primary and secondary metrics", icon="�")
         
         try:
             normalized = []
@@ -959,9 +959,9 @@ if st.session_state.get("ai_parsed"):
         html = "<ul>"
         for item in items:
             if isinstance(item, dict):
-                item_text = f"<b>{html_sanitize(item.get('name','Unnamed'))}:</b> {html_sanitize(item.get('formula',''))}"
+                item_text = f"<b>{item.get('name','Unnamed')}:</b> {item.get('formula','')}"
             else:
-                item_text = html_sanitize(item)
+                item_text = str(item)
             if item_text:
                 html += f"<li>{item_text}</li>"
         html += "</ul>"
@@ -971,9 +971,9 @@ if st.session_state.get("ai_parsed"):
     for i, h in enumerate(prd_dict["hypotheses"], 1):
         hypotheses_html += f"""
         <li>
-            <b>{html_sanitize(h.get('hypothesis', ''))}</b><br>
-            <i>Rationale:</i> {html_sanitize(h.get('rationale', ''))}<br>
-            <i>Example:</i> {html_sanitize(h.get('example_implementation', ''))}
+            <b>{h.get('hypothesis', '')}</b><br>
+            <i>Rationale:</i> {h.get('rationale', '')}<br>
+            <i>Example:</i> {h.get('example_implementation', '')}
         </li>
         """
     hypotheses_html += "</ol>"
@@ -982,8 +982,8 @@ if st.session_state.get("ai_parsed"):
     for r in prd_dict.get("risks_and_assumptions", []):
         risks_html += f"""
         <li>
-            {html_sanitize(r.get('risk', ''))} <i>(Severity: {html_sanitize(r.get('severity', 'Medium'))})</i><br>
-            → Mitigation: {html_sanitize(r.get('mitigation', 'To be determined'))}
+            {r.get('risk', '')} <i>(Severity: {r.get('severity', 'Medium')})</i><br>
+            → Mitigation: {r.get('mitigation', 'To be determined')}
         </li>
         """
     risks_html += "</ul>"
