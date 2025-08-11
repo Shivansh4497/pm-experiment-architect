@@ -764,7 +764,12 @@ if st.session_state.get("ai_parsed"):
             col1, col2 = st.columns(2)
             with col1:
                 # --- FINAL FIX: Enforce min_value with max() directly in the widget ---
-                calc_mde = st.number_input("Minimum Detectable Effect (MDE) %", min_value=0.1, max_value=50.0, value=float(max(0.1, float(calc_mde))), step=0.1, key="calc_mde_key")
+                calc_mde = st.number_input("Minimum Detectable Effect (MDE) %", 
+                           min_value=0.1, 
+                           max_value=50.0, 
+                           value=float(max(0.1, float(calc_mde))),  # This line has been changed
+                           step=0.1, 
+                           key="calc_mde_key")
                 calc_conf = st.number_input("Confidence Level (%)", min_value=80, max_value=99, value=int(calc_conf), step=1, key="calc_conf_key")
             with col2:
                 calc_power = st.number_input("Statistical Power (%)", min_value=70, max_value=95, value=int(calc_power), step=1, key="calc_power_key")
