@@ -6,3 +6,5 @@ reportlab>=3.6.12
 flask>=2.0.0
 pandas
 python-dotenv
+streamlit-modal
+
