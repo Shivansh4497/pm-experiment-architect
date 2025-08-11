@@ -48,7 +48,7 @@ def sanitize_text(text: Any) -> str:
             text = str(text)
         except Exception:
             return ""
-    text = text.replace("\r", ").replace("\t", " ")
+    text = text.replace("\r"," ").replace("\t", " ")
     text = re.sub(r"[ \f\v]+", " ", text)
     return text.strip()
 
