@@ -465,18 +465,25 @@ def generate_ultimate_prd(prd_dict: Dict, context: Dict) -> str:
     # 3D Metrics Visualization (using Plotly)
     metrics_3d = ""
     if prd_dict.get('metrics'):
+        metrics_data = []
+        for m in prd_dict['metrics']:
+            if isinstance(m, dict):
+                try:
+                    value = float(re.search(r'\d+', m.get('formula', '0')).group())
+                except (AttributeError, ValueError):
+                    value = 0
+                importance = ['Low', 'Medium', 'High'].index(m.get('importance', 'Medium')) + 1
+                metrics_data.append({
+                    'name': m.get('name'),
+                    'value': value,
+                    'importance': importance
+                })
+        
         metrics_3d = f"""
         <div id="metrics-3d" style="height: 300px; margin: 2rem 0;">
             <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
             <script>
-                const metricsData = {json.dumps([
-                    {{
-                        'name': m.get('name'),
-                        'value': parseFloat(m.get('formula', '0').match(/\\d+/)?.[0] || 0),
-                        'importance': ['Low', 'Medium', 'High'].indexOf(m.get('importance', 'Medium')) + 1
-                    }} 
-                    for m in prd_dict['metrics'] if isinstance(m, dict)
-                ])};
+                const metricsData = {json.dumps(metrics_data)};
                 
                 const layout = {{
                     scene: {{
@@ -511,6 +518,8 @@ def generate_ultimate_prd(prd_dict: Dict, context: Dict) -> str:
             </script>
         </div>
         """
+
+    
 
     # Dynamic CSS with Dark Mode Support
     dynamic_css = f"""
