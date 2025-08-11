@@ -397,7 +397,7 @@ def generate_ultimate_prd(prd_dict: Dict, context: Dict) -> str:
         }
     }
 
-    # Dark Mode Toggle Component
+    # Dark Mode Toggle Component - using triple quotes for multi-line string
     dark_mode_toggle = """
     <div style="position: absolute; top: 20px; right: 20px; z-index: 1000;">
         <label class="switch">
@@ -462,19 +462,20 @@ def generate_ultimate_prd(prd_dict: Dict, context: Dict) -> str:
     </script>
     """
 
-    # 3D Metrics Visualization (using Plotly)
+    # 3D Metrics Visualization - using proper string escaping
     metrics_3d = ""
     if prd_dict.get('metrics'):
         metrics_data = []
         for m in prd_dict['metrics']:
             if isinstance(m, dict):
                 try:
-                    value = float(re.search(r'\d+', m.get('formula', '0')).group())
-                except (AttributeError, ValueError):
+                    value_match = re.search(r'\d+', m.get('formula', '0'))
+                    value = float(value_match.group()) if value_match else 0
+                except ValueError:
                     value = 0
                 importance = ['Low', 'Medium', 'High'].index(m.get('importance', 'Medium')) + 1
                 metrics_data.append({
-                    'name': m.get('name'),
+                    'name': m.get('name', ''),
                     'value': value,
                     'importance': importance
                 })
@@ -519,9 +520,7 @@ def generate_ultimate_prd(prd_dict: Dict, context: Dict) -> str:
         </div>
         """
 
-    
-
-    # Dynamic CSS with Dark Mode Support
+    # Dynamic CSS with proper escaping
     dynamic_css = f"""
     <style>
         :root {{
@@ -568,84 +567,74 @@ def generate_ultimate_prd(prd_dict: Dict, context: Dict) -> str:
     </style>
     """
 
-    # Animated Progress Bars for Metrics
+    # Progress bars with proper string handling
     progress_bars = ""
     if prd_dict.get('success_criteria'):
+        progress_items = []
+        for name, value in prd_dict['success_criteria'].items():
+            progress_items.append(f"""
+            <div style="margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                    <span>{name}</span>
+                    <span>{value}{'%' if name in ['Confidence', 'MDE'] else ''}</span>
+                </div>
+                <div style="height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
+                    <div style="height: 100%; width: {value if name in ['Confidence', 'MDE'] else 100}%; 
+                        background: {'var(--primary)' if name == 'Confidence' else '#10b981' if name == 'MDE' else 'var(--secondary)'}; 
+                        border-radius: 4px; animation: grow 1s ease-out;">
+                    </div>
+                </div>
+            </div>
+            """)
+        
         progress_bars = f"""
         <div class="progress-container" style="margin: 1.5rem 0;">
             <h3 style="margin-bottom: 1rem;">Success Criteria</h3>
-            {''.join([
-                f"""
-                <div style="margin-bottom: 1rem;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                        <span>{name}</span>
-                        <span>{value}{'%' if name in ['Confidence', 'MDE'] else ''}</span>
-                    </div>
-                    <div style="
-                        height: 8px;
-                        background: #e2e8f0;
-                        border-radius: 4px;
-                        overflow: hidden;
-                    ">
-                        <div style="
-                            height: 100%;
-                            width: {value if name in ['Confidence', 'MDE'] else 100}%;
-                            background: {'var(--primary)' if name == 'Confidence' else 
-                                       '#10b981' if name == 'MDE' else 'var(--secondary)'};
-                            border-radius: 4px;
-                            animation: grow 1s ease-out;
-                        "></div>
-                    </div>
-                </div>
-                """
-                for name, value in prd_dict['success_criteria'].items()
-            ])}
+            {''.join(progress_items)}
+            <style>
+                @keyframes grow {{
+                    from {{ width: 0% }}
+                    to {{ width: 100% }}
+                }}
+            </style>
         </div>
-        
-        <style>
-            @keyframes grow {{
-                from {{ width: 0% }}
-                to {{ width: 100% }}
-            }}
-        </style>
         """
 
-    return f"""
-    {dark_mode_toggle}
-    {dynamic_css}
-    
-    <div class="prd-card">
-        <div class="prd-header">
-            <div class="logo-wrapper">A/B</div>
-            <div class="header-text">
-                <h1>Experiment PRD</h1>
-                <p>{prd_dict.get('goal', '')}</p>
-            </div>
+    # Final assembly with proper string joining
+    return f"""{dark_mode_toggle}
+{dynamic_css}
+<div class="prd-card">
+    <div class="prd-header">
+        <div class="logo-wrapper">A/B</div>
+        <div class="header-text">
+            <h1>Experiment PRD</h1>
+            <p>{prd_dict.get('goal', '')}</p>
         </div>
-
-        <div class="prd-section">
-            <div class="prd-section-title">
-                <h2>Problem Statement</h2>
-            </div>
-            <div class="prd-section-content">
-                {prd_dict.get('problem_statement', 'No problem statement provided.')}
-            </div>
-        </div>
-
-        <div class="prd-section">
-            <div class="prd-section-title">
-                <h2>Hypothesis</h2>
-            </div>
-            <div class="prd-section-content">
-                {prd_dict.get('hypotheses', [{}])[0].get('hypothesis', 'No hypothesis selected')}
-            </div>
-        </div>
-
-        {metrics_3d}
-
-        {progress_bars}
     </div>
-    """
+
+    <div class="prd-section">
+        <div class="prd-section-title">
+            <h2>Problem Statement</h2>
+        </div>
+        <div class="prd-section-content">
+            {prd_dict.get('problem_statement', 'No problem statement provided.')}
+        </div>
+    </div>
+
+    <div class="prd-section">
+        <div class="prd-section-title">
+            <h2>Hypothesis</h2>
+        </div>
+        <div class="prd-section-content">
+            {prd_dict.get('hypotheses', [{}])[0].get('hypothesis', 'No hypothesis selected')}
+        </div>
+    </div>
+
+    {metrics_3d}
+
+    {progress_bars}
+</div>
+"""
     # Main Streamlit App UI
 st.markdown(
     """
