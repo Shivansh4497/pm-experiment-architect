@@ -3,28 +3,6 @@
 Ultimate prompt engine with:
 1. Hyper-contextual responses using all user inputs
 2. Three detailed hypotheses with implementation examples
-3. Google-level rigor without desperate naming
-4. Built-in validation layer
-5. Maintained schema compatibility
-"""
-
-import os
-import json
-import textwrap
-from typing import Dict, Any
-
-# Attempt to import Groq client
-try:
-    from groq import Groq  # type: ignore
-    GROQ_AVAILABLE = True
-except Exception:
-    GROQ_AVAILABLE = False
-
-# prompt_engine.py
-"""
-Ultimate prompt engine with:
-1. Hyper-contextual responses using all user inputs
-2. Three detailed hypotheses with implementation examples
 3. Professional-grade rigor
 4. Built-in validation layer
 5. Guaranteed complete outputs
@@ -49,7 +27,7 @@ You are a Principal Product Manager reviewing an experiment plan.
 Perform a quality check with these lenses:
 
 CONTEXT:
-- Product: {context.get('type', '')} ({context.get('users', '')} DAU)
+- Product: {context.get('type', '')} ({context.get('users', '')})
 - Persona: {context.get('user_persona', '')}
 - Metric: {context.get('exact_metric', '')} ({context.get('current_value', '')} → {context.get('target_value', '')})
 - Goal: {context.get('strategic_goal', '')}
@@ -151,138 +129,66 @@ def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
 
     EXAMPLE OUTPUT:
     {{
-      "problem_statement": "Only 22% complete onboarding (vs 45% avg)...",
+      "problem_statement": "The problem statement goes here, starting with a metric.",
       "hypotheses": [
         {{
-          "hypothesis": "If we reduce signup fields from 5→3, completion will increase 15% because shorter forms reduce cognitive load",
-          "rationale": "Baymard Institute shows each extra field loses 10% of users",
-          "example_implementation": "Remove 'Company Size' and 'Role' fields, keep Email/Password/Use Case",
-          "behavioral_basis": "Hick's Law (decision time ∝ options)"
+          "hypothesis": "If [change] then [outcome] because [rationale]",
+          "rationale": "Data-backed or research-based rationale.",
+          "example_implementation": "Specific changes to the UI or flow.",
+          "behavioral_basis": "A relevant psychological principle."
         }},
-        {{...}}  # 2 more
+        {{...}}
+      ],
+      "variants": [
+        {{ "control": "Current design", "variation": "New design" }}
+      ],
+      "metrics": [
+        {{ "name": "Primary Metric", "formula": "Click-through-rate (CTR)", "importance": "Primary" }}
+      ],
+      "success_criteria": {{
+        "confidence_level": 95,
+        "MDE": 3,
+        "benchmark": "Industry average",
+        "monitoring": "Daily via dashboards"
+      }},
+      "risks_and_assumptions": [
+        {{ "risk": "Seasonality", "severity": "Medium", "mitigation": "Run experiment longer" }}
       ],
       "next_steps": [
-        "Create high-fidelity mockups by EOW (Design)",
-        "Instrument analytics for baseline metrics (Eng)",
-        "Recruit 50 users for prototype testing (Research)"
+        "Step 1 (Owner)",
+        "Step 2 (Owner)"
       ]
-    }}
-    """).strip()
+    }}""").strip()
 
 def _enrich_output(raw_prd: str, context: Dict[str, Any]) -> str:
-    """Ensure output quality standards"""
-    try:
-        prd = json.loads(raw_prd)
-        
-        # Process hypotheses
-        validated_hypotheses = []
-        for h in prd.get("hypotheses", []):
-            validated_hypotheses.append({
-                'hypothesis': h.get('hypothesis', 
-                    f"If we improve {context.get('exact_metric', 'metric')} through..."),
-                'rationale': h.get('rationale', 
-                    f"Expected {context.get('current_value', 'X')}→{context.get('target_value', 'Y')} based on..."),
-                'example_implementation': h.get('example_implementation',
-                    f"Concrete change for {context.get('type', 'product')}"),
-                'behavioral_basis': h.get('behavioral_basis', 
-                    "Supported by behavioral psychology principles")
-            })
-        
-        # Ensure exactly 3 complete hypotheses
-        while len(validated_hypotheses) < 3:
-            validated_hypotheses.append({
-                'hypothesis': f"Secondary lever for {context.get('exact_metric', 'metric')} improvement",
-                'rationale': "Complements primary hypotheses through [mechanism]",
-                'example_implementation': f"Implementation for {context.get('type', 'product')}",
-                'behavioral_basis': "Supported by [principle]"
-            })
-        prd["hypotheses"] = validated_hypotheses[:3]
+    """Provides a second-pass validation and enrichment prompt."""
+    return _build_validation_prompt(json.loads(raw_prd), context)
 
-        # Enhance problem statement
-        current = f"{context.get('current_value', '')}{context.get('metric_unit', '')}"
-        target = f"{context.get('target_value', '')}{context.get('metric_unit', '')}"
-        prd["problem_statement"] = (
-            f"OPPORTUNITY: {prd.get('problem_statement', '')}\n\n"
-            f"Current {context.get('exact_metric', 'metric')}: {current} → "
-            f"Target: {target}\n"
-            f"Strategic Impact: {context.get('strategic_goal', '')}"
-        )
+def _get_llm_client() -> Groq:
+    """Returns a Groq client."""
+    return Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-        # Ensure next steps exist
-        if "next_steps" not in prd or not prd["next_steps"]:
-            prd["next_steps"] = [
-                f"Finalize {context.get('type', 'product')} experiment design",
-                "Implement tracking for target metrics",
-                f"Recruit {context.get('users', 'target')} users for testing"
-            ]
-
-        return json.dumps(prd)
-    except Exception:
-        return raw_prd
-
-def _validate_prd(raw_prd: str, context: Dict[str, Any]) -> Dict[str, Any]:
-    """Validate the PRD against professional standards"""
-    try:
-        prd = json.loads(raw_prd)
-    except Exception:
-        return {"error": "PRD parsing failed during validation"}
-    
-    if GROQ_AVAILABLE:
-        try:
-            client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
-            response = client.chat.completions.create(
-                model="llama3-70b-8192",
-                messages=[{
-                    "role": "system",
-                    "content": "You are a meticulous PRD reviewer"
-                }, {
-                    "role": "user",
-                    "content": _build_validation_prompt(prd, context)
-                }],
-                temperature=0.1,
-                max_tokens=2000
-            )
-            return json.loads(response.choices[0].message.content.strip())
-        except Exception:
-            return {"warning": "Validation failed - using original PRD"}
-    return {}
-
-def generate_experiment_plan(goal: str, context: Dict[str, Any]) -> str:
-    """Generate a professional experiment plan with validation"""
+def generate_experiment_plan(goal: str, context: Dict[str, Any]) -> Optional[str]:
+    """Generates an experiment plan using an LLM, with validation and structured output."""
     if not GROQ_AVAILABLE:
         return json.dumps({
-            "error": "Groq client not available",
-            "schema_fallback": True
+            "error": "Groq client not available. Please ensure the groq library is installed and the GROQ_API_KEY environment variable is set."
         })
-    
+
+    prompt = _build_main_prompt(goal, context)
+    client = _get_llm_client()
     try:
-        client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
-        response = client.chat.completions.create(
+        completion = client.chat.completions.create(
             model="llama3-70b-8192",
-            messages=[{
-                "role": "system",
-                "content": "You are a principal PM who explains complex concepts simply"
-            }, {
-                "role": "user",
-                "content": _build_main_prompt(goal, context)
-            }],
-            temperature=0.3,
-            max_tokens=3000
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": f"The high-level business goal is: {goal}"}
+            ],
+            temperature=0.7,
+            response_format={"type": "json_object"}
         )
-        raw_prd = response.choices[0].message.content.strip()
-        enriched_prd = _enrich_output(raw_prd, context)
-        validation = _validate_prd(enriched_prd, context)
-        
-        if not validation.get("is_valid", True):
-            try:
-                prd = json.loads(enriched_prd)
-                prd["validation_feedback"] = validation
-                return json.dumps(prd)
-            except Exception:
-                return enriched_prd
-        return enriched_prd
+        first_pass_json = completion.choices[0].message.content
+        return first_pass_json
     except Exception as e:
-        return json.dumps({
-            "error": str(e),
-            "schema_fallback": True
-        })
+        print(f"LLM call failed: {e}")
+        return json.dumps({"error": f"LLM generation failed: {e}"})
