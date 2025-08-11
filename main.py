@@ -5,7 +5,7 @@ import re
 import os
 import pandas as pd
 from typing import Any, Dict, Optional, Tuple, List
-from prompt_engine import generate_experiment_plan
+from prompt_engine import generate_experiment_plan, generate_hypothesis_details
 from statsmodels.stats.power import NormalIndPower, TTestIndPower
 from statsmodels.stats.proportion import proportion_effectsize
 import numpy as np
@@ -13,6 +13,7 @@ import hashlib
 from datetime import datetime
 from io import BytesIO
 import ast
+from streamlit_modal import Modal
 
 # PDF Export Setup
 REPORTLAB_AVAILABLE = False
@@ -26,6 +27,7 @@ try:
 except Exception:
     REPORTLAB_AVAILABLE = False
 
+# --- Helper Functions (No Change) ---
 def create_header_with_help(header_text: str, help_text: str, icon: str = "🔗"):
     st.markdown(
         f"""
@@ -53,7 +55,6 @@ def sanitize_text(text: Any) -> str:
     return text.strip()
 
 def html_sanitize(text: Any) -> str:
-    """Escapes special HTML characters from a string."""
     if text is None: return ""
     text = str(text)
     text = text.replace("&", "&amp;")
@@ -64,14 +65,10 @@ def html_sanitize(text: Any) -> str:
     return text
 
 def generate_problem_statement(plan: Dict, current: float, target: float, unit: str) -> str:
-    """Auto-inserts target metric into problem statement"""
     base = plan.get("problem_statement", "")
     if not base.strip():
         return base
-    
     metric_str = f" (current: {format_value_with_unit(current, unit)} → target: {format_value_with_unit(target, unit)})"
-    
-    # Insert after first sentence if not already present
     if metric_str not in base:
         sentences = base.split('.')
         if len(sentences) > 1:
@@ -111,7 +108,6 @@ def extract_json(text: Any) -> Optional[Dict]:
     if text is None:
         st.error("No output returned from LLM.")
         return None
-
     if isinstance(text, dict):
         return text
     if isinstance(text, list):
@@ -119,13 +115,11 @@ def extract_json(text: Any) -> Optional[Dict]:
             return {"items": text}
         st.error("LLM returned a JSON list when an object was expected.")
         return None
-
     try:
         raw = str(text)
     except Exception as e:
         st.error(f"Unexpected LLM output type: {e}")
         return None
-
     try:
         parsed = json.loads(raw)
         if isinstance(parsed, dict):
@@ -136,7 +130,6 @@ def extract_json(text: Any) -> Optional[Dict]:
         return None
     except Exception:
         pass
-
     try:
         parsed_ast = ast.literal_eval(raw)
         if isinstance(parsed_ast, dict):
@@ -145,7 +138,6 @@ def extract_json(text: Any) -> Optional[Dict]:
             return {"items": parsed_ast}
     except Exception:
         pass
-
     candidate = _extract_json_first_braces(raw)
     if candidate:
         candidate_clean = candidate
@@ -186,7 +178,6 @@ def extract_json(text: Any) -> Optional[Dict]:
                     st.error("Could not parse extracted JSON block. See snippet below.")
                     st.code(candidate_clean[:3000] + ("..." if len(candidate_clean) > 3000 else ""))
                     return None
-
     try:
         converted_full = _safe_single_to_double_quotes(raw)
         parsed = json.loads(converted_full)
@@ -196,7 +187,6 @@ def extract_json(text: Any) -> Optional[Dict]:
             return {"items": parsed}
     except Exception:
         pass
-
     st.error("LLM output could not be parsed as JSON. Please inspect or edit the raw output below.")
     try:
         st.code(raw[:3000] + ("..." if len(raw) > 3000 else ""))
@@ -231,14 +221,12 @@ def format_value_with_unit(value: Any, unit: str) -> str:
         return f"{v_str}{unit}"
         
 def _parse_value_from_text(text: str, default_unit: str = '%') -> Tuple[Optional[float], str]:
-    """Extracts a numeric value and unit from a string."""
     text = sanitize_text(text)
     match = re.match(r"([\d\.]+)\s*(\w+|%)?", text)
     if match:
         value = float(match.group(1))
         unit = match.group(2) if match.group(2) else default_unit
         return value, unit
-    
     try:
         return float(text), default_unit
     except ValueError:
@@ -248,7 +236,6 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
     try:
         if baseline is None or mde is None:
             return None, None
-
         mde_relative = float(mde) / 100.0
         if metric_type == "Conversion Rate":
             try:
@@ -275,10 +262,8 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
             sample_size_per_variant = analysis.solve_power(effect_size=effect_size, alpha=alpha, power=power, alternative="two-sided")
         else:
             return None, None
-
         if sample_size_per_variant is None or sample_size_per_variant <= 0 or not np.isfinite(sample_size_per_variant):
             return None, None
-
         total = sample_size_per_variant * num_variants
         return int(np.ceil(sample_size_per_variant)), int(np.ceil(total))
     except Exception:
@@ -294,26 +279,17 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     styles.add(ParagraphStyle(name="SectionHeading", fontSize=13, leading=16, spaceBefore=12, spaceAfter=6, fontName="Helvetica-Bold"))
     styles.add(ParagraphStyle(name="BodyTextCustom", fontSize=10.5, leading=14))
     styles.add(ParagraphStyle(name="BulletText", fontSize=10.5, leading=14, leftIndent=12, bulletIndent=6))
-    
     story: List[Any] = []
-    
     def pdf_sanitize(text: Any) -> str:
         if text is None: return ""
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
     def add_section_header(title: str):
         story.append(Spacer(1, 12))
         story.append(Paragraph(title, styles["SectionHeading"]))
         story.append(Spacer(1, 6))
-
-    # --- Document Title ---
     story.append(Paragraph(title, styles["PRDTitle"]))
-
-    # --- Problem Statement ---
     add_section_header("1. Problem Statement")
     story.append(Paragraph(pdf_sanitize(prd.get("problem_statement", "")), styles["BodyTextCustom"]))
-
-    # --- Hypotheses ---
     add_section_header("2. Hypotheses")
     for idx, h in enumerate(prd.get("hypotheses", [])):
         story.append(Paragraph(f"<b>Hypothesis {idx + 1}:</b> {pdf_sanitize(h.get('hypothesis', ''))}", styles["BodyTextCustom"]))
@@ -321,15 +297,11 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         story.append(Paragraph(f"<b>Example Implementation:</b> {pdf_sanitize(h.get('example_implementation', ''))}", styles["BodyTextCustom"]))
         story.append(Paragraph(f"<b>Behavioral Basis:</b> {pdf_sanitize(h.get('behavioral_basis', ''))}", styles["BodyTextCustom"]))
         story.append(Spacer(1, 10))
-
-    # --- Variants ---
     add_section_header("3. Variants")
     for v in prd.get("variants", []):
         story.append(Paragraph(f"<b>Control:</b> {pdf_sanitize(v.get('control', ''))}", styles["BodyTextCustom"]))
         story.append(Paragraph(f"<b>Variation:</b> {pdf_sanitize(v.get('variation', ''))}", styles["BodyTextCustom"]))
         story.append(Spacer(1, 10))
-
-    # --- Metrics (as a table) ---
     add_section_header("4. Metrics")
     metrics_data = [['Name', 'Formula', 'Importance']]
     for m in prd.get("metrics", []):
@@ -355,8 +327,6 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         story.append(metrics_table)
     else:
         story.append(Paragraph("No metrics defined.", styles["BodyTextCustom"]))
-
-    # --- Success Criteria & Statistical Rationale ---
     add_section_header("5. Success Criteria & Statistical Rationale")
     criteria = prd.get("success_criteria", {})
     story.append(Paragraph(f"<b>Confidence Level:</b> {criteria.get('confidence_level', '')}%", styles["BodyTextCustom"]))
@@ -364,8 +334,6 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     story.append(Paragraph(f"<b>Statistical Rationale:</b> {pdf_sanitize(prd.get('statistical_rationale', ''))}", styles["BodyTextCustom"]))
     story.append(Paragraph(f"<b>Benchmark:</b> {pdf_sanitize(criteria.get('benchmark', ''))}", styles["BodyTextCustom"]))
     story.append(Paragraph(f"<b>Monitoring:</b> {pdf_sanitize(criteria.get('monitoring', ''))}", styles["BodyTextCustom"]))
-
-    # --- Risks and Assumptions (as a table) ---
     add_section_header("6. Risks and Assumptions")
     risks_data = [['Risk', 'Severity', 'Mitigation']]
     for r in prd.get("risks_and_assumptions", []):
@@ -380,8 +348,6 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         story.append(risks_table)
     else:
         story.append(Paragraph("No risks defined.", styles["BodyTextCustom"]))
-
-    # --- Next Steps (as a table) ---
     add_section_header("7. Next Steps")
     next_steps_data = [['Action']]
     for step in prd.get("next_steps", []):
@@ -392,13 +358,13 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         story.append(next_steps_table)
     else:
         story.append(Paragraph("No next steps defined.", styles["BodyTextCustom"]))
-
     doc.build(story)
     buffer.seek(0)
     pdf_bytes = buffer.getvalue()
     buffer.close()
     return pdf_bytes
 
+# --- Streamlit UI Code ---
 st.set_page_config(page_title="A/B Test Architect", layout="wide")
 st.markdown(
     """
@@ -545,6 +511,7 @@ st.markdown(
 st.title("💡 A/B Test Architect — AI-assisted experiment PRD generator")
 st.markdown("Create experiment PRDs, hypotheses, stats, and sample-size guidance — faster and with guardrails.")
 
+# --- Session State Management ---
 if "output" not in st.session_state:
     st.session_state.output = None
 if "ai_parsed" not in st.session_state:
@@ -553,83 +520,43 @@ if "calc_locked" not in st.session_state:
     st.session_state.calc_locked = False
 if "locked_stats" not in st.session_state:
     st.session_state.locked_stats = {}
-if "selected_index" not in st.session_state:
-    st.session_state.selected_index = None
-if "hypothesis_confirmed" not in st.session_state:
-    st.session_state.hypothesis_confirmed = False
 if "last_llm_hash" not in st.session_state:
     st.session_state.last_llm_hash = None
 if "calculate_now" not in st.session_state:
     st.session_state.calculate_now = False
-if "metrics_table" not in st.session_state:
-    st.session_state.metrics_table = None
-if "raw_llm_edit" not in st.session_state:
-    st.session_state.raw_llm_edit = ""
+if "edit_modal_open" not in st.session_state:
+    st.session_state.edit_modal_open = False
+if "temp_plan_edit" not in st.session_state:
+    st.session_state.temp_plan_edit = {}
+if "stage" not in st.session_state:
+    st.session_state.stage = "input"
+if "hypotheses_from_llm" not in st.session_state:
+    st.session_state.hypotheses_from_llm = []
 
+# --- Input Sections (No Change) ---
 with st.expander("💡 Product Context (click to expand)", expanded=True):
-    create_header_with_help(
-        "Product Context",
-        "Provide the product context and business goal so the AI can produce a focused experiment plan.",
-        icon="💡",
-    )
+    create_header_with_help("Product Context", "Provide the product context and business goal so the AI can produce a focused experiment plan.", icon="💡")
     col_a, col_b = st.columns([2, 1])
     with col_a:
-        product_type = st.selectbox(
-            "Product Type",
-            ["SaaS", "Consumer App", "E-commerce", "Marketplace", "Gaming", "Other"],
-            index=0,
-            help="What kind of product are you testing?",
-        )
-        dau = st.number_input(
-            "Daily Active Users (DAU) *",
-            min_value=1,
-            value=10000,
-            step=1000,
-            help="The average number of daily active users for the product. This is used to calculate the experiment duration.",
-        )
-        metric_focus = st.selectbox(
-            "Primary Metric Focus",
-            ["Activation", "Retention", "Monetization", "Engagement", "Virality"],
-            index=0,
-            help="The general category of metrics you're trying to move.",
-        )
-        product_notes = st.text_area(
-            "Anything unique about your product or users? (optional)",
-            placeholder="e.g. seasonality, power users, drop-off at pricing",
-            help="Optional context to inform better suggestions.",
-        )
+        product_type = st.selectbox("Product Type", ["SaaS", "Consumer App", "E-commerce", "Marketplace", "Gaming", "Other"], index=0, help="What kind of product are you testing?")
+        dau = st.number_input("Daily Active Users (DAU) *", min_value=1, value=10000, step=1000, help="The average number of daily active users for the product. This is used to calculate the experiment duration.")
+        metric_focus = st.selectbox("Primary Metric Focus", ["Activation", "Retention", "Monetization", "Engagement", "Virality"], index=0, help="The general category of metrics you're trying to move.")
+        product_notes = st.text_area("Anything unique about your product or users? (optional)", placeholder="e.g. seasonality, power users, drop-off at pricing", help="Optional context to inform better suggestions.")
     with col_b:
-        strategic_goal = st.text_area(
-            "High-Level Business Goal *",
-            placeholder="e.g., Increase overall revenue from our premium tier",
-            help="This is the broader business goal the experiment supports.",
-        )
-        user_persona = st.text_input(
-            "Target User Persona (optional)",
-            placeholder="e.g., First-time users from India, iOS users, power users",
-            help="Focus the plan on a specific user segment.",
-        )
+        strategic_goal = st.text_area("High-Level Business Goal *", placeholder="e.g., Increase overall revenue from our premium tier", help="This is the broader business goal the experiment supports.")
+        user_persona = st.text_input("Target User Persona (optional)", placeholder="e.g., First-time users from India, iOS users, power users", help="Focus the plan on a specific user segment.")
 
 with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded=True):
-    create_header_with_help(
-        "Metric Improvement Objective",
-        "Provide the exact metric and current vs target values. Use the proper units.",
-        icon="🎯",
-    )
+    create_header_with_help("Metric Improvement Objective", "Provide the exact metric and current vs target values. Use the proper units.", icon="🎯")
     col_m1, col_m2 = st.columns([2, 2])
     with col_m1:
-        exact_metric = st.text_input(
-            "Metric to Improve * (e.g. Activation Rate, ARPU, DAU/MAU)",
-            help="Be specific — name the metric you want to shift.",
-        )
+        exact_metric = st.text_input("Metric to Improve * (e.g. Activation Rate, ARPU, DAU/MAU)", help="Be specific — name the metric you want to shift.")
     with col_m2:
         metric_type = st.radio("Metric Type", ["Conversion Rate", "Numeric Value"], horizontal=True)
     
     col_unit, col_values = st.columns([1, 2])
     with col_unit:
-        metric_unit = st.selectbox(
-            "Metric Unit", ["%", "USD", "INR", "minutes", "count", "other"], index=0, help="Choose the unit for clarity."
-        )
+        metric_unit = st.selectbox("Metric Unit", ["%", "USD", "INR", "minutes", "count", "other"], index=0, help="Choose the unit for clarity.")
     with col_values:
         current_value_raw = st.text_input("Current Metric Value *", placeholder="e.g., 55.0 or 55.0 INR")
         target_value_raw = st.text_input("Target Metric Value *", placeholder="e.g., 60.0 or 60.0 INR")
@@ -644,11 +571,7 @@ with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded
 
         std_dev = None
         if metric_type == "Numeric Value":
-            std_dev_raw = st.text_input(
-                "Standard Deviation of Metric * (required for numeric metrics)",
-                placeholder="e.g., 10.5",
-                help="The standard deviation is required for numeric metrics to compute sample sizes.",
-            )
+            std_dev_raw = st.text_input("Standard Deviation of Metric * (required for numeric metrics)", placeholder="e.g., 10.5", help="The standard deviation is required for numeric metrics to compute sample sizes.")
             std_dev, _ = _parse_value_from_text(std_dev_raw)
             if std_dev is None and std_dev_raw:
                 st.error("Invalid format for Standard Deviation. Please enter a number.")
@@ -696,12 +619,13 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
     generate_btn = st.button("Generate Plan", disabled=not required_ok)
     
     if generate_btn:
-        st.session_state.selected_index = None
-        st.session_state.hypothesis_confirmed = False
+        st.session_state.stage = "problem_statement"
+        st.session_state.ai_parsed = None
+        st.session_state.hypotheses_from_llm = []
+        st.session_state.temp_plan_edit = {}
         st.session_state.calc_locked = False
         st.session_state.locked_stats = {}
-        st.session_state.ai_parsed = None # Clear old plan
-
+        
         context = {
             "type": product_type,
             "users": f"{dau} DAU",
@@ -722,410 +646,322 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
         with st.spinner("Generating your plan..."):
             try:
                 raw_llm = generate_experiment_plan(goal_with_units, context)
-                st.session_state.output = raw_llm if raw_llm is not None else ""
-                st.session_state.raw_llm_edit = st.session_state.output
                 parsed = extract_json(raw_llm)
-                st.session_state.ai_parsed = parsed
-                try:
-                    h = hashlib.sha256((str(raw_llm) or "").encode("utf-8")).hexdigest()
-                    st.session_state.last_llm_hash = h
-                except Exception:
-                    st.session_state.last_llm_hash = None
                 if parsed:
-                    st.success("Plan generated successfully — review and edit below.")
+                    st.session_state.ai_parsed = parsed
+                    st.session_state.temp_plan_edit = parsed.copy()
+                    st.session_state.hypotheses_from_llm = parsed.get("hypotheses", [])
+                    st.success("Plan generated successfully — let's refine it step-by-step.")
                 else:
-                    st.warning("Plan generated but parsing failed. Please check inputs and try again.")
+                    st.error("Plan generation failed. Please check inputs and try again.")
+                    st.session_state.stage = "input"
             except Exception as e:
                 st.error(f"LLM generation failed: {e}")
-                st.session_state.output = ""
-                st.session_state.ai_parsed = None
+                st.session_state.stage = "input"
 
-    if st.session_state.get("ai_parsed") is not None or st.session_state.get("output"):
-        st.markdown("<hr>", unsafe_allow_html=True)
+# --- Main Guided Workflow ---
+if st.session_state.get("ai_parsed"):
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown("### 🚀 Refine Your Experiment Plan")
+
+    if st.session_state.stage == "problem_statement":
+        st.subheader("Step 1: Problem Statement")
+        st.info("Review and refine the problem statement. This sets the foundation for your experiment.")
+        
+        problem_statement = st.session_state.ai_parsed.get('problem_statement', '')
+        st.session_state.ai_parsed['problem_statement'] = st.text_area(
+            "Problem Statement",
+            value=problem_statement,
+            height=150,
+            label_visibility="collapsed"
+        )
+        
+        col_ps_1, col_ps_2 = st.columns([1,1])
+        with col_ps_1:
+            if st.button("Save Problem Statement"):
+                st.session_state.stage = "hypotheses"
+                st.experimental_rerun()
+
+    elif st.session_state.stage == "hypotheses":
+        st.subheader("Step 2: Choose or Create a Hypothesis")
+        st.info("Select one of the AI-generated hypotheses below, or create your own to get a fresh perspective.")
+        
+        st.session_state.ai_parsed['hypotheses'] = []
+        
+        hyp_cols = st.columns(3)
+        for i, h in enumerate(st.session_state.hypotheses_from_llm):
+            with hyp_cols[i]:
+                st.markdown(f"**Hypothesis {i+1}**")
+                st.markdown(f"*{h.get('hypothesis', '')}*")
+                if st.button(f"Select Hypothesis {i+1}", key=f"select_hyp_{i}"):
+                    st.session_state.ai_parsed['hypotheses'].append(h)
+                    st.session_state.stage = "full_plan"
+                    st.experimental_rerun()
+        
+        st.markdown("---")
+        st.markdown("Or, if none of these fit...")
+        
+        with st.container():
+            st.markdown("### Create Your Own Hypothesis")
+            new_hyp_text = st.text_input(
+                "Enter your new hypothesis:",
+                placeholder="e.g., If we change the button color to red, the click-through rate will increase.",
+                key="new_hyp_text"
+            )
+            if st.button("Generate Details for This Hypothesis"):
+                if new_hyp_text:
+                    with st.spinner("Generating hypothesis details..."):
+                        context = {
+                            "strategic_goal": strategic_goal,
+                            "metric_to_improve": exact_metric,
+                            "problem_statement": st.session_state.ai_parsed.get('problem_statement', ''),
+                            "user_persona": user_persona,
+                        }
+                        
+                        try:
+                            # New, focused LLM call for hypothesis details
+                            hyp_details_raw = generate_hypothesis_details(new_hyp_text, context)
+                            hyp_details_parsed = extract_json(hyp_details_raw)
+                            if hyp_details_parsed:
+                                # Update the main plan with the new hypothesis
+                                st.session_state.ai_parsed['hypotheses'].append(hyp_details_parsed)
+                                st.session_state.stage = "full_plan"
+                                st.experimental_rerun()
+                            else:
+                                st.error("Failed to generate details for your hypothesis. Please try again.")
+                        except Exception as e:
+                            st.error(f"LLM call failed: {e}")
+
+
+    elif st.session_state.stage == "full_plan":
+        st.subheader("Step 3: Refine the Full Plan")
+        st.info("Your experiment plan is ready! Now you can edit any of the sections, starting with the A/B test calculator.")
+        
+        # --- A/B Test Calculator Section (Unchanged, now part of the flow) ---
         with st.expander("🔢 A/B Test Calculator: Fine-tune sample size", expanded=True):
-            calc_mde = st.session_state.get("calc_mde", st.session_state.get("ai_parsed", {}).get("success_criteria", {}).get("MDE", mde_default) if st.session_state.get("ai_parsed") else mde_default)
-            calc_conf = st.session_state.get("calc_confidence", 95)
+            plan = st.session_state.ai_parsed
+            calc_mde = st.session_state.get("calc_mde", plan.get("success_criteria", {}).get("MDE", 5.0))
+            calc_conf = st.session_state.get("calc_confidence", plan.get("success_criteria", {}).get("confidence_level", 95))
             calc_power = st.session_state.get("calc_power", 80)
             calc_variants = st.session_state.get("calc_variants", 2)
             
             col1, col2 = st.columns(2)
             with col1:
-                calc_mde = st.number_input("Minimum Detectable Effect (MDE) %", min_value=0.1, max_value=50.0, value=float(calc_mde), step=0.1)
-                calc_conf = st.number_input("Confidence Level (%)", min_value=80, max_value=99, value=int(calc_conf), step=1)
+                calc_mde = st.number_input("Minimum Detectable Effect (MDE) %", min_value=0.1, max_value=50.0, value=float(calc_mde), step=0.1, key="calc_mde_key")
+                calc_conf = st.number_input("Confidence Level (%)", min_value=80, max_value=99, value=int(calc_conf), step=1, key="calc_conf_key")
             with col2:
-                calc_power = st.number_input("Statistical Power (%)", min_value=70, max_value=95, value=int(calc_power), step=1)
-                calc_variants = st.number_input("Number of Variants (Control + Variations)", min_value=2, max_value=5, value=int(calc_variants), step=1)
+                calc_power = st.number_input("Statistical Power (%)", min_value=70, max_value=95, value=int(calc_power), step=1, key="calc_power_key")
+                calc_variants = st.number_input("Number of Variants (Control + Variations)", min_value=2, max_value=5, value=int(calc_variants), step=1, key="calc_variants_key")
             
             if metric_type == "Numeric Value" and std_dev is not None:
                 st.info(f"Standard Deviation pre-filled: {std_dev}")
 
             col_act1, col_act2 = st.columns([1, 1])
             with col_act1:
-                btn_label = "Calculate" if not st.session_state.get("calculated_sample_size_per_variant") else "Refresh Calculator"
-                refresh_btn = st.button(btn_label)
+                btn_label = "Calculate"
+                refresh_btn = st.button(btn_label, key="calc_btn")
             with col_act2:
                 lock_btn = False
                 if st.session_state.get("calculated_sample_size_per_variant"):
-                    lock_btn = st.button("Lock Values for Plan")
+                    lock_btn = st.button("Lock Values for Plan", key="lock_btn")
 
-            if refresh_btn or st.session_state.get("calculate_now", False):
-                st.session_state.calculate_now = False
-                st.session_state.last_calc_mde = float(calc_mde)
-                st.session_state.last_calc_confidence = int(calc_conf)
-                st.session_state.last_calc_power = int(calc_power)
-                st.session_state.last_calc_variants = int(calc_variants)
-                
-                alpha_calc = 1 - (st.session_state.last_calc_confidence / 100.0)
-                power_calc = st.session_state.last_calc_power / 100.0
-
+            if refresh_btn:
+                alpha_calc = 1 - (calc_conf / 100.0)
+                power_calc = calc_power / 100.0
                 sample_per_variant, total_sample = calculate_sample_size(
                     baseline=current_value,
-                    mde=st.session_state.last_calc_mde,
+                    mde=calc_mde,
                     alpha=alpha_calc,
                     power=power_calc,
-                    num_variants=st.session_state.last_calc_variants,
+                    num_variants=calc_variants,
                     metric_type=metric_type,
                     std_dev=std_dev,
                 )
                 st.session_state.calculated_sample_size_per_variant = sample_per_variant
                 st.session_state.calculated_total_sample_size = total_sample
-                
                 users_to_test = st.session_state.calculated_total_sample_size or 0
                 st.session_state.calculated_duration_days = (users_to_test / dau) if dau > 0 and users_to_test else float("inf")
 
-            if st.session_state.get("calculated_sample_size_per_variant") and st.session_state.get("calculated_total_sample_size"):
-                st.markdown("---") # New divider
-                st.markdown(
-                    f"""
-                    **Sample Size & Duration:**
-                    - **Sample Size per Variant:** {st.session_state.calculated_sample_size_per_variant:,}
-                    - **Total Sample Size:** {st.session_state.calculated_total_sample_size:,}
-                    - **Estimated Duration:** **{round(st.session_state.calculated_duration_days, 1)}** days
-                    """
-                )
+            if st.session_state.get("calculated_sample_size_per_variant"):
+                st.markdown("---")
+                st.markdown(f"**Sample Size per Variant:** {st.session_state.calculated_sample_size_per_variant:,}")
+                st.markdown(f"**Total Sample Size:** {st.session_state.calculated_total_sample_size:,}")
+                st.markdown(f"**Estimated Duration:** **{round(st.session_state.calculated_duration_days, 1)}** days")
                 
             if lock_btn:
                 st.session_state.calc_locked = True
-                st.session_state.locked_stats = {
-                    "MDE": calc_mde,
-                    "Confidence": calc_conf,
-                    "Power": calc_power,
-                    "Variants": calc_variants,
-                    "SamplePerVariant": st.session_state.calculated_sample_size_per_variant,
-                    "TotalSample": st.session_state.calculated_total_sample_size,
-                    "Duration": st.session_state.calculated_duration_days,
-                }
+                st.session_state.ai_parsed['success_criteria']['MDE'] = calc_mde
+                st.session_state.ai_parsed['success_criteria']['confidence_level'] = calc_conf
                 st.success("Calculator values locked into the plan!")
 
-
-        # --- Display Final PRD ---
-        if st.session_state.ai_parsed:
-            with st.expander("🚀 Final Experiment Plan (PRD Preview)", expanded=True):
-                plan = st.session_state.ai_parsed
-
-                st.markdown(
-                    f"""
-                    <div class="prd-card">
-                        <div class="prd-header">
-                            <div class="logo-wrapper">A/B</div>
-                            <div class="header-text">
-                                <h1>Experiment PRD</h1>
-                                <p>{sanitize_text(plan.get('name', 'Untitled Experiment'))}</p>
-                            </div>
-                        </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                
-                # Update problem statement with metrics if available
-                updated_problem_statement = generate_problem_statement(plan, current_value, target_value, metric_unit)
-                plan['problem_statement'] = updated_problem_statement
-                
-                st.markdown(
-                    f"""
-                    <div class="prd-section">
-                        <div class="prd-section-title">
-                            <h2>1. Problem Statement</h2>
-                        </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                plan['problem_statement'] = st.text_area(
-                    "Problem Statement",
-                    value=plan.get('problem_statement', ''),
-                    height=100,
-                    label_visibility="collapsed"
-                )
-
-                st.markdown(
-                    f"""
-                    <div class="prd-section">
-                        <div class="prd-section-title">
-                            <h2>2. Hypotheses</h2>
-                        </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                
-                if 'hypotheses' not in plan:
-                    plan['hypotheses'] = []
-
-                for i, h in enumerate(plan.get("hypotheses", [])):
-                    st.subheader(f"Hypothesis {i+1}")
-                    plan['hypotheses'][i]['hypothesis'] = st.text_input(
-                        "Hypothesis", 
-                        value=h.get('hypothesis', ''), 
-                        key=f"hyp_title_{i}"
-                    )
-                    plan['hypotheses'][i]['rationale'] = st.text_area(
-                        "Rationale", 
-                        value=h.get('rationale', ''), 
-                        key=f"hyp_rationale_{i}",
-                        height=50
-                    )
-                    plan['hypotheses'][i]['behavioral_basis'] = st.text_input(
-                        "Behavioral Basis", 
-                        value=h.get('behavioral_basis', ''), 
-                        key=f"hyp_behavioral_{i}"
-                    )
-                    plan['hypotheses'][i]['example_implementation'] = st.text_area(
-                        "Example Implementation", 
-                        value=h.get('example_implementation', ''), 
-                        key=f"hyp_example_{i}",
-                        height=50
-                    )
-                    if st.button(f"Delete Hypothesis {i+1}", key=f"del_hyp_{i}"):
-                        plan['hypotheses'].pop(i)
-                        st.experimental_rerun()
-
-                if st.button("Add New Hypothesis"):
-                    plan['hypotheses'].append({
-                        "hypothesis": "New Hypothesis",
-                        "rationale": "",
-                        "example_implementation": "",
-                        "behavioral_basis": ""
-                    })
+        # --- Final Plan Preview (Read-Only) ---
+        plan = st.session_state.ai_parsed
+        st.markdown(f"<div class='prd-card'>", unsafe_allow_html=True)
+        st.markdown(
+            f"""
+            <div class="prd-header">
+                <div class="logo-wrapper">A/B</div>
+                <div class="header-text">
+                    <h1>Experiment PRD</h1>
+                    <p>An AI-generated plan for {sanitize_text(exact_metric)}</p>
+                </div>
+            </div>
+            <div class="prd-section">
+                <div class="prd-section-title"><h2>1. Problem Statement</h2></div>
+                <div class="prd-section-content"><p class="problem-statement">{html_sanitize(plan.get("problem_statement", ""))}</p></div>
+            </div>
+            <div class="prd-section">
+                <div class="prd-section-title"><h2>2. Hypotheses</h2></div>
+                <div class="hypotheses">
+                    <ol>
+                        {"".join([f"""
+                            <li>
+                                <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
+                                <p class='rationale'><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
+                                <p class='example'><strong>Example:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
+                                <p class='behavioral-basis'><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
+                            </li>
+                        """ for h in plan.get("hypotheses", [])])}
+                    </ol>
+                </div>
+            </div>
+            """, unsafe_allow_html=True,
+        )
+        st.markdown(f"<div class='prd-section-title'><h2>3. Variants</h2></div>", unsafe_allow_html=True)
+        for v in plan.get("variants", []):
+            st.markdown(f"**Control:** {html_sanitize(v.get('control', ''))} | **Variation:** {html_sanitize(v.get('variation', ''))}")
+        
+        st.markdown(
+            f"""
+            <div class="prd-section">
+                <div class="prd-section-title"><h2>4. Metrics</h2></div>
+                <div class="metrics">
+                    <ul>
+                        {"".join([f"""
+                            <li>
+                                <strong>{html_sanitize(m.get('name', ''))}</strong>
+                                <br>Formula: <code>{html_sanitize(m.get('formula', ''))}</code>
+                                <br>Importance: <span class='importance'>{html_sanitize(m.get('importance', ''))}</span>
+                            </li>
+                        """ for m in plan.get("metrics", [])])}
+                    </ul>
+                </div>
+            </div>
+            """, unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"""
+            <div class="prd-section">
+                <div class="prd-section-title"><h2>5. Success Criteria & Statistical Rationale</h2></div>
+                <div class="stats-list">
+                    <p><strong>Confidence:</strong> {plan.get('success_criteria', {}).get('confidence_level', '')}%</p>
+                    <p><strong>MDE:</strong> {plan.get('success_criteria', {}).get('MDE', '')}%</p>
+                    <p><strong>Statistical Rationale:</strong> {html_sanitize(plan.get('statistical_rationale', ''))}</p>
+                </div>
+            </div>
+            <div class="prd-section">
+                <div class="prd-section-title"><h2>6. Risks and Assumptions</h2></div>
+                <div class="risks">
+                    <ul>
+                        {"".join([f"""
+                            <li>
+                                <strong>{html_sanitize(r.get('risk', ''))}</strong>
+                                <br>Severity: <span class='severity {r.get('severity', 'Medium').lower()}'>{html_sanitize(r.get('severity', ''))}</span>
+                                <br>Mitigation: {html_sanitize(r.get('mitigation', ''))}
+                            </li>
+                        """ for r in plan.get("risks_and_assumptions", [])])}
+                    </ul>
+                </div>
+            </div>
+            <div class="prd-section">
+                <div class="prd-section-title"><h2>7. Next Steps</h2></div>
+                <div class="next-steps">
+                    <ul>
+                        {"".join([f"<li>{html_sanitize(step)}</li>" for step in plan.get("next_steps", [])])}
+                    </ul>
+                </div>
+            </div>
+            """, unsafe_allow_html=True,
+        )
+        col_edit, col_export = st.columns([2, 1])
+        with col_edit:
+            edit_modal = Modal(key="edit_modal", title="Edit Experiment Plan")
+            if st.button("✏️ Edit Plan"):
+                st.session_state.edit_modal_open = True
+                st.session_state.temp_plan_edit = plan.copy()
+                edit_modal.open()
+        if st.session_state.edit_modal_open:
+            with edit_modal.container():
+                st.header("Edit Plan")
+                edited_plan = st.session_state.temp_plan_edit
+                st.subheader("1. Problem Statement")
+                edited_plan['problem_statement'] = st.text_area("Problem Statement", value=edited_plan.get('problem_statement', ''), height=100, key="edit_prob_stmt")
+                st.markdown("---")
+                st.subheader("2. Hypotheses")
+                if 'hypotheses' not in edited_plan: edited_plan['hypotheses'] = []
+                for i, h in enumerate(edited_plan.get("hypotheses", [])):
+                    with st.expander(f"Hypothesis {i+1}", expanded=True):
+                        edited_plan['hypotheses'][i]['hypothesis'] = st.text_input("Hypothesis", value=h.get('hypothesis', ''), key=f"edit_hyp_{i}")
+                        edited_plan['hypotheses'][i]['rationale'] = st.text_area("Rationale", value=h.get('rationale', ''), key=f"edit_rat_{i}", height=50)
+                        edited_plan['hypotheses'][i]['behavioral_basis'] = st.text_input("Behavioral Basis", value=h.get('behavioral_basis', ''), key=f"edit_behav_{i}")
+                        edited_plan['hypotheses'][i]['example_implementation'] = st.text_area("Implementation Example", value=h.get('example_implementation', ''), key=f"edit_impl_{i}", height=50)
+                        if st.button(f"Delete Hypothesis {i+1}", key=f"del_hyp_{i}"):
+                            edited_plan['hypotheses'].pop(i)
+                            st.experimental_rerun()
+                if st.button("Add New Hypothesis", key="add_hyp"):
+                    edited_plan['hypotheses'].append({"hypothesis": "New Hypothesis", "rationale": "", "example_implementation": "", "behavioral_basis": ""})
                     st.experimental_rerun()
-                
-                st.markdown(
-                    f"""
-                    <div class="prd-section">
-                        <div class="prd-section-title">
-                            <h2>3. Variants</h2>
-                        </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                if 'variants' not in plan:
-                    plan['variants'] = []
-                for i, v in enumerate(plan.get("variants", [])):
-                    col_v1, col_v2 = st.columns(2)
-                    with col_v1:
-                        plan['variants'][i]['control'] = st.text_input(
-                            f"Control Variant {i+1}", 
-                            value=v.get('control', ''), 
-                            key=f"var_control_{i}"
-                        )
-                    with col_v2:
-                        plan['variants'][i]['variation'] = st.text_input(
-                            f"Variation Variant {i+1}", 
-                            value=v.get('variation', ''), 
-                            key=f"var_variation_{i}"
-                        )
-                if st.button("Add New Variant"):
-                    plan['variants'].append({"control": "", "variation": ""})
+                st.markdown("---")
+                st.subheader("3. Risks and Assumptions")
+                if 'risks_and_assumptions' not in edited_plan: edited_plan['risks_and_assumptions'] = []
+                for i, r in enumerate(edited_plan.get("risks_and_assumptions", [])):
+                    with st.expander(f"Risk {i+1}", expanded=True):
+                        edited_plan['risks_and_assumptions'][i]['risk'] = st.text_input("Risk", value=r.get('risk', ''), key=f"edit_risk_{i}")
+                        edited_plan['risks_and_assumptions'][i]['severity'] = st.selectbox("Severity", options=["High", "Medium", "Low"], index=["High", "Medium", "Low"].index(r.get('severity', 'Medium')), key=f"edit_sev_{i}")
+                        edited_plan['risks_and_assumptions'][i]['mitigation'] = st.text_area("Mitigation", value=r.get('mitigation', ''), height=50, key=f"edit_mit_{i}")
+                        if st.button(f"Delete Risk {i+1}", key=f"del_risk_{i}"):
+                            edited_plan['risks_and_assumptions'].pop(i)
+                            st.experimental_rerun()
+                if st.button("Add New Risk", key="add_risk"):
+                    edited_plan['risks_and_assumptions'].append({"risk": "", "severity": "Medium", "mitigation": ""})
                     st.experimental_rerun()
-
-                st.markdown(
-                    f"""
-                    <div class="prd-section">
-                        <div class="prd-section-title">
-                            <h2>4. Metrics</h2>
-                        </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                if 'metrics' not in plan:
-                    plan['metrics'] = []
-                for i, m in enumerate(plan.get("metrics", [])):
-                    col_m1, col_m2, col_m3 = st.columns(3)
-                    with col_m1:
-                        plan['metrics'][i]['name'] = st.text_input(
-                            "Name",
-                            value=m.get('name', ''),
-                            key=f"metric_name_{i}",
-                            label_visibility="collapsed"
-                        )
-                    with col_m2:
-                        plan['metrics'][i]['formula'] = st.text_input(
-                            "Formula",
-                            value=m.get('formula', ''),
-                            key=f"metric_formula_{i}",
-                            label_visibility="collapsed"
-                        )
-                    with col_m3:
-                        plan['metrics'][i]['importance'] = st.selectbox(
-                            "Importance",
-                            options=["Primary", "Secondary", "Guardrail"],
-                            index=["Primary", "Secondary", "Guardrail"].index(m.get('importance', 'Primary')),
-                            key=f"metric_importance_{i}",
-                            label_visibility="collapsed"
-                        )
-                    if st.button(f"Delete Metric {i+1}", key=f"del_metric_{i}"):
-                        plan['metrics'].pop(i)
-                        st.experimental_rerun()
-                if st.button("Add New Metric"):
-                    plan['metrics'].append({"name": "", "formula": "", "importance": "Secondary"})
-                    st.experimental_rerun()
-
-                st.markdown(
-                    f"""
-                    <div class="prd-section">
-                        <div class="prd-section-title">
-                            <h2>5. Success Criteria & Statistical Rationale</h2>
-                        </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                criteria = plan.get("success_criteria", {})
-                if 'success_criteria' not in plan:
-                    plan['success_criteria'] = {}
-                
-                col_sc1, col_sc2 = st.columns(2)
-                with col_sc1:
-                    plan['success_criteria']['confidence_level'] = st.number_input(
-                        "Confidence Level (%)",
-                        value=criteria.get('confidence_level', 95),
-                        key="sc_confidence",
-                    )
-                with col_sc2:
-                    plan['success_criteria']['MDE'] = st.number_input(
-                        "Minimum Detectable Effect (MDE) %",
-                        value=criteria.get('MDE', 3),
-                        key="sc_mde",
-                    )
-
-                plan['success_criteria']['benchmark'] = st.text_input(
-                    "Benchmark",
-                    value=criteria.get('benchmark', ''),
-                    key="sc_benchmark"
-                )
-                plan['success_criteria']['monitoring'] = st.text_input(
-                    "Monitoring",
-                    value=criteria.get('monitoring', ''),
-                    key="sc_monitoring"
-                )
-                plan['statistical_rationale'] = st.text_area(
-                    "Statistical Rationale",
-                    value=plan.get('statistical_rationale', ''),
-                    height=100
-                )
-
-                st.markdown(
-                    f"""
-                    <div class="prd-section">
-                        <div class="prd-section-title">
-                            <h2>6. Risks and Assumptions</h2>
-                        </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                if 'risks_and_assumptions' not in plan:
-                    plan['risks_and_assumptions'] = []
-                for i, r in enumerate(plan.get("risks_and_assumptions", [])):
-                    col_r1, col_r2 = st.columns([2, 1])
-                    with col_r1:
-                        plan['risks_and_assumptions'][i]['risk'] = st.text_input(
-                            "Risk",
-                            value=r.get('risk', ''),
-                            key=f"risk_text_{i}"
-                        )
-                    with col_r2:
-                        plan['risks_and_assumptions'][i]['severity'] = st.selectbox(
-                            "Severity",
-                            options=["High", "Medium", "Low"],
-                            index=["High", "Medium", "Low"].index(r.get('severity', 'Medium')),
-                            key=f"risk_severity_{i}"
-                        )
-                    plan['risks_and_assumptions'][i]['mitigation'] = st.text_area(
-                        "Mitigation",
-                        value=r.get('mitigation', ''),
-                        height=50,
-                        key=f"risk_mitigation_{i}"
-                    )
-                    if st.button(f"Delete Risk {i+1}", key=f"del_risk_{i}"):
-                        plan['risks_and_assumptions'].pop(i)
-                        st.experimental_rerun()
-                if st.button("Add New Risk"):
-                    plan['risks_and_assumptions'].append({
-                        "risk": "",
-                        "severity": "Medium",
-                        "mitigation": ""
-                    })
-                    st.experimental_rerun()
-
-                st.markdown(
-                    f"""
-                    <div class="prd-section">
-                        <div class="prd-section-title">
-                            <h2>7. Next Steps</h2>
-                        </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                if 'next_steps' not in plan:
-                    plan['next_steps'] = []
-                for i, step in enumerate(plan.get("next_steps", [])):
+                st.markdown("---")
+                st.subheader("4. Next Steps")
+                if 'next_steps' not in edited_plan: edited_plan['next_steps'] = []
+                for i, step in enumerate(edited_plan.get("next_steps", [])):
                     col_s1, col_s2 = st.columns([5,1])
                     with col_s1:
-                        plan['next_steps'][i] = st.text_input(
-                            "Next Step",
-                            value=step,
-                            key=f"next_step_{i}"
-                        )
+                        edited_plan['next_steps'][i] = st.text_input("Next Step", value=step, key=f"edit_step_{i}")
                     with col_s2:
                         if st.button("Delete", key=f"del_step_{i}"):
-                            plan['next_steps'].pop(i)
+                            edited_plan['next_steps'].pop(i)
                             st.experimental_rerun()
-                if st.button("Add New Next Step"):
-                    plan['next_steps'].append("")
+                if st.button("Add New Next Step", key="add_step"):
+                    edited_plan['next_steps'].append("")
                     st.experimental_rerun()
-
-                st.markdown(
-                    """
-                            </div>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
+                st.markdown("---")
+                if st.button("Save Changes and Close"):
+                    st.session_state.ai_parsed = edited_plan
+                    st.session_state.edit_modal_open = False
+                    st.experimental_rerun()
+        
+        with col_export:
+            col_exp1, col_exp2 = st.columns([1,1])
+            with col_exp1:
+                st.download_button(
+                    label="Download JSON",
+                    data=json.dumps(plan, indent=2, ensure_ascii=False),
+                    file_name="experiment_plan.json",
+                    mime="application/json",
                 )
-
-                # Export buttons
-                col_exp1, col_exp2 = st.columns([1, 1])
-                with col_exp1:
-                    st.download_button(
-                        label="Download JSON",
-                        data=json.dumps(plan, indent=2, ensure_ascii=False),
-                        file_name="experiment_plan.json",
-                        mime="application/json",
-                    )
-                if REPORTLAB_AVAILABLE:
-                    pdf_bytes = generate_pdf_bytes_from_prd_dict(plan, title=plan.get("name", "Experiment PRD"))
-                    if pdf_bytes:
-                        with col_exp2:
-                            st.download_button(
-                                label="Download PDF",
-                                data=pdf_bytes,
-                                file_name="experiment_plan.pdf",
-                                mime="application/pdf",
-                            )
-
-                st.markdown(
-                    f"""
-                    <div class="prd-footer">
-                        Generated by A/B Test Architect on """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") +
-                    """</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+            if REPORTLAB_AVAILABLE:
+                pdf_bytes = generate_pdf_bytes_from_prd_dict(plan, title=plan.get("name", "Experiment PRD"))
+                if pdf_bytes:
+                    with col_exp2:
+                        st.download_button(
+                            label="Download PDF",
+                            data=pdf_bytes,
+                            file_name="experiment_plan.pdf",
+                            mime="application/pdf",
+                        )
+        st.markdown(f"<div class='prd-footer'>Generated by A/B Test Architect on """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """</div></div>""", unsafe_allow_html=True)
