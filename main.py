@@ -48,7 +48,7 @@ def sanitize_text(text: Any) -> str:
             text = str(text)
         except Exception:
             return ""
-    text = text.replace("\r", " ").replace("\t", " ")
+    text = text.replace("\r", ").replace("\t", " ")
     text = re.sub(r"[ \f\v]+", " ", text)
     return text.strip()
 
@@ -231,18 +231,23 @@ def format_value_with_unit(value: Any, unit: str) -> str:
         return f"{v_str}{unit}"
         
 def _parse_value_from_text(text: str, default_unit: str = '%') -> Tuple[Optional[float], str]:
-    """Extracts a numeric value and unit from a string."""
+    """Extracts a numeric value and unit from a string with validation."""
     text = sanitize_text(text)
     match = re.match(r"([\d\.]+)\s*(\w+|%)?", text)
-    if match:
-        value = float(match.group(1))
-        unit = match.group(2) if match.group(2) else default_unit
-        return value, unit
+    if not match:
+        try:
+            return float(text), default_unit
+        except ValueError:
+            return None, default_unit
     
-    try:
-        return float(text), default_unit
-    except ValueError:
-        return None, default_unit
+    value = float(match.group(1))
+    unit = match.group(2) if match.group(2) else default_unit
+    
+    # Add validation for unit mismatch
+    if default_unit != '%' and unit != default_unit:  # '%' is special case (common in LLM outputs)
+        st.warning(f"Unit mismatch: Using '{unit}' from input instead of selected '{default_unit}'")
+    
+    return value, unit
 
 def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type, std_dev=None) -> Tuple[Optional[int], Optional[int]]:
     try:
@@ -287,9 +292,28 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
 def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -> Optional[bytes]:
     if not REPORTLAB_AVAILABLE:
         return None
+    
+    def pdf_sanitize(text: Any) -> str:
+        if text is None: return ""
+        text = str(text)
+        # Escape XML special chars
+        text = (text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "&quot;")
+                .replace("'", "&apos;"))
+        return text
+    
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
+    
+    # Sanitize all content
+    sanitized_prd = {
+        k: pdf_sanitize(v) if isinstance(v, str) else v
+        for k, v in prd.items()
+    }
+    
     styles.add(ParagraphStyle(name="PRDTitle", fontSize=20, leading=24, spaceAfter=12, alignment=1))
     styles.add(ParagraphStyle(name="SectionHeading", fontSize=13, leading=16, spaceBefore=12, spaceAfter=6, fontName="Helvetica-Bold"))
     styles.add(ParagraphStyle(name="BodyTextCustom", fontSize=10.5, leading=14))
@@ -300,9 +324,6 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         story.append(Paragraph(heading, styles["SectionHeading"]))
         if content is None:
             return
-        def pdf_sanitize(text: Any) -> str:
-            if text is None: return ""
-            return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         if isinstance(content, str):
             story.append(Paragraph(pdf_sanitize(content).replace('\n', '<br/>'), styles["BodyTextCustom"]))
         elif isinstance(content, dict):
@@ -324,8 +345,7 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     pdf_bytes = buffer.getvalue()
     buffer.close()
     return pdf_bytes
-
-st.set_page_config(page_title="A/B Test Architect", layout="wide")
+    st.set_page_config(page_title="A/B Test Architect", layout="wide")
 st.markdown(
     """
 <style>
@@ -756,8 +776,7 @@ if st.session_state.get("ai_parsed") is not None or st.session_state.get("output
                 "estimated_test_duration_days": st.session_state.calculated_duration_days if np.isfinite(st.session_state.calculated_duration_days) else 'Not applicable',
             }
             st.success("Calculator values locked and will be used in the final plan.")
-
-st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown("<hr>", unsafe_allow_html=True)
 
 if st.session_state.get("ai_parsed") is None and st.session_state.get("output"):
     st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
@@ -810,44 +829,47 @@ if st.session_state.get("ai_parsed"):
                     st.session_state.hypothesis_confirmed = True
 
     if st.session_state.get("hypothesis_confirmed") and st.session_state.get("selected_index") is not None:
-        
-        # Get the selected hypothesis from session state, which may have been edited
-        selected_hypo = hypotheses[st.session_state.selected_index]
+        # Add safety check for hypothesis indexing
+        if st.session_state.selected_index >= len(hypotheses):
+            st.session_state.selected_index = None
+            st.session_state.hypothesis_confirmed = False
+        else:
+            selected_hypo = hypotheses[st.session_state.selected_index]
 
-        st.subheader("🔍 Selected Hypothesis Details")
-        cols = st.columns([4, 1])
-        with cols[0]:
-            st.markdown(f"**Hypothesis:** {selected_hypo.get('hypothesis', 'N/A')}")
-            st.markdown(f"**Rationale:** {selected_hypo.get('rationale', selected_hypo.get('behavioral_basis', 'N/A'))}")
-            st.markdown(f"**Example:** {selected_hypo.get('example_implementation', 'N/A')}")
+            st.subheader("🔍 Selected Hypothesis Details")
+            cols = st.columns([4, 1])
+            with cols[0]:
+                st.markdown(f"**Hypothesis:** {selected_hypo.get('hypothesis', 'N/A')}")
+                st.markdown(f"**Rationale:** {selected_hypo.get('rationale', selected_hypo.get('behavioral_basis', 'N/A'))}")
+                st.markdown(f"**Example:** {selected_hypo.get('example_implementation', 'N/A')}")
 
-            with st.expander("✏️ Edit This Hypothesis"):
-                edited_hypo = {
-                    "hypothesis": st.text_area(
-                        "Hypothesis Text",
-                        value=selected_hypo.get("hypothesis", ""),
-                        key="editable_hypothesis"
-                    ),
-                    "rationale": st.text_area(
-                        "Rationale",
-                        value=selected_hypo.get("rationale", selected_hypo.get("behavioral_basis", "")),
-                        key="editable_rationale"
-                    ),
-                    "example_implementation": st.text_area(
-                        "Implementation Example",
-                        value=selected_hypo.get("example_implementation", ""),
-                        key="editable_example"
-                    )
-                }
-                
-                if st.button("Save Edits"):
-                    hypotheses[st.session_state.selected_index] = edited_hypo
-                    st.success("Hypothesis updated!")
+                with st.expander("✏️ Edit This Hypothesis"):
+                    edited_hypo = {
+                        "hypothesis": st.text_area(
+                            "Hypothesis Text",
+                            value=selected_hypo.get("hypothesis", ""),
+                            key="editable_hypothesis"
+                        ),
+                        "rationale": st.text_area(
+                            "Rationale",
+                            value=selected_hypo.get("rationale", selected_hypo.get("behavioral_basis", "")),
+                            key="editable_rationale"
+                        ),
+                        "example_implementation": st.text_area(
+                            "Implementation Example",
+                            value=selected_hypo.get("example_implementation", ""),
+                            key="editable_example"
+                        )
+                    }
+                    
+                    if st.button("Save Edits"):
+                        hypotheses[st.session_state.selected_index] = edited_hypo
+                        st.success("Hypothesis updated!")
 
-        with cols[1]:
-            if st.button("Clear Selection"):
-                st.session_state.selected_index = None
-                st.session_state.hypothesis_confirmed = False
+            with cols[1]:
+                if st.button("Clear Selection"):
+                    st.session_state.selected_index = None
+                    st.session_state.hypothesis_confirmed = False
 
     metrics = plan.get("metrics", [])
     if metrics:
