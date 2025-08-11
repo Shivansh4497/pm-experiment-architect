@@ -334,54 +334,127 @@ st.markdown(
 .section-title {font-size: 1.15rem; font-weight: 700; color: #0b63c6; margin-bottom: 6px;}
 .small-muted { color: #7a7a7a; font-size: 13px; }
 .prd-card {
-  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
-  border-radius: 14px;
-  padding: 28px;
-  box-shadow: 0 12px 36px rgba(13,60,120,0.08);
-  border: 1px solid rgba(13,60,120,0.06);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    max-width: 900px;
+    width: 100%;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    padding: 2.5rem;
+    border: 1px solid #e5e7eb;
 }
 .prd-header {
-  display:flex;
-  align-items:center;
-  gap:18px;
-  margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    margin-bottom: 2.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid #e5e7eb;
 }
-.prd-logo {
-  width:84px;
-  height:84px;
-  background: linear-gradient(135deg,#0b63c6,#3ac2ff);
-  color: white;
-  border-radius: 14px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-weight:800;
-  font-size:28px;
-  box-shadow: 0 10px 26px rgba(10,120,200,0.12);
+.logo-wrapper {
+    background: #0b63c6;
+    color: white;
+    padding: 1.5rem 2rem;
+    border-radius: 12px;
+    font-weight: 800;
+    font-size: 2.5rem;
+    line-height: 1;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    margin-right: 1.5rem;
+    transform: rotate(-3deg);
 }
-.prd-title { font-size:24px; font-weight:800; color:#052a4a; margin-bottom:4px; }
-.prd-subtitle { font-size:16px; color:#475569; margin-top:3px; }
-.prd-section { margin-top:20px; margin-bottom:12px; }
-.prd-section h3 {
-  margin:0;
-  font-size:18px;
-  color:#0b63c6;
-  font-weight:700;
-  padding-bottom: 6px;
-  border-bottom: 2px solid #e0e7ff;
+.header-text h1 {
+    margin: 0;
+    font-size: 2.25rem;
+    font-weight: 900;
+    color: #052a4a;
 }
-.prd-body { font-size:15px; color:#334155; line-height:1.7; white-space: pre-wrap; margin-top:10px; }
-.prd-body ul { padding-left:20px; margin-top:8px; }
-.prd-body li { margin-bottom: 6px; }
-.prd-meta { color:#6b7280; font-size:13px; margin-top:8px; }
+.header-text p {
+    margin: 0.25rem 0 0;
+    font-size: 1.125rem;
+    color: #4b5563;
+}
+.prd-section {
+    margin-bottom: 2rem;
+}
+.prd-section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    color: #0b63c6;
+}
+.prd-section-title h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+.prd-section-title svg {
+    color: #0b63c6;
+    width: 24px;
+    height: 24px;
+}
+.prd-section-content {
+    background: #f3f8ff;
+    border-left: 4px solid #0b63c6;
+    padding: 1.5rem;
+    border-radius: 8px;
+    line-height: 1.8;
+    color: #1f2937;
+}
+.problem-statement {
+    font-weight: 500;
+    font-style: italic;
+}
+.hypotheses ol, .risks ul, .metrics ul, .next-steps ul, .stats-list {
+    padding-left: 1.5rem;
+    margin: 0.5rem 0 0;
+}
+.hypotheses li, .risks li, .metrics li, .next-steps li, .stats-list li {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: #fdfefe;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    border: 1px solid #e5e7eb;
+    position: relative;
+}
+.hypotheses li:last-child, .risks li:last-child, .metrics li:last-child, .next-steps li:last-child, .stats-list li:last-child {
+    margin-bottom: 0;
+}
+.hypotheses li p {
+    margin: 0;
+}
+.hypotheses li p strong {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #052a4a;
+}
+.hypotheses li p.rationale, .hypotheses li p.example {
+    font-size: 0.9rem;
+    color: #4b5563;
+}
+.hypothesis-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #052a4a;
+}
+.metrics li span.importance {
+    font-weight: 600;
+    color: #0b63c6;
+}
+.risks li span.severity {
+    font-weight: 600;
+}
+.risks li span.severity.high { color: #ef4444; }
+.risks li span.severity.medium { color: #f97316; }
+.risks li span.severity.low { color: #22c55e; }
 .prd-footer {
-  margin-top: 28px;
-  padding-top: 16px;
-  border-top: 1px solid #e2e8f0;
-  text-align: center;
-  font-size: 12px;
-  color: #94a3b8;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #e5e7eb;
+    text-align: center;
+    font-size: 0.875rem;
+    color: #6b7280;
 }
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
@@ -676,9 +749,10 @@ if st.session_state.get("ai_parsed") is not None or st.session_state.get("output
             st.session_state.calc_locked = True
             st.session_state.locked_stats = {
                 "confidence_level": st.session_state.last_calc_confidence,
-                "MDE": st.session_state.last_calc_mde,
-                "sample_size_required": st.session_state.calculated_total_sample_size,
+                "statistical_power": st.session_state.last_calc_power,
+                "mde": st.session_state.last_calc_mde,
                 "users_per_variant": st.session_state.calculated_sample_size_per_variant,
+                "total_sample_size": st.session_state.calculated_total_sample_size,
                 "estimated_test_duration_days": st.session_state.calculated_duration_days if np.isfinite(st.session_state.calculated_duration_days) else 'Not applicable',
             }
             st.success("Calculator values locked and will be used in the final plan.")
@@ -704,7 +778,7 @@ if st.session_state.get("ai_parsed"):
         st.session_state.context = {"metric_unit": metric_unit}
 
     unit = st.session_state.context.get("metric_unit", metric_unit)
-
+    
     st.markdown("<div class='green-section'>", unsafe_allow_html=True)
     create_header_with_help("Inferred Product Goal", "The AI's interpretation of your goal. Edit if needed.", icon="🎯")
     safe_display(post_process_llm_text(goal_with_units, unit))
@@ -777,7 +851,7 @@ if st.session_state.get("ai_parsed"):
 
     metrics = plan.get("metrics", [])
     if metrics:
-        create_header_with_help("Metrics", "Primary and secondary metrics", icon="�")
+        create_header_with_help("Metrics", "Primary and secondary metrics", icon="📏")
         
         try:
             normalized = []
@@ -967,56 +1041,123 @@ if st.session_state.get("ai_parsed"):
         html += "</ul>"
         return html
 
-    hypotheses_html = "<ol>"
-    for i, h in enumerate(prd_dict["hypotheses"], 1):
-        hypotheses_html += f"""
-        <li>
-            <b>{h.get('hypothesis', '')}</b><br>
-            <i>Rationale:</i> {h.get('rationale', '')}<br>
-            <i>Example:</i> {h.get('example_implementation', '')}
-        </li>
+    # --- Start of the updated PRD HTML section ---
+    
+    # Render Hypotheses (only the selected one)
+    hypotheses_html = ""
+    selected_index = st.session_state.get("selected_index")
+    if selected_index is not None and len(prd_dict["hypotheses"]) > selected_index:
+        selected_hypo = prd_dict["hypotheses"][selected_index]
+        hypotheses_html = f"""
+        <ol>
+            <li>
+                <p class="hypothesis-title">{selected_hypo.get('hypothesis', 'Hypothesis not available.')}</p>
+                <p class="rationale"><i>Rationale:</i> {selected_hypo.get('rationale', '')}</p>
+                <p class="example"><i>Example:</i> {selected_hypo.get('example_implementation', '')}</p>
+            </li>
+        </ol>
         """
-    hypotheses_html += "</ol>"
+    else:
+        hypotheses_html = "<p>No hypothesis selected for the final PRD.</p>"
 
+    # Render Risks
     risks_html = "<ul>"
     for r in prd_dict.get("risks_and_assumptions", []):
+        severity_class = r.get('severity', 'Medium').lower()
         risks_html += f"""
         <li>
-            {r.get('risk', '')} <i>(Severity: {r.get('severity', 'Medium')})</i><br>
-            → Mitigation: {r.get('mitigation', 'To be determined')}
+            <p>Potential risk: {r.get('risk', '')} <span class="severity {severity_class}">(Severity: {r.get('severity', 'Medium')})</span></p>
+            <p>Mitigation: {r.get('mitigation', 'To be determined')}</p>
         </li>
         """
     risks_html += "</ul>"
 
+    # Render Metric Calculations
+    stats_html = ""
+    stats = st.session_state.get("locked_stats")
+    if stats:
+        stats_html = f"""
+        <div class="prd-section">
+            <div class="prd-section-title">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25m0-1.5h1.5a2.25 2.25 0 012.25 2.25V21m0 0l-3-3m3 3l3-3m-3 3v-3.75m-4.5-5.25H7.5m3-2.25H12m-3 5.25h.375M12 10.5h.375M12 10.5v3.75m9-8.25H15M3.75 9h16.5" />
+                </svg>
+                <h2>Experiment Calculations</h2>
+            </div>
+            <ul class="stats-list">
+                <li>Confidence Level: {stats.get('confidence_level', 'N/A')}%</li>
+                <li>Statistical Power: {stats.get('statistical_power', 'N/A')}%</li>
+                <li>Minimum Detectable Effect (MDE): {stats.get('mde', 'N/A')}%</li>
+                <li>Users per Variant: {stats.get('users_per_variant', 'N/A'):,}</li>
+                <li>Total Sample Size: {stats.get('total_sample_size', 'N/A'):,}</li>
+                <li>Estimated Test Duration: {f"{stats.get('estimated_test_duration_days', 'N/A'):,.0f} days" if isinstance(stats.get('estimated_test_duration_days'), (int, float)) else stats.get('estimated_test_duration_days', 'N/A')}</li>
+            </ul>
+        </div>
+        """
+    
+    # Combine all sections into the final PRD HTML
     prd_html = f"""
     <div class="prd-card">
         <div class="prd-header">
-            <div class="prd-logo">A/B</div>
-            <div>
-                <div class="prd-title">Experiment PRD</div>
-                <div class="prd-subtitle">{html_sanitize(prd_dict.get('goal', ''))}</div>
+            <div class="logo-wrapper">A/B</div>
+            <div class="header-text">
+                <h1>Experiment PRD</h1>
+                <p>{prd_dict.get('goal', '')}</p>
             </div>
         </div>
+
         <div class="prd-section">
-            <h3>🎯 Problem Statement</h3>
-            <div class="prd-body">{html_sanitize(prd_dict.get('problem_statement', ''))}</div>
+            <div class="prd-section-title">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 01-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 013.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 013.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 01-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.455L14.25 6l1.035-.259a3.375 3.375 0 002.455-2.455L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.455L21.75 6l-1.035.259a3.375 3.375 0 00-2.455 2.455zM19.5 17.25l-1.5.75L18 17.25m-1.5-.75l1.5.75V17.25l-1.5-.75L18 17.25z" />
+                </svg>
+                <h2>Problem Statement</h2>
+            </div>
+            <div class="prd-section-content problem-statement">{prd_dict.get('problem_statement', 'No problem statement provided.')}</div>
         </div>
+
         <div class="prd-section">
-            <h3>🧪 Hypotheses</h3>
-            <div class="prd-body">{hypotheses_html}</div>
+            <div class="prd-section-title">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.004 4.004 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.005 4.005 0 00-3.7 3.7c-.017.22-.032.44-.046.662M19.5 12l3-3m-3 3l-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.004 4.004 0 003.7 3.7 48.657 48.657 0 007.324 0 4.005 4.005 0 003.7-3.7c.017-.22.032-.44.046-.662M4.5 12l3 3m-3-3l-3 3" />
+                </svg>
+                <h2>Hypothesis</h2>
+            </div>
+            {hypotheses_html}
         </div>
+
+        {stats_html}
+
         <div class="prd-section">
-            <h3>📊 Metrics</h3>
-            <div class="prd-body">{render_list(prd_dict.get('metrics', []))}</div>
+            <div class="prd-section-title">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25m0-1.5h1.5a2.25 2.25 0 012.25 2.25V21m0 0l-3-3m3 3l3-3m-3 3v-3.75m-4.5-5.25H7.5m3-2.25H12m-3 5.25h.375M12 10.5h.375M12 10.5v3.75m9-8.25H15M3.75 9h16.5" />
+                </svg>
+                <h2>Metrics</h2>
+            </div>
+            <ul class="metrics">{render_list(prd_dict.get('metrics', []))}</ul>
         </div>
+        
         <div class="prd-section">
-            <h3>⚠️ Risks & Mitigations</h3>
-            <div class="prd-body">{risks_html}</div>
+            <div class="prd-section-title">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 12.337L1.5 21.75a3.75 3.75 0 005.303 5.303l1.5-1.5a3.75 3.75 0 005.303-5.303L12 9zM12 15.75h.007V15.75z" />
+                </svg>
+                <h2>Risks & Mitigations</h2>
+            </div>
+            {risks_html}
         </div>
+
         <div class="prd-section">
-            <h3>🚀 Next Steps</h3>
-            <div class="prd-body">{render_list(prd_dict.get('next_steps', []))}</div>
+            <div class="prd-section-title">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-3h6M6 12h12" />
+                </svg>
+                <h2>Next Steps</h2>
+            </div>
+            <ul class="next-steps">{render_list(prd_dict.get('next_steps', []))}</ul>
         </div>
+
         <div class="prd-footer">
             Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}
         </div>
