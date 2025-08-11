@@ -27,7 +27,7 @@ try:
 except Exception:
     REPORTLAB_AVAILABLE = False
 
-# --- Helper Functions (No Change) ---
+# --- Helper Functions ---
 def create_header_with_help(header_text: str, help_text: str, icon: str = "🔗"):
     st.markdown(
         f"""
@@ -796,6 +796,35 @@ if st.session_state.get("ai_parsed"):
 
         # --- Final Plan Preview (Read-Only) ---
         plan = st.session_state.ai_parsed
+        
+        # Build HTML list items for Hypotheses, Risks, and Next Steps outside the main f-string
+        hypotheses_html = "".join([f"""
+            <li>
+                <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
+                <p class='rationale'><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
+                <p class='example'><strong>Example:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
+                <p class='behavioral-basis'><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
+            </li>
+        """ for h in plan.get("hypotheses", [])])
+
+        risks_html = "".join([f"""
+            <li>
+                <strong>{html_sanitize(r.get('risk', ''))}</strong>
+                <br>Severity: <span class='severity {r.get('severity', 'Medium').lower()}'>{html_sanitize(r.get('severity', ''))}</span>
+                <br>Mitigation: {html_sanitize(r.get('mitigation', ''))}
+            </li>
+        """ for r in plan.get("risks_and_assumptions", [])])
+
+        next_steps_html = "".join([f"<li>{html_sanitize(step)}</li>" for step in plan.get("next_steps", [])])
+
+        metrics_html = "".join([f"""
+            <li>
+                <strong>{html_sanitize(m.get('name', ''))}</strong>
+                <br>Formula: <code>{html_sanitize(m.get('formula', ''))}</code>
+                <br>Importance: <span class='importance'>{html_sanitize(m.get('importance', ''))}</span>
+            </li>
+        """ for m in plan.get("metrics", [])])
+
         st.markdown(f"<div class='prd-card'>", unsafe_allow_html=True)
         st.markdown(
             f"""
@@ -814,14 +843,7 @@ if st.session_state.get("ai_parsed"):
                 <div class="prd-section-title"><h2>2. Hypotheses</h2></div>
                 <div class="hypotheses">
                     <ol>
-                        {"".join([f"""
-                            <li>
-                                <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
-                                <p class='rationale'><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
-                                <p class='example'><strong>Example:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
-                                <p class='behavioral-basis'><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
-                            </li>
-                        """ for h in plan.get("hypotheses", [])])}
+                        {hypotheses_html}
                     </ol>
                 </div>
             </div>
@@ -837,13 +859,7 @@ if st.session_state.get("ai_parsed"):
                 <div class="prd-section-title"><h2>4. Metrics</h2></div>
                 <div class="metrics">
                     <ul>
-                        {"".join([f"""
-                            <li>
-                                <strong>{html_sanitize(m.get('name', ''))}</strong>
-                                <br>Formula: <code>{html_sanitize(m.get('formula', ''))}</code>
-                                <br>Importance: <span class='importance'>{html_sanitize(m.get('importance', ''))}</span>
-                            </li>
-                        """ for m in plan.get("metrics", [])])}
+                        {metrics_html}
                     </ul>
                 </div>
             </div>
@@ -863,13 +879,7 @@ if st.session_state.get("ai_parsed"):
                 <div class="prd-section-title"><h2>6. Risks and Assumptions</h2></div>
                 <div class="risks">
                     <ul>
-                        {"".join([f"""
-                            <li>
-                                <strong>{html_sanitize(r.get('risk', ''))}</strong>
-                                <br>Severity: <span class='severity {r.get('severity', 'Medium').lower()}'>{html_sanitize(r.get('severity', ''))}</span>
-                                <br>Mitigation: {html_sanitize(r.get('mitigation', ''))}
-                            </li>
-                        """ for r in plan.get("risks_and_assumptions", [])])}
+                        {risks_html}
                     </ul>
                 </div>
             </div>
@@ -877,7 +887,7 @@ if st.session_state.get("ai_parsed"):
                 <div class="prd-section-title"><h2>7. Next Steps</h2></div>
                 <div class="next-steps">
                     <ul>
-                        {"".join([f"<li>{html_sanitize(step)}</li>" for step in plan.get("next_steps", [])])}
+                        {next_steps_html}
                     </ul>
                 </div>
             </div>
