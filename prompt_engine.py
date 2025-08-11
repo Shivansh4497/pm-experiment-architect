@@ -1,4 +1,3 @@
-# prompt_engine.py
 """
 Ultimate prompt engine with:
 1. Hyper-contextual responses using all user inputs
@@ -64,11 +63,19 @@ Return JSON with:
 def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
     """Build the main LLM instruction prompt with maximum context utilization"""
     ctx = {k: ("" if v is None else str(v)) for k, v in context.items()}
-
-    return textwrap.dedent(f"""
-    You are a Principal Product Manager crafting an enterprise-grade experiment plan.
-    Use ALL provided context to create hyper-personalized outputs.
-
+    
+    # Custom, personalized introduction using user inputs
+    prompt_intro = f"You are a Principal Product Manager at a company working on a {ctx.get('type', 'SaaS')} product. Your primary goal is to address the strategic business objective of '{ctx.get('strategic_goal', 'improving a key metric')}'. The specific challenge is to find an effective way to move a crucial metric: {ctx.get('exact_metric', 'an unspecified metric')} from its current value of {ctx.get('current_value', 'N/A')}{ctx.get('metric_unit', '')} to a target of {ctx.get('target_value', 'N/A')}{ctx.get('metric_unit', '')}."
+    
+    if ctx.get('user_persona'):
+        prompt_intro += f" The experiment should be specifically tailored to the user persona: '{ctx.get('user_persona', '')}'."
+    
+    # Combine the new intro with the rest of the prompt
+    full_prompt = textwrap.dedent(f"""
+    {prompt_intro}
+    
+    Your output MUST be a valid JSON object.
+    
     MANDATORY REQUIREMENTS:
     1. For each of 3 hypotheses:
        - hypothesis: "If [change] then [outcome] because [rationale]"
@@ -159,6 +166,8 @@ def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
         "Step 2 (Owner)"
       ]
     }}""").strip()
+
+    return full_prompt
 
 def _enrich_output(raw_prd: str, context: Dict[str, Any]) -> str:
     """Provides a second-pass validation and enrichment prompt."""
