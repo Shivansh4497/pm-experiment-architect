@@ -530,6 +530,12 @@ st.markdown(
     font-size: 0.875rem;
     color: #6b7280;
 }
+.edit-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
 """,
@@ -728,7 +734,7 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
                 if parsed:
                     st.success("Plan generated successfully — review and edit below.")
                 else:
-                    st.warning("Plan generated but parsing failed — edit the raw output to correct JSON or try regenerate.")
+                    st.warning("Plan generated but parsing failed. Please check inputs and try again.")
             except Exception as e:
                 st.error(f"LLM generation failed: {e}")
                 st.session_state.output = ""
@@ -812,28 +818,6 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
                 st.success("Calculator values locked into the plan!")
 
 
-        if st.session_state.output:
-            st.markdown("<hr>", unsafe_allow_html=True)
-            with st.expander("📝 Edit Raw Plan Output", expanded=False):
-                st.session_state.raw_llm_edit = st.text_area(
-                    "Raw LLM Output (editable JSON)",
-                    value=st.session_state.raw_llm_edit,
-                    height=400,
-                    help="You can manually edit the raw JSON output from the LLM here. Click 'Refresh Plan Preview' to see your changes.",
-                )
-                
-                def update_preview():
-                    try:
-                        st.session_state.ai_parsed = extract_json(st.session_state.raw_llm_edit)
-                        if st.session_state.ai_parsed:
-                            st.success("Plan preview updated successfully!")
-                        else:
-                            st.error("Could not parse edited JSON. Please check syntax.")
-                    except Exception as e:
-                        st.error(f"Error parsing JSON: {e}")
-
-                st.button("Refresh Plan Preview", on_click=update_preview)
-
         # --- Display Final PRD ---
         if st.session_state.ai_parsed:
             with st.expander("🚀 Final Experiment Plan (PRD Preview)", expanded=True):
@@ -863,12 +847,14 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
                         <div class="prd-section-title">
                             <h2>1. Problem Statement</h2>
                         </div>
-                        <div class="prd-section-content problem-statement">
-                            {html_sanitize(plan.get('problem_statement', 'No problem statement provided.'))}
-                        </div>
-                    </div>
                     """,
                     unsafe_allow_html=True,
+                )
+                plan['problem_statement'] = st.text_area(
+                    "Problem Statement",
+                    value=plan.get('problem_statement', ''),
+                    height=100,
+                    label_visibility="collapsed"
                 )
 
                 st.markdown(
@@ -877,61 +863,78 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
                         <div class="prd-section-title">
                             <h2>2. Hypotheses</h2>
                         </div>
-                        <div class="prd-section-content">
-                            <ol class="hypotheses">
                     """,
                     unsafe_allow_html=True,
                 )
                 
-                for i, h in enumerate(plan.get("hypotheses", [])):
-                    st.markdown(
-                        f"""
-                        <li class="hypothesis-title">
-                            {html_sanitize(h.get('hypothesis', ''))}
-                            <p class="rationale"><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
-                            <p class="rationale"><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
-                            <p class="example"><strong>Example Implementation:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
-                        </li>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                
-                st.markdown(
-                    """
-                            </ol>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                if 'hypotheses' not in plan:
+                    plan['hypotheses'] = []
 
+                for i, h in enumerate(plan.get("hypotheses", [])):
+                    st.subheader(f"Hypothesis {i+1}")
+                    plan['hypotheses'][i]['hypothesis'] = st.text_input(
+                        "Hypothesis", 
+                        value=h.get('hypothesis', ''), 
+                        key=f"hyp_title_{i}"
+                    )
+                    plan['hypotheses'][i]['rationale'] = st.text_area(
+                        "Rationale", 
+                        value=h.get('rationale', ''), 
+                        key=f"hyp_rationale_{i}",
+                        height=50
+                    )
+                    plan['hypotheses'][i]['behavioral_basis'] = st.text_input(
+                        "Behavioral Basis", 
+                        value=h.get('behavioral_basis', ''), 
+                        key=f"hyp_behavioral_{i}"
+                    )
+                    plan['hypotheses'][i]['example_implementation'] = st.text_area(
+                        "Example Implementation", 
+                        value=h.get('example_implementation', ''), 
+                        key=f"hyp_example_{i}",
+                        height=50
+                    )
+                    if st.button(f"Delete Hypothesis {i+1}", key=f"del_hyp_{i}"):
+                        plan['hypotheses'].pop(i)
+                        st.experimental_rerun()
+
+                if st.button("Add New Hypothesis"):
+                    plan['hypotheses'].append({
+                        "hypothesis": "New Hypothesis",
+                        "rationale": "",
+                        "example_implementation": "",
+                        "behavioral_basis": ""
+                    })
+                    st.experimental_rerun()
+                
                 st.markdown(
                     f"""
                     <div class="prd-section">
                         <div class="prd-section-title">
                             <h2>3. Variants</h2>
                         </div>
-                        <div class="prd-section-content">
-                            <ul>
                     """,
                     unsafe_allow_html=True,
                 )
-                for v in plan.get("variants", []):
-                    st.markdown(
-                        f"""
-                        <li><b>Control:</b> {html_sanitize(v.get('control', ''))}</li>
-                        <li><b>Variation:</b> {html_sanitize(v.get('variation', ''))}</li>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                st.markdown(
-                    """
-                            </ul>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                if 'variants' not in plan:
+                    plan['variants'] = []
+                for i, v in enumerate(plan.get("variants", [])):
+                    col_v1, col_v2 = st.columns(2)
+                    with col_v1:
+                        plan['variants'][i]['control'] = st.text_input(
+                            f"Control Variant {i+1}", 
+                            value=v.get('control', ''), 
+                            key=f"var_control_{i}"
+                        )
+                    with col_v2:
+                        plan['variants'][i]['variation'] = st.text_input(
+                            f"Variation Variant {i+1}", 
+                            value=v.get('variation', ''), 
+                            key=f"var_variation_{i}"
+                        )
+                if st.button("Add New Variant"):
+                    plan['variants'].append({"control": "", "variation": ""})
+                    st.experimental_rerun()
 
                 st.markdown(
                     f"""
@@ -939,26 +942,41 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
                         <div class="prd-section-title">
                             <h2>4. Metrics</h2>
                         </div>
-                        <div class="prd-section-content">
-                            <ul class="metrics">
                     """,
                     unsafe_allow_html=True,
                 )
-                for m in plan.get("metrics", []):
-                    st.markdown(
-                        f"""
-                        <li><b>{html_sanitize(m.get('name', ''))}</b><br/>Formula: {html_sanitize(m.get('formula', ''))}<br/>Importance: <span class="importance">{html_sanitize(m.get('importance', ''))}</span></li>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                st.markdown(
-                    """
-                            </ul>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                if 'metrics' not in plan:
+                    plan['metrics'] = []
+                for i, m in enumerate(plan.get("metrics", [])):
+                    col_m1, col_m2, col_m3 = st.columns(3)
+                    with col_m1:
+                        plan['metrics'][i]['name'] = st.text_input(
+                            "Name",
+                            value=m.get('name', ''),
+                            key=f"metric_name_{i}",
+                            label_visibility="collapsed"
+                        )
+                    with col_m2:
+                        plan['metrics'][i]['formula'] = st.text_input(
+                            "Formula",
+                            value=m.get('formula', ''),
+                            key=f"metric_formula_{i}",
+                            label_visibility="collapsed"
+                        )
+                    with col_m3:
+                        plan['metrics'][i]['importance'] = st.selectbox(
+                            "Importance",
+                            options=["Primary", "Secondary", "Guardrail"],
+                            index=["Primary", "Secondary", "Guardrail"].index(m.get('importance', 'Primary')),
+                            key=f"metric_importance_{i}",
+                            label_visibility="collapsed"
+                        )
+                    if st.button(f"Delete Metric {i+1}", key=f"del_metric_{i}"):
+                        plan['metrics'].pop(i)
+                        st.experimental_rerun()
+                if st.button("Add New Metric"):
+                    plan['metrics'].append({"name": "", "formula": "", "importance": "Secondary"})
+                    st.experimental_rerun()
 
                 st.markdown(
                     f"""
@@ -966,45 +984,41 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
                         <div class="prd-section-title">
                             <h2>5. Success Criteria & Statistical Rationale</h2>
                         </div>
-                        <div class="prd-section-content">
-                            <ul class="stats-list">
                     """,
                     unsafe_allow_html=True,
                 )
+                criteria = plan.get("success_criteria", {})
+                if 'success_criteria' not in plan:
+                    plan['success_criteria'] = {}
+                
+                col_sc1, col_sc2 = st.columns(2)
+                with col_sc1:
+                    plan['success_criteria']['confidence_level'] = st.number_input(
+                        "Confidence Level (%)",
+                        value=criteria.get('confidence_level', 95),
+                        key="sc_confidence",
+                    )
+                with col_sc2:
+                    plan['success_criteria']['MDE'] = st.number_input(
+                        "Minimum Detectable Effect (MDE) %",
+                        value=criteria.get('MDE', 3),
+                        key="sc_mde",
+                    )
 
-                if st.session_state.calc_locked:
-                    locked = st.session_state.locked_stats
-                    st.markdown(
-                        f"""
-                        <li><b>Confidence Level:</b> {locked.get('Confidence', '')}%</li>
-                        <li><b>Minimum Detectable Effect (MDE):</b> {locked.get('MDE', '')}%</li>
-                        <li><b>Statistical Power:</b> {locked.get('Power', '')}%</li>
-                        <li><b>Number of Variants:</b> {locked.get('Variants', '')}</li>
-                        <li><b>Sample per Variant:</b> {locked.get('SamplePerVariant', ''):,}</li>
-                        <li><b>Total Sample Size:</b> {locked.get('TotalSample', ''):,}</li>
-                        <li><b>Estimated Duration:</b> {round(locked.get('Duration', float('inf')), 1)} days (based on {dau:,} DAU)</li>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    criteria = plan.get("success_criteria", {})
-                    st.markdown(
-                        f"""
-                        <li><b>Confidence Level:</b> {criteria.get('confidence_level', '')}%</li>
-                        <li><b>Minimum Detectable Effect (MDE):</b> {criteria.get('MDE', '')}%</li>
-                        <li><b>Benchmark:</b> {html_sanitize(criteria.get('benchmark', ''))}</li>
-                        <li><b>Monitoring:</b> {html_sanitize(criteria.get('monitoring', ''))}</li>
-                        <li><b>Statistical Rationale:</b> {html_sanitize(plan.get('statistical_rationale', ''))}</li>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                st.markdown(
-                    """
-                            </ul>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
+                plan['success_criteria']['benchmark'] = st.text_input(
+                    "Benchmark",
+                    value=criteria.get('benchmark', ''),
+                    key="sc_benchmark"
+                )
+                plan['success_criteria']['monitoring'] = st.text_input(
+                    "Monitoring",
+                    value=criteria.get('monitoring', ''),
+                    key="sc_monitoring"
+                )
+                plan['statistical_rationale'] = st.text_area(
+                    "Statistical Rationale",
+                    value=plan.get('statistical_rationale', ''),
+                    height=100
                 )
 
                 st.markdown(
@@ -1013,26 +1027,42 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
                         <div class="prd-section-title">
                             <h2>6. Risks and Assumptions</h2>
                         </div>
-                        <div class="prd-section-content">
-                            <ul class="risks">
                     """,
                     unsafe_allow_html=True,
                 )
-                for r in plan.get("risks_and_assumptions", []):
-                    st.markdown(
-                        f"""
-                        <li><b>{html_sanitize(r.get('risk', ''))}</b> <br/>Severity: <span class="severity {html_sanitize(r.get('severity', ''))}">{html_sanitize(r.get('severity', ''))}</span><br/>Mitigation: {html_sanitize(r.get('mitigation', ''))}</li>
-                        """,
-                        unsafe_allow_html=True,
+                if 'risks_and_assumptions' not in plan:
+                    plan['risks_and_assumptions'] = []
+                for i, r in enumerate(plan.get("risks_and_assumptions", [])):
+                    col_r1, col_r2 = st.columns([2, 1])
+                    with col_r1:
+                        plan['risks_and_assumptions'][i]['risk'] = st.text_input(
+                            "Risk",
+                            value=r.get('risk', ''),
+                            key=f"risk_text_{i}"
+                        )
+                    with col_r2:
+                        plan['risks_and_assumptions'][i]['severity'] = st.selectbox(
+                            "Severity",
+                            options=["High", "Medium", "Low"],
+                            index=["High", "Medium", "Low"].index(r.get('severity', 'Medium')),
+                            key=f"risk_severity_{i}"
+                        )
+                    plan['risks_and_assumptions'][i]['mitigation'] = st.text_area(
+                        "Mitigation",
+                        value=r.get('mitigation', ''),
+                        height=50,
+                        key=f"risk_mitigation_{i}"
                     )
-                st.markdown(
-                    """
-                            </ul>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                    if st.button(f"Delete Risk {i+1}", key=f"del_risk_{i}"):
+                        plan['risks_and_assumptions'].pop(i)
+                        st.experimental_rerun()
+                if st.button("Add New Risk"):
+                    plan['risks_and_assumptions'].append({
+                        "risk": "",
+                        "severity": "Medium",
+                        "mitigation": ""
+                    })
+                    st.experimental_rerun()
 
                 st.markdown(
                     f"""
@@ -1040,26 +1070,31 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
                         <div class="prd-section-title">
                             <h2>7. Next Steps</h2>
                         </div>
-                        <div class="prd-section-content">
-                            <ul class="next-steps">
                     """,
                     unsafe_allow_html=True,
                 )
-                for step in plan.get("next_steps", []):
-                    st.markdown(
-                        f"""
-                        <li>{html_sanitize(step)}</li>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                if 'next_steps' not in plan:
+                    plan['next_steps'] = []
+                for i, step in enumerate(plan.get("next_steps", [])):
+                    col_s1, col_s2 = st.columns([5,1])
+                    with col_s1:
+                        plan['next_steps'][i] = st.text_input(
+                            "Next Step",
+                            value=step,
+                            key=f"next_step_{i}"
+                        )
+                    with col_s2:
+                        if st.button("Delete", key=f"del_step_{i}"):
+                            plan['next_steps'].pop(i)
+                            st.experimental_rerun()
+                if st.button("Add New Next Step"):
+                    plan['next_steps'].append("")
+                    st.experimental_rerun()
+
                 st.markdown(
                     """
-                            </ul>
+                            </div>
                         </div>
-                    </div>
-                    <div class="prd-footer">
-                        Generated by A/B Test Architect on """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") +
-                    """</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -1084,3 +1119,13 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
                                 file_name="experiment_plan.pdf",
                                 mime="application/pdf",
                             )
+
+                st.markdown(
+                    f"""
+                    <div class="prd-footer">
+                        Generated by A/B Test Architect on """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") +
+                    """</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
