@@ -445,11 +445,12 @@ st.markdown(
     font-weight: 500;
     font-style: italic;
 }
-.hypotheses ol, .risks ul, .metrics ul, .next-steps ul, .stats-list {
-    padding-left: 1.5rem;
+.hypotheses-list, .risks-list, .metrics-list, .next-steps-list, .stats-list {
+    list-style: none; /* Remove default list styles */
+    padding-left: 0;
     margin: 0.5rem 0 0;
 }
-.hypotheses li, .risks li, .metrics li, .next-steps li, .stats-list li {
+.hypotheses-list .list-item, .risks-list .list-item, .metrics-list .list-item, .next-steps-list .list-item, .stats-list .list-item {
     margin-bottom: 1.5rem;
     padding: 1rem;
     background: #fdfefe;
@@ -457,19 +458,21 @@ st.markdown(
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
     border: 1px solid #e5e7eb;
     position: relative;
+    line-height: 1.6;
 }
-.hypotheses li:last-child, .risks li:last-child, .metrics li:last-child, .next-steps li:last-child, .stats-list li:last-child {
+.hypotheses-list .list-item:last-child, .risks-list .list-item:last-child, .metrics-list .list-item:last-child, .next-steps-list .list-item:last-child, .stats-list .list-item:last-child {
     margin-bottom: 0;
 }
-.hypotheses li p {
+.hypotheses-list .list-item p {
     margin: 0;
+    color: #4b5563; /* Ensure text is dark and readable */
 }
-.hypotheses li p strong {
+.hypotheses-list .list-item p strong {
     display: block;
     margin-bottom: 0.5rem;
     color: #052a4a;
 }
-.hypotheses li p.rationale, .hypotheses li p.example {
+.hypotheses-list .list-item p.rationale, .hypotheses-list .list-item p.example {
     font-size: 0.9rem;
     color: #4b5563;
 }
@@ -478,16 +481,16 @@ st.markdown(
     font-weight: 600;
     color: #052a4a;
 }
-.metrics li span.importance {
+.metrics-list .list-item span.importance {
     font-weight: 600;
     color: #0b63c6;
 }
-.risks li span.severity {
+.risks-list .list-item span.severity {
     font-weight: 600;
 }
-.risks li span.severity.high { color: #ef4444; }
-.risks li span.severity.medium { color: #f97316; }
-.risks li span.severity.low { color: #22c55e; }
+.risks-list .list-item span.severity.high { color: #ef4444; }
+.risks-list .list-item span.severity.medium { color: #f97316; }
+.risks-list .list-item span.severity.low { color: #22c55e; }
 .prd-footer {
     margin-top: 2rem;
     padding-top: 1.5rem;
@@ -680,7 +683,7 @@ if st.session_state.get("ai_parsed"):
         with col_ps_1:
             if st.button("Save Problem Statement"):
                 st.session_state.stage = "hypotheses"
-                st.rerun()
+                st.experimental_rerun()
 
     elif st.session_state.stage == "hypotheses":
         st.subheader("Step 2: Choose or Create a Hypothesis")
@@ -696,7 +699,7 @@ if st.session_state.get("ai_parsed"):
                 if st.button(f"Select Hypothesis {i+1}", key=f"select_hyp_{i}"):
                     st.session_state.ai_parsed['hypotheses'].append(h)
                     st.session_state.stage = "full_plan"
-                    st.rerun()
+                    st.experimental_rerun()
         
         st.markdown("---")
         st.markdown("Or, if none of these fit...")
@@ -726,7 +729,7 @@ if st.session_state.get("ai_parsed"):
                                 # Update the main plan with the new hypothesis
                                 st.session_state.ai_parsed['hypotheses'].append(hyp_details_parsed)
                                 st.session_state.stage = "full_plan"
-                                st.rerun()
+                                st.experimental_rerun()
                             else:
                                 st.error("Failed to generate details for your hypothesis. Please try again.")
                         except Exception as e:
@@ -799,30 +802,30 @@ if st.session_state.get("ai_parsed"):
         
         # Build HTML list items for Hypotheses, Risks, and Next Steps outside the main f-string
         hypotheses_html = "".join([f"""
-            <li>
+            <div class='list-item'>
                 <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
                 <p class='rationale'><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
                 <p class='example'><strong>Example:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
                 <p class='behavioral-basis'><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
-            </li>
+            </div>
         """ for h in plan.get("hypotheses", [])])
 
         risks_html = "".join([f"""
-            <li>
+            <div class='list-item'>
                 <strong>{html_sanitize(r.get('risk', ''))}</strong>
                 <br>Severity: <span class='severity {r.get('severity', 'Medium').lower()}'>{html_sanitize(r.get('severity', ''))}</span>
                 <br>Mitigation: {html_sanitize(r.get('mitigation', ''))}
-            </li>
+            </div>
         """ for r in plan.get("risks_and_assumptions", [])])
 
-        next_steps_html = "".join([f"<li>{html_sanitize(step)}</li>" for step in plan.get("next_steps", [])])
+        next_steps_html = "".join([f"<div class='list-item'>{html_sanitize(step)}</div>" for step in plan.get("next_steps", [])])
 
         metrics_html = "".join([f"""
-            <li>
+            <div class='list-item'>
                 <strong>{html_sanitize(m.get('name', ''))}</strong>
                 <br>Formula: <code>{html_sanitize(m.get('formula', ''))}</code>
                 <br>Importance: <span class='importance'>{html_sanitize(m.get('importance', ''))}</span>
-            </li>
+            </div>
         """ for m in plan.get("metrics", [])])
 
         st.markdown(f"<div class='prd-card'>", unsafe_allow_html=True)
@@ -841,10 +844,8 @@ if st.session_state.get("ai_parsed"):
             </div>
             <div class="prd-section">
                 <div class="prd-section-title"><h2>2. Hypotheses</h2></div>
-                <div class="hypotheses">
-                    <ol>
-                        {hypotheses_html}
-                    </ol>
+                <div class="hypotheses-list">
+                    {hypotheses_html}
                 </div>
             </div>
             """, unsafe_allow_html=True,
@@ -857,10 +858,8 @@ if st.session_state.get("ai_parsed"):
             f"""
             <div class="prd-section">
                 <div class="prd-section-title"><h2>4. Metrics</h2></div>
-                <div class="metrics">
-                    <ul>
-                        {metrics_html}
-                    </ul>
+                <div class="metrics-list">
+                    {metrics_html}
                 </div>
             </div>
             """, unsafe_allow_html=True,
@@ -870,25 +869,23 @@ if st.session_state.get("ai_parsed"):
             <div class="prd-section">
                 <div class="prd-section-title"><h2>5. Success Criteria & Statistical Rationale</h2></div>
                 <div class="stats-list">
-                    <p><strong>Confidence:</strong> {plan.get('success_criteria', {}).get('confidence_level', '')}%</p>
-                    <p><strong>MDE:</strong> {plan.get('success_criteria', {}).get('MDE', '')}%</p>
-                    <p><strong>Statistical Rationale:</strong> {html_sanitize(plan.get('statistical_rationale', ''))}</p>
+                    <div class='list-item'>
+                        <p><strong>Confidence:</strong> {plan.get('success_criteria', {}).get('confidence_level', '')}%</p>
+                        <p><strong>MDE:</strong> {plan.get('success_criteria', {}).get('MDE', '')}%</p>
+                        <p><strong>Statistical Rationale:</strong> {html_sanitize(plan.get('statistical_rationale', ''))}</p>
+                    </div>
                 </div>
             </div>
             <div class="prd-section">
                 <div class="prd-section-title"><h2>6. Risks and Assumptions</h2></div>
-                <div class="risks">
-                    <ul>
-                        {risks_html}
-                    </ul>
+                <div class="risks-list">
+                    {risks_html}
                 </div>
             </div>
             <div class="prd-section">
                 <div class="prd-section-title"><h2>7. Next Steps</h2></div>
-                <div class="next-steps">
-                    <ul>
-                        {next_steps_html}
-                    </ul>
+                <div class="next-steps-list">
+                    {next_steps_html}
                 </div>
             </div>
             """, unsafe_allow_html=True,
@@ -917,10 +914,10 @@ if st.session_state.get("ai_parsed"):
                         edited_plan['hypotheses'][i]['example_implementation'] = st.text_area("Implementation Example", value=h.get('example_implementation', ''), key=f"edit_impl_{i}", height=50)
                         if st.button(f"Delete Hypothesis {i+1}", key=f"del_hyp_{i}"):
                             edited_plan['hypotheses'].pop(i)
-                            st.rerun()
+                            st.experimental_rerun()
                 if st.button("Add New Hypothesis", key="add_hyp"):
                     edited_plan['hypotheses'].append({"hypothesis": "New Hypothesis", "rationale": "", "example_implementation": "", "behavioral_basis": ""})
-                    st.rerun()
+                    st.experimental_rerun()
                 st.markdown("---")
                 st.subheader("3. Risks and Assumptions")
                 if 'risks_and_assumptions' not in edited_plan: edited_plan['risks_and_assumptions'] = []
@@ -931,10 +928,10 @@ if st.session_state.get("ai_parsed"):
                         edited_plan['risks_and_assumptions'][i]['mitigation'] = st.text_area("Mitigation", value=r.get('mitigation', ''), height=50, key=f"edit_mit_{i}")
                         if st.button(f"Delete Risk {i+1}", key=f"del_risk_{i}"):
                             edited_plan['risks_and_assumptions'].pop(i)
-                            st.rerun()
+                            st.experimental_rerun()
                 if st.button("Add New Risk", key="add_risk"):
                     edited_plan['risks_and_assumptions'].append({"risk": "", "severity": "Medium", "mitigation": ""})
-                    st.rerun()
+                    st.experimental_rerun()
                 st.markdown("---")
                 st.subheader("4. Next Steps")
                 if 'next_steps' not in edited_plan: edited_plan['next_steps'] = []
@@ -945,15 +942,15 @@ if st.session_state.get("ai_parsed"):
                     with col_s2:
                         if st.button("Delete", key=f"del_step_{i}"):
                             edited_plan['next_steps'].pop(i)
-                            st.rerun()
+                            st.experimental_rerun()
                 if st.button("Add New Next Step", key="add_step"):
                     edited_plan['next_steps'].append("")
-                    st.rerun()
+                    st.experimental_rerun()
                 st.markdown("---")
                 if st.button("Save Changes and Close"):
                     st.session_state.ai_parsed = edited_plan
                     st.session_state.edit_modal_open = False
-                    st.rerun()
+                    st.experimental_rerun()
         
         with col_export:
             col_exp1, col_exp2 = st.columns([1,1])
@@ -974,4 +971,4 @@ if st.session_state.get("ai_parsed"):
                             file_name="experiment_plan.pdf",
                             mime="application/pdf",
                         )
-        st.markdown(f"<div class='prd-footer'>Generated by A/B Test Architect on """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """</div></div>""", unsafe_allow_html=True)
+        st.markdown(f"<div class='prd-footer'>Generated by A/B Test Architect on """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """</div>""", unsafe_allow_html=True)
