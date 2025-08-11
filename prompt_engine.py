@@ -33,20 +33,20 @@ CONTEXT:
 
 VALIDATION CRITERIA:
 1. Statistical Soundness:
-   - Is MDE {prd.get('success_criteria', {}).get('MDE', '')}% realistic for {context.get('type', '')}?
-   - Does sample size account for novelty effects?
+    - Is MDE {prd.get('success_criteria', {}).get('MDE', '')}% realistic for {context.get('type', '')}?
+    - Does sample size account for novelty effects?
 
 2. Hypothesis Quality (3 required):
-   - Does each hypothesis include:
-     * Clear if-then-because statement
-     * Behavioral science/data reference
-     * Concrete implementation example
-     * Psychological principle
+    - Does each hypothesis include:
+      * Clear if-then-because statement
+      * Behavioral science/data reference
+      * Concrete implementation example
+      * Psychological principle
 
 3. Completeness:
-   - Are all next steps actionable?
-   - Are risks paired with mitigations?
-   - Is the problem statement metric-driven?
+    - Are all next steps actionable?
+    - Are risks paired with mitigations?
+    - Is the problem statement metric-driven?
 
 PRD TO REVIEW:
 {json.dumps(prd, indent=2)}
@@ -78,20 +78,20 @@ def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
     
     MANDATORY REQUIREMENTS:
     1. For each of 3 hypotheses:
-       - hypothesis: "If [change] then [outcome] because [rationale]"
-       - rationale: Peer-reviewed research or credible data source
-       - example_implementation: Exact UI/flow changes
-       - behavioral_basis: Psychological principle
+        - hypothesis: "If [change] then [outcome] because [rationale]"
+        - rationale: Peer-reviewed research or credible data source
+        - example_implementation: Exact UI/flow changes
+        - behavioral_basis: Psychological principle
     
     2. Problem statement must:
-       - Start with specific metric comparison
-       - Explain user pain points
-       - Connect to business impact
+        - Start with specific metric comparison
+        - Explain user pain points
+        - Connect to business impact
 
     3. Next steps must be:
-       - Actionable (verb-first)
-       - Owned (assignable to roles)
-       - Time-bound (when possible)
+        - Actionable (verb-first)
+        - Owned (assignable to roles)
+        - Time-bound (when possible)
 
     CONTEXT DEEP DIVE:
     - Product Type: {ctx.get('type', '')}
@@ -109,7 +109,7 @@ def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
       "hypotheses": [
         {{
           "hypothesis": str,  # "If we X, then Y because Z"
-          "rationale": str,   # "Baymard Institute shows..."
+          "rationale": str,    # "Baymard Institute shows..."
           "example_implementation": str,  # "Remove these 2 fields..."
           "behavioral_basis": str  # "Hick's Law..."
         }},
@@ -169,6 +169,36 @@ def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
 
     return full_prompt
 
+def _build_hypothesis_prompt(hypothesis_text: str, context: Dict[str, Any]) -> str:
+    """Builds a prompt specifically for detailing a single hypothesis."""
+    ctx = {k: ("" if v is None else str(v)) for k, v in context.items()}
+    return textwrap.dedent(f"""
+    You are a Principal Product Manager. Your task is to expand a one-sentence hypothesis into a detailed, structured format for an A/B test. The test is for a {ctx.get('type', 'SaaS')} product.
+
+    You MUST return a valid JSON object following the schema below.
+
+    INPUT HYPOTHESIS: "{hypothesis_text}"
+
+    CONTEXT:
+    - Strategic Goal: "{ctx.get('strategic_goal', '')}"
+    - Metric to Improve: "{ctx.get('metric_to_improve', '')}"
+    - Problem Statement: "{ctx.get('problem_statement', '')}"
+    - User Persona: "{ctx.get('user_persona', '')}"
+
+    OUTPUT SCHEMA:
+    {{
+      "hypothesis": str,  # The original hypothesis text, unchanged
+      "rationale": str,
+      "example_implementation": str,
+      "behavioral_basis": str
+    }}
+
+    REQUIREMENTS:
+    - Rationale: Explain the data or logic behind the hypothesis in a professional tone.
+    - Example Implementation: Provide a concrete, actionable example of how the test would be set up.
+    - Behavioral Basis: Name a recognized psychological or behavioral science principle that supports the hypothesis (e.g., 'Hick's Law', 'Loss Aversion', 'Social Proof').
+    """)
+
 def _enrich_output(raw_prd: str, context: Dict[str, Any]) -> str:
     """Provides a second-pass validation and enrichment prompt."""
     return _build_validation_prompt(json.loads(raw_prd), context)
@@ -198,6 +228,32 @@ def generate_experiment_plan(goal: str, context: Dict[str, Any]) -> Optional[str
         )
         first_pass_json = completion.choices[0].message.content
         return first_pass_json
+    except Exception as e:
+        print(f"LLM call failed: {e}")
+        return json.dumps({"error": f"LLM generation failed: {e}"})
+
+def generate_hypothesis_details(hypothesis_text: str, context: Dict[str, Any]) -> Optional[str]:
+    """
+    Generates detailed, structured information for a single hypothesis.
+    """
+    if not GROQ_AVAILABLE:
+        return json.dumps({
+            "error": "Groq client not available. Please ensure the groq library is installed and the GROQ_API_KEY environment variable is set."
+        })
+
+    prompt = _build_hypothesis_prompt(hypothesis_text, context)
+    client = _get_llm_client()
+    try:
+        completion = client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": f"Hypothesis to expand: {hypothesis_text}"}
+            ],
+            temperature=0.7,
+            response_format={"type": "json_object"}
+        )
+        return completion.choices[0].message.content
     except Exception as e:
         print(f"LLM call failed: {e}")
         return json.dumps({"error": f"LLM generation failed: {e}"})
