@@ -52,6 +52,17 @@ def sanitize_text(text: Any) -> str:
     text = re.sub(r"[ \f\v]+", " ", text)
     return text.strip()
 
+def html_sanitize(text: Any) -> str:
+    """Escapes special HTML characters from a string."""
+    if text is None: return ""
+    text = str(text)
+    text = text.replace("&", "&amp;")
+    text = text.replace("<", "&lt;")
+    text = text.replace(">", "&gt;")
+    text = text.replace('"', "&quot;")
+    text = text.replace("'", "&apos;")
+    return text
+
 def generate_problem_statement(plan: Dict, current: float, target: float, unit: str) -> str:
     """Auto-inserts target metric into problem statement"""
     base = plan.get("problem_statement", "")
@@ -488,7 +499,6 @@ with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded
             if std_dev is None and std_dev_raw:
                 st.error("Invalid format for Standard Deviation. Please enter a number.")
 
-
     metric_inputs_valid = True
     if current_value == target_value and current_value is not None:
         st.warning("The target metric must be different from the current metric to measure change. Please adjust one or the other.")
@@ -634,10 +644,30 @@ if st.session_state.get("ai_parsed") is not None or st.session_state.get("output
 
         if st.session_state.get("calculated_sample_size_per_variant") and st.session_state.get("calculated_total_sample_size"):
             st.markdown("---")
-            st.metric("Users Per Variant", f"{st.session_state.calculated_sample_size_per_variant:,} users")
-            st.metric("Total Sample Size", f"{st.session_state.calculated_total_sample_size:,} users")
-            duration_display = f"{st.session_state.calculated_duration_days:,.0f} days" if np.isfinite(st.session_state.calculated_duration_days) else "∞"
-            st.metric("Estimated Test Duration", duration_display)
+            
+            # New metrics row
+            cols = st.columns(4)
+            with cols[0]:
+                st.metric("Current DAU", user_base_choice)
+            with cols[1]:
+                st.metric("Primary Metric", sanitized_metric_name)
+            with cols[2]:
+                st.metric("Current Value", formatted_current)
+            with cols[3]:
+                st.metric("Target Metric", formatted_target)
+            
+            st.markdown("---")
+            
+            # Old metrics row
+            cols = st.columns(3)
+            with cols[0]:
+                st.metric("Users Per Variant", f"{st.session_state.calculated_sample_size_per_variant:,}")
+            with cols[1]:
+                st.metric("Total Sample Size", f"{st.session_state.calculated_total_sample_size:,}")
+            with cols[2]:
+                duration_display = f"{st.session_state.calculated_duration_days:,.0f} days" if np.isfinite(st.session_state.calculated_duration_days) else "∞"
+                st.metric("Estimated Duration", duration_display)
+            
             st.caption("Assumes all DAU are eligible and evenly split across variants.")
         else:
             st.info("Click 'Calculate' to compute sample size with current inputs.")
@@ -676,7 +706,7 @@ if st.session_state.get("ai_parsed"):
     unit = st.session_state.context.get("metric_unit", metric_unit)
 
     st.markdown("<div class='green-section'>", unsafe_allow_html=True)
-    create_header_with_help("Inferred Product Goal", "The AI's interpretation of your goal. Edit if needed.", icon="🎯")
+    create_header_with_help("Inferred Product Goal", "The AI's interpretation of your goal. Edit if needed.", icon="�")
     safe_display(post_process_llm_text(goal_with_units, unit))
 
     create_header_with_help("Problem Statement", "Clear description of the gap and why it matters.", icon="🧩")
@@ -870,6 +900,18 @@ if st.session_state.get("ai_parsed"):
         st.markdown("---")
         create_header_with_help("Experiment Calculations", "Statistical requirements for valid results", icon="🧮")
         
+        cols = st.columns(4)
+        with cols[0]:
+            st.metric("Current DAU", user_base_choice)
+        with cols[1]:
+            st.metric("Primary Metric", sanitized_metric_name)
+        with cols[2]:
+            st.metric("Current Value", formatted_current)
+        with cols[3]:
+            st.metric("Target Metric", formatted_target)
+        
+        st.markdown("---")
+        
         cols = st.columns(3)
         with cols[0]:
             st.metric("Users Per Variant", f"{st.session_state.calculated_sample_size_per_variant:,}")
@@ -917,9 +959,9 @@ if st.session_state.get("ai_parsed"):
         html = "<ul>"
         for item in items:
             if isinstance(item, dict):
-                item_text = f"<b>{sanitize_text(item.get('name','Unnamed'))}:</b> {sanitize_text(item.get('formula',''))}"
+                item_text = f"<b>{html_sanitize(item.get('name','Unnamed'))}:</b> {html_sanitize(item.get('formula',''))}"
             else:
-                item_text = sanitize_text(item)
+                item_text = html_sanitize(item)
             if item_text:
                 html += f"<li>{item_text}</li>"
         html += "</ul>"
@@ -929,9 +971,9 @@ if st.session_state.get("ai_parsed"):
     for i, h in enumerate(prd_dict["hypotheses"], 1):
         hypotheses_html += f"""
         <li>
-            <b>{h.get('hypothesis', '')}</b><br>
-            <i>Rationale:</i> {h.get('rationale', '')}<br>
-            <i>Example:</i> {h.get('example_implementation', '')}
+            <b>{html_sanitize(h.get('hypothesis', ''))}</b><br>
+            <i>Rationale:</i> {html_sanitize(h.get('rationale', ''))}<br>
+            <i>Example:</i> {html_sanitize(h.get('example_implementation', ''))}
         </li>
         """
     hypotheses_html += "</ol>"
@@ -940,8 +982,8 @@ if st.session_state.get("ai_parsed"):
     for r in prd_dict.get("risks_and_assumptions", []):
         risks_html += f"""
         <li>
-            {r.get('risk', '')} <i>(Severity: {r.get('severity', 'Medium')})</i><br>
-            → Mitigation: {r.get('mitigation', 'To be determined')}
+            {html_sanitize(r.get('risk', ''))} <i>(Severity: {html_sanitize(r.get('severity', 'Medium'))})</i><br>
+            → Mitigation: {html_sanitize(r.get('mitigation', 'To be determined'))}
         </li>
         """
     risks_html += "</ul>"
@@ -952,12 +994,12 @@ if st.session_state.get("ai_parsed"):
             <div class="prd-logo">A/B</div>
             <div>
                 <div class="prd-title">Experiment PRD</div>
-                <div class="prd-subtitle">{sanitize_text(prd_dict.get('goal', ''))}</div>
+                <div class="prd-subtitle">{html_sanitize(prd_dict.get('goal', ''))}</div>
             </div>
         </div>
         <div class="prd-section">
             <h3>🎯 Problem Statement</h3>
-            <div class="prd-body">{sanitize_text(prd_dict.get('problem_statement', ''))}</div>
+            <div class="prd-body">{html_sanitize(prd_dict.get('problem_statement', ''))}</div>
         </div>
         <div class="prd-section">
             <h3>🧪 Hypotheses</h3>
