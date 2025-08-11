@@ -486,7 +486,7 @@ st.markdown(
     margin: 0;
     color: #4b5563; /* Ensure consistent text color */
 }
-.section-list .list-item p code {
+.formula-code {
     background-color: #eef2ff;
     padding: 2px 6px;
     border-radius: 4px;
@@ -523,6 +523,13 @@ if "edit_modal_open" not in st.session_state:
     st.session_state.edit_modal_open = False
 if "stage" not in st.session_state:
     st.session_state.stage = "input"
+if "calculated_sample_size_per_variant" not in st.session_state:
+    st.session_state.calculated_sample_size_per_variant = None
+if "calculated_total_sample_size" not in st.session_state:
+    st.session_state.calculated_total_sample_size = None
+if "calculated_duration_days" not in st.session_state:
+    st.session_state.calculated_duration_days = None
+
 
 st.title("💡 A/B Test Architect — AI-assisted experiment PRD generator")
 st.markdown("Create experiment PRDs, hypotheses, stats, and sample-size guidance — faster and with guardrails.")
@@ -774,7 +781,7 @@ if st.session_state.get("ai_parsed"):
                 st.session_state.calculated_sample_size_per_variant = sample_per_variant
                 st.session_state.calculated_total_sample_size = total_sample
                 users_to_test = st.session_state.calculated_total_sample_size or 0
-                st.session_state.calculated_duration_days = (users_to_test / dau) if dau > 0 and users_to_test else float("inf")
+                st.session_state.calculated_duration_days = (users_to_test / dau) if dau > 0 and users_to_test else "N/A"
 
             if st.session_state.get("calculated_sample_size_per_variant"):
                 st.markdown("---")
@@ -819,17 +826,26 @@ if st.session_state.get("ai_parsed"):
             metrics_html += f"""
                 <div class='section-list-item'>
                     <p><strong>Name:</strong> {html_sanitize(m.get('name', ''))}</p>
-                    <p><strong>Formula:</strong> <code>{html_sanitize(m.get('formula', ''))}</code></p>
+                    <p><strong>Formula:</strong> <code class='formula-code'>{html_sanitize(m.get('formula', ''))}</code></p>
                     <p><strong>Importance:</strong> <span class='importance'>{html_sanitize(m.get('importance', ''))}</span></p>
                 </div>
             """
         
         # Build HTML for Success Criteria
         criteria = plan.get('success_criteria', {})
+        sample_size_per_variant_text = f"Sample Size per Variant: {st.session_state.get('calculated_sample_size_per_variant', 'N/A'):,}"
+        total_sample_size_text = f"Total Sample Size: {st.session_state.get('calculated_total_sample_size', 'N/A'):,}"
+        duration_days_text = f"Estimated Duration: {st.session_state.get('calculated_duration_days', 'N/A')}"
+        if duration_days_text != "N/A":
+            duration_days_text += " days"
+
         stats_html = f"""
             <div class='section-list-item'>
                 <p><strong>Confidence:</strong> {criteria.get('confidence_level', '')}%</p>
                 <p><strong>MDE:</strong> {criteria.get('MDE', '')}%</p>
+                <p><strong>{sample_size_per_variant_text}</strong></p>
+                <p><strong>{total_sample_size_text}</strong></p>
+                <p><strong>{duration_days_text}</strong></p>
                 <p><strong>Statistical Rationale:</strong> {html_sanitize(plan.get('statistical_rationale', 'No rationale provided.'))}</p>
             </div>
         """
