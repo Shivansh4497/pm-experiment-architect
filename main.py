@@ -445,12 +445,12 @@ st.markdown(
     font-weight: 500;
     font-style: italic;
 }
-.hypotheses-list, .risks-list, .metrics-list, .next-steps-list, .stats-list {
-    list-style: none; /* Remove default list styles */
+.hypotheses-list, .risks-list, .metrics-list, .next-steps-list, .stats-list, .variants-list {
+    list-style: none;
     padding-left: 0;
     margin: 0.5rem 0 0;
 }
-.hypotheses-list .list-item, .risks-list .list-item, .metrics-list .list-item, .next-steps-list .list-item, .stats-list .list-item {
+.hypotheses-list .list-item, .risks-list .list-item, .metrics-list .list-item, .next-steps-list .list-item, .stats-list .list-item, .variants-list .list-item {
     margin-bottom: 1.5rem;
     padding: 1rem;
     background: #fdfefe;
@@ -460,12 +460,12 @@ st.markdown(
     position: relative;
     line-height: 1.6;
 }
-.hypotheses-list .list-item:last-child, .risks-list .list-item:last-child, .metrics-list .list-item:last-child, .next-steps-list .list-item:last-child, .stats-list .list-item:last-child {
+.hypotheses-list .list-item:last-child, .risks-list .list-item:last-child, .metrics-list .list-item:last-child, .next-steps-list .list-item:last-child, .stats-list .list-item:last-child, .variants-list .list-item:last-child {
     margin-bottom: 0;
 }
 .hypotheses-list .list-item p {
     margin: 0;
-    color: #4b5563; /* Ensure text is dark and readable */
+    color: #4b5563;
 }
 .hypotheses-list .list-item p strong {
     display: block;
@@ -480,6 +480,10 @@ st.markdown(
     font-size: 1.1rem;
     font-weight: 600;
     color: #052a4a;
+}
+.metrics-list .list-item p, .stats-list .list-item p, .risks-list .list-item p, .next-steps-list .list-item p, .variants-list .list-item p {
+    margin: 0;
+    color: #4b5563; /* Ensure consistent text color */
 }
 .metrics-list .list-item span.importance {
     font-weight: 600;
@@ -505,6 +509,14 @@ st.markdown(
     gap: 0.5rem;
     margin-top: 1rem;
 }
+.stats-list .list-item p code {
+    background-color: #eef2ff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    color: #3b5998;
+}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
 """,
@@ -513,28 +525,6 @@ st.markdown(
 
 st.title("💡 A/B Test Architect — AI-assisted experiment PRD generator")
 st.markdown("Create experiment PRDs, hypotheses, stats, and sample-size guidance — faster and with guardrails.")
-
-# --- Session State Management ---
-if "output" not in st.session_state:
-    st.session_state.output = None
-if "ai_parsed" not in st.session_state:
-    st.session_state.ai_parsed = None
-if "calc_locked" not in st.session_state:
-    st.session_state.calc_locked = False
-if "locked_stats" not in st.session_state:
-    st.session_state.locked_stats = {}
-if "last_llm_hash" not in st.session_state:
-    st.session_state.last_llm_hash = None
-if "calculate_now" not in st.session_state:
-    st.session_state.calculate_now = False
-if "edit_modal_open" not in st.session_state:
-    st.session_state.edit_modal_open = False
-if "temp_plan_edit" not in st.session_state:
-    st.session_state.temp_plan_edit = {}
-if "stage" not in st.session_state:
-    st.session_state.stage = "input"
-if "hypotheses_from_llm" not in st.session_state:
-    st.session_state.hypotheses_from_llm = []
 
 # --- Input Sections (No Change) ---
 with st.expander("💡 Product Context (click to expand)", expanded=True):
@@ -800,7 +790,7 @@ if st.session_state.get("ai_parsed"):
         # --- Final Plan Preview (Read-Only) ---
         plan = st.session_state.ai_parsed
         
-        # Build HTML list items for Hypotheses, Risks, and Next Steps outside the main f-string
+        # Build HTML list items for all sections
         hypotheses_html = "".join([f"""
             <div class='list-item'>
                 <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
@@ -809,87 +799,81 @@ if st.session_state.get("ai_parsed"):
                 <p class='behavioral-basis'><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
             </div>
         """ for h in plan.get("hypotheses", [])])
-
-        risks_html = "".join([f"""
+        
+        variants_html = "".join([f"""
             <div class='list-item'>
-                <strong>{html_sanitize(r.get('risk', ''))}</strong>
-                <br>Severity: <span class='severity {r.get('severity', 'Medium').lower()}'>{html_sanitize(r.get('severity', ''))}</span>
-                <br>Mitigation: {html_sanitize(r.get('mitigation', ''))}
+                <p><strong>Control:</strong> {html_sanitize(v.get('control', ''))}</p>
+                <p><strong>Variation:</strong> {html_sanitize(v.get('variation', ''))}</p>
             </div>
-        """ for r in plan.get("risks_and_assumptions", [])])
-
-        next_steps_html = "".join([f"<div class='list-item'>{html_sanitize(step)}</div>" for step in plan.get("next_steps", [])])
+        """ for v in plan.get("variants", [])])
 
         metrics_html = "".join([f"""
             <div class='list-item'>
-                <strong>{html_sanitize(m.get('name', ''))}</strong>
-                <br>Formula: <code>{html_sanitize(m.get('formula', ''))}</code>
-                <br>Importance: <span class='importance'>{html_sanitize(m.get('importance', ''))}</span>
+                <p><strong>Name:</strong> {html_sanitize(m.get('name', ''))}</p>
+                <p><strong>Formula:</strong> <code>{html_sanitize(m.get('formula', ''))}</code></p>
+                <p><strong>Importance:</strong> <span class='importance'>{html_sanitize(m.get('importance', ''))}</span></p>
             </div>
         """ for m in plan.get("metrics", [])])
 
-        st.markdown(f"<div class='prd-card'>", unsafe_allow_html=True)
-        st.markdown(
-            f"""
-            <div class="prd-header">
-                <div class="logo-wrapper">A/B</div>
-                <div class="header-text">
-                    <h1>Experiment PRD</h1>
-                    <p>An AI-generated plan for {sanitize_text(exact_metric)}</p>
-                </div>
+        risks_html = "".join([f"""
+            <div class='list-item'>
+                <p><strong>Risk:</strong> {html_sanitize(r.get('risk', ''))}</p>
+                <p><strong>Severity:</strong> <span class='severity {r.get('severity', 'Medium').lower()}'>{html_sanitize(r.get('severity', ''))}</span></p>
+                <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', ''))}</p>
             </div>
-            <div class="prd-section">
-                <div class="prd-section-title"><h2>1. Problem Statement</h2></div>
-                <div class="prd-section-content"><p class="problem-statement">{html_sanitize(plan.get("problem_statement", ""))}</p></div>
-            </div>
-            <div class="prd-section">
-                <div class="prd-section-title"><h2>2. Hypotheses</h2></div>
-                <div class="hypotheses-list">
-                    {hypotheses_html}
-                </div>
-            </div>
-            """, unsafe_allow_html=True,
-        )
-        st.markdown(f"<div class='prd-section-title'><h2>3. Variants</h2></div>", unsafe_allow_html=True)
-        for v in plan.get("variants", []):
-            st.markdown(f"**Control:** {html_sanitize(v.get('control', ''))} | **Variation:** {html_sanitize(v.get('variation', ''))}")
-        
-        st.markdown(
-            f"""
-            <div class="prd-section">
-                <div class="prd-section-title"><h2>4. Metrics</h2></div>
-                <div class="metrics-list">
-                    {metrics_html}
-                </div>
-            </div>
-            """, unsafe_allow_html=True,
-        )
-        st.markdown(
-            f"""
-            <div class="prd-section">
-                <div class="prd-section-title"><h2>5. Success Criteria & Statistical Rationale</h2></div>
-                <div class="stats-list">
-                    <div class='list-item'>
-                        <p><strong>Confidence:</strong> {plan.get('success_criteria', {}).get('confidence_level', '')}%</p>
-                        <p><strong>MDE:</strong> {plan.get('success_criteria', {}).get('MDE', '')}%</p>
-                        <p><strong>Statistical Rationale:</strong> {html_sanitize(plan.get('statistical_rationale', ''))}</p>
+        """ for r in plan.get("risks_and_assumptions", [])])
+
+        next_steps_html = "".join([f"<div class='list-item'><p>{html_sanitize(step)}</p></div>" for step in plan.get("next_steps", [])])
+
+        # Generate a single HTML string for the entire card
+        plan_html = f"""
+            <div class='prd-card'>
+                <div class="prd-header">
+                    <div class="logo-wrapper">A/B</div>
+                    <div class="header-text">
+                        <h1>Experiment PRD</h1>
+                        <p>An AI-generated plan for {sanitize_text(exact_metric)}</p>
                     </div>
                 </div>
-            </div>
-            <div class="prd-section">
-                <div class="prd-section-title"><h2>6. Risks and Assumptions</h2></div>
-                <div class="risks-list">
-                    {risks_html}
+                <div class="prd-section">
+                    <div class="prd-section-title"><h2>1. Problem Statement</h2></div>
+                    <div class="prd-section-content"><p class="problem-statement">{html_sanitize(plan.get("problem_statement", ""))}</p></div>
                 </div>
-            </div>
-            <div class="prd-section">
-                <div class="prd-section-title"><h2>7. Next Steps</h2></div>
-                <div class="next-steps-list">
-                    {next_steps_html}
+                <div class="prd-section">
+                    <div class="prd-section-title"><h2>2. Hypotheses</h2></div>
+                    <div class="hypotheses-list">{hypotheses_html}</div>
                 </div>
+                <div class="prd-section">
+                    <div class="prd-section-title"><h2>3. Variants</h2></div>
+                    <div class="variants-list">{variants_html}</div>
+                </div>
+                <div class="prd-section">
+                    <div class="prd-section-title"><h2>4. Metrics</h2></div>
+                    <div class="metrics-list">{metrics_html}</div>
+                </div>
+                <div class="prd-section">
+                    <div class="prd-section-title"><h2>5. Success Criteria & Statistical Rationale</h2></div>
+                    <div class="stats-list">
+                        <div class='list-item'>
+                            <p><strong>Confidence:</strong> {plan.get('success_criteria', {}).get('confidence_level', '')}%</p>
+                            <p><strong>MDE:</strong> {plan.get('success_criteria', {}).get('MDE', '')}%</p>
+                            <p><strong>Statistical Rationale:</strong> {html_sanitize(plan.get('statistical_rationale', ''))}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="prd-section">
+                    <div class="prd-section-title"><h2>6. Risks and Assumptions</h2></div>
+                    <div class="risks-list">{risks_html}</div>
+                </div>
+                <div class="prd-section">
+                    <div class="prd-section-title"><h2>7. Next Steps</h2></div>
+                    <div class="next-steps-list">{next_steps_html}</div>
+                </div>
+                <div class='prd-footer'>Generated by A/B Test Architect on """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """</div>
             </div>
-            """, unsafe_allow_html=True,
-        )
+        """
+        st.markdown(plan_html, unsafe_allow_html=True)
+        
         col_edit, col_export = st.columns([2, 1])
         with col_edit:
             edit_modal = Modal(key="edit_modal", title="Edit Experiment Plan")
@@ -971,4 +955,3 @@ if st.session_state.get("ai_parsed"):
                             file_name="experiment_plan.pdf",
                             mime="application/pdf",
                         )
-        st.markdown(f"<div class='prd-footer'>Generated by A/B Test Architect on """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """</div>""", unsafe_allow_html=True)
