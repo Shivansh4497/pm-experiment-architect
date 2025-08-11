@@ -11,7 +11,7 @@ Ultimate prompt engine with:
 import os
 import json
 import textwrap
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 # Attempt to import Groq client
 try:
