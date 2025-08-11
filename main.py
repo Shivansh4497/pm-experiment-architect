@@ -1,4 +1,4 @@
-# main.py — Final Certified Version (A/B Test Architect)
+# main.py — Ultimate PRD Version with Dark Mode & 3D Visualizations
 import streamlit as st
 import json
 import re
@@ -25,6 +25,37 @@ try:
     REPORTLAB_AVAILABLE = True
 except Exception:
     REPORTLAB_AVAILABLE = False
+
+# NEW: Full-width layout config
+st.set_page_config(
+    page_title="A/B Test Architect", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# NEW: Inject full-width CSS
+st.markdown("""
+    <style>
+        .appview-container .main .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            max-width: 100%;
+        }
+        div[data-testid="stExpander"] div[role="button"] p {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+    </style>
+    <script>
+        // Sync dark mode with Streamlit theme
+        const syncTheme = () => {
+            const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.classList.toggle('dark-mode', isDark);
+        };
+        window.matchMedia('(prefers-color-scheme: dark)').addListener(syncTheme);
+        syncTheme();
+    </script>
+""", unsafe_allow_html=True)
 
 def create_header_with_help(header_text: str, help_text: str, icon: str = "🔗"):
     st.markdown(
@@ -203,8 +234,7 @@ def extract_json(text: Any) -> Optional[Dict]:
     except Exception:
         st.write("LLM output could not be displayed.")
     return None
-
-def post_process_llm_text(text: Any, unit: str) -> str:
+    def post_process_llm_text(text: Any, unit: str) -> str:
     if text is None:
         return ""
     s = sanitize_text(text)
@@ -345,146 +375,296 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     pdf_bytes = buffer.getvalue()
     buffer.close()
     return pdf_bytes
-    st.set_page_config(page_title="A/B Test Architect", layout="wide")
+
+# NEW: Ultimate PRD Generator with Dark Mode and 3D Visualizations
+def generate_ultimate_prd(prd_dict: Dict, context: Dict) -> str:
+    """Generate a stunning PRD with dark mode and 3D visualizations"""
+    # Dynamic Color System
+    COLORS = {
+        'light': {
+            'primary': "#3b82f6",
+            'secondary': "#8b5cf6",
+            'bg': "#ffffff",
+            'text': "#1e293b",
+            'card': "#f8fafc"
+        },
+        'dark': {
+            'primary': "#60a5fa",
+            'secondary': "#a78bfa",
+            'bg': "#0f172a",
+            'text': "#f1f5f9",
+            'card': "#1e293b"
+        }
+    }
+
+    # Dark Mode Toggle Component
+    dark_mode_toggle = """
+    <div style="position: absolute; top: 20px; right: 20px; z-index: 1000;">
+        <label class="switch">
+            <input type="checkbox" id="darkModeToggle" onclick="toggleDarkMode()">
+            <span class="slider round"></span>
+        </label>
+        <span style="margin-left: 8px; font-size: 0.8rem;">Dark Mode</span>
+    </div>
+
+    <style>
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 24px;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+        }
+        input:checked + .slider:before {
+            transform: translateX(24px);
+        }
+    </style>
+
+    <script>
+        function toggleDarkMode() {
+            const doc = document.documentElement;
+            doc.classList.toggle('dark-mode');
+            
+            // Save preference
+            const isDark = doc.classList.contains('dark-mode');
+            localStorage.setItem('darkMode', isDark);
+        }
+        
+        // Initialize
+        if (localStorage.getItem('darkMode') === 'true') {
+            document.documentElement.classList.add('dark-mode');
+            document.getElementById('darkModeToggle').checked = true;
+        }
+    </script>
+    """
+
+    # 3D Metrics Visualization (using Plotly)
+    metrics_3d = ""
+    if prd_dict.get('metrics'):
+        metrics_3d = f"""
+        <div id="metrics-3d" style="height: 300px; margin: 2rem 0;">
+            <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+            <script>
+                const metricsData = {json.dumps([
+                    {{
+                        'name': m.get('name'),
+                        'value': parseFloat(m.get('formula', '0').match(/\\d+/)?.[0] || 0),
+                        'importance': ['Low', 'Medium', 'High'].indexOf(m.get('importance', 'Medium')) + 1
+                    }} 
+                    for m in prd_dict['metrics'] if isinstance(m, dict)
+                ])};
+                
+                const layout = {{
+                    scene: {{
+                        xaxis: {{ title: 'Metric' }},
+                        yaxis: {{ title: 'Value' }},
+                        zaxis: {{ title: 'Importance' }},
+                        camera: {{ 
+                            eye: {{ x: 1.5, y: 1.5, z: 0.8 }} 
+                        }}
+                    }},
+                    margin: {{ t: 0, b: 0 }}
+                }};
+                
+                Plotly.newPlot('metrics-3d', [{{
+                    type: 'scatter3d',
+                    mode: 'markers',
+                    x: metricsData.map(m => m.name),
+                    y: metricsData.map(m => m.value),
+                    z: metricsData.map(m => m.importance),
+                    marker: {{
+                        size: 12,
+                        color: metricsData.map(m => 
+                            m.importance === 3 ? '#ef4444' : 
+                            m.importance === 2 ? '#f59e0b' : '#10b981'),
+                        line: {{ width: 0 }}
+                    }},
+                    hoverinfo: 'x+y+z+text',
+                    hovertext: metricsData.map(m => 
+                        `Target: ${m.value * 1.2} (${m.importance === 3 ? 'High' : 
+                        m.importance === 2 ? 'Medium' : 'Low'} priority)`)
+                }}], layout);
+            </script>
+        </div>
+        """
+
+    # Dynamic CSS with Dark Mode Support
+    dynamic_css = f"""
+    <style>
+        :root {{
+            --primary: {COLORS['light']['primary']};
+            --secondary: {COLORS['light']['secondary']};
+            --bg: {COLORS['light']['bg']};
+            --text: {COLORS['light']['text']};
+            --card: {COLORS['light']['card']};
+        }}
+        
+        .dark-mode {{
+            --primary: {COLORS['dark']['primary']};
+            --secondary: {COLORS['dark']['secondary']};
+            --bg: {COLORS['dark']['bg']};
+            --text: {COLORS['dark']['text']};
+            --card: {COLORS['dark']['card']};
+        }}
+        
+        body {{
+            background: var(--bg);
+            color: var(--text);
+            transition: all 0.3s ease;
+        }}
+        
+        .prd-card {{
+            background: var(--card);
+            color: var(--text);
+            border-radius: 16px;
+            padding: 2.5rem;
+            margin: 2rem 0;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }}
+        
+        .prd-section-content {{
+            background: var(--bg);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }}
+        
+        .hypothesis-title::before {{
+            background: var(--secondary);
+        }}
+    </style>
+    """
+
+    # Animated Progress Bars for Metrics
+    progress_bars = ""
+    if prd_dict.get('success_criteria'):
+        progress_bars = f"""
+        <div class="progress-container" style="margin: 1.5rem 0;">
+            <h3 style="margin-bottom: 1rem;">Success Criteria</h3>
+            {''.join([
+                f"""
+                <div style="margin-bottom: 1rem;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                        <span>{name}</span>
+                        <span>{value}{'%' if name in ['Confidence', 'MDE'] else ''}</span>
+                    </div>
+                    <div style="
+                        height: 8px;
+                        background: #e2e8f0;
+                        border-radius: 4px;
+                        overflow: hidden;
+                    ">
+                        <div style="
+                            height: 100%;
+                            width: {value if name in ['Confidence', 'MDE'] else 100}%;
+                            background: {'var(--primary)' if name == 'Confidence' else 
+                                       '#10b981' if name == 'MDE' else 'var(--secondary)'};
+                            border-radius: 4px;
+                            animation: grow 1s ease-out;
+                        "></div>
+                    </div>
+                </div>
+                """
+                for name, value in prd_dict['success_criteria'].items()
+            ])}
+        </div>
+        
+        <style>
+            @keyframes grow {{
+                from {{ width: 0% }}
+                to {{ width: 100% }}
+            }}
+        </style>
+        """
+
+    return f"""
+    {dark_mode_toggle}
+    {dynamic_css}
+    
+    <div class="prd-card">
+        <div class="prd-header">
+            <div class="logo-wrapper">A/B</div>
+            <div class="header-text">
+                <h1>Experiment PRD</h1>
+                <p>{prd_dict.get('goal', '')}</p>
+            </div>
+        </div>
+
+        <div class="prd-section">
+            <div class="prd-section-title">
+                <h2>Problem Statement</h2>
+            </div>
+            <div class="prd-section-content">
+                {prd_dict.get('problem_statement', 'No problem statement provided.')}
+            </div>
+        </div>
+
+        <div class="prd-section">
+            <div class="prd-section-title">
+                <h2>Hypothesis</h2>
+            </div>
+            <div class="prd-section-content">
+                {prd_dict.get('hypotheses', [{}])[0].get('hypothesis', 'No hypothesis selected')}
+            </div>
+        </div>
+
+        {metrics_3d}
+
+        {progress_bars}
+    </div>
+    """
+    # Main Streamlit App UI
 st.markdown(
     """
-<style>
-.blue-section {background-color: #f6f9ff; padding: 14px; border-radius: 10px; margin-bottom: 14px;}
-.green-section {background-color: #f7fff7; padding: 14px; border-radius: 10px; margin-bottom: 14px;}
-.section-title {font-size: 1.15rem; font-weight: 700; color: #0b63c6; margin-bottom: 6px;}
-.small-muted { color: #7a7a7a; font-size: 13px; }
-.prd-card {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    max-width: 900px;
-    width: 100%;
-    background: #ffffff;
-    border-radius: 16px;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    padding: 2.5rem;
-    border: 1px solid #e5e7eb;
-}
-.prd-header {
-    display: flex;
-    align-items: center;
-    margin-bottom: 2.5rem;
-    padding-bottom: 1.5rem;
-    border-bottom: 1px solid #e5e7eb;
-}
-.logo-wrapper {
-    background: #0b63c6;
-    color: white;
-    padding: 1.5rem 2rem;
-    border-radius: 12px;
-    font-weight: 800;
-    font-size: 2.5rem;
-    line-height: 1;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-    margin-right: 1.5rem;
-    transform: rotate(-3deg);
-}
-.header-text h1 {
-    margin: 0;
-    font-size: 2.25rem;
-    font-weight: 900;
-    color: #052a4a;
-}
-.header-text p {
-    margin: 0.25rem 0 0;
-    font-size: 1.125rem;
-    color: #4b5563;
-}
-.prd-section {
-    margin-bottom: 2rem;
-}
-.prd-section-title {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-    color: #0b63c6;
-}
-.prd-section-title h2 {
-    margin: 0;
-    font-size: 1.5rem;
-    font-weight: 700;
-}
-.prd-section-title svg {
-    color: #0b63c6;
-    width: 24px;
-    height: 24px;
-}
-.prd-section-content {
-    background: #f3f8ff;
-    border-left: 4px solid #0b63c6;
-    padding: 1.5rem;
-    border-radius: 8px;
-    line-height: 1.8;
-    color: #1f2937;
-}
-.problem-statement {
-    font-weight: 500;
-    font-style: italic;
-}
-.hypotheses ol, .risks ul, .metrics ul, .next-steps ul, .stats-list {
-    padding-left: 1.5rem;
-    margin: 0.5rem 0 0;
-}
-.hypotheses li, .risks li, .metrics li, .next-steps li, .stats-list li {
-    margin-bottom: 1.5rem;
-    padding: 1rem;
-    background: #fdfefe;
-    border-radius: 8px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-    border: 1px solid #e5e7eb;
-    position: relative;
-}
-.hypotheses li:last-child, .risks li:last-child, .metrics li:last-child, .next-steps li:last-child, .stats-list li:last-child {
-    margin-bottom: 0;
-}
-.hypotheses li p {
-    margin: 0;
-}
-.hypotheses li p strong {
-    display: block;
-    margin-bottom: 0.5rem;
-    color: #052a4a;
-}
-.hypotheses li p.rationale, .hypotheses li p.example {
-    font-size: 0.9rem;
-    color: #4b5563;
-}
-.hypothesis-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #052a4a;
-}
-.metrics li span.importance {
-    font-weight: 600;
-    color: #0b63c6;
-}
-.risks li span.severity {
-    font-weight: 600;
-}
-.risks li span.severity.high { color: #ef4444; }
-.risks li span.severity.medium { color: #f97316; }
-.risks li span.severity.low { color: #22c55e; }
-.prd-footer {
-    margin-top: 2rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid #e5e7eb;
-    text-align: center;
-    font-size: 0.875rem;
-    color: #6b7280;
-}
-</style>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
-""",
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
+    <style>
+        .appview-container .main .block-container {
+            max-width: 100%;
+            padding-left: 2rem;
+            padding-right: 2rem;
+        }
+        .stButton>button {
+            width: 100%;
+        }
+        .stExpander {
+            background: transparent;
+        }
+        .st-eb {
+            background-color: transparent !important;
+        }
+    </style>
+    """,
     unsafe_allow_html=True,
 )
 
 st.title("💡 A/B Test Architect — AI-assisted experiment PRD generator")
 st.markdown("Create experiment PRDs, hypotheses, stats, and sample-size guidance — faster and with guardrails.")
 
+# Initialize session state
 if "output" not in st.session_state:
     st.session_state.output = None
 if "ai_parsed" not in st.session_state:
@@ -505,7 +685,10 @@ if "metrics_table" not in st.session_state:
     st.session_state.metrics_table = None
 if "raw_llm_edit" not in st.session_state:
     st.session_state.raw_llm_edit = ""
+if "context" not in st.session_state:
+    st.session_state.context = {}
 
+# Product Context Section
 with st.expander("💡 Product Context (click to expand)", expanded=True):
     create_header_with_help(
         "Product Context",
@@ -549,6 +732,7 @@ with st.expander("💡 Product Context (click to expand)", expanded=True):
             help="Focus the plan on a specific user segment.",
         )
 
+# Metric Improvement Section
 with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded=True):
     create_header_with_help(
         "Metric Improvement Objective",
@@ -601,6 +785,7 @@ with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded
         st.warning("For 'Conversion Rate' metric type, the unit should be '%'.")
         metric_inputs_valid = False
 
+# Generate Plan Section
 with st.expander("🧠 Generate Experiment Plan", expanded=True):
     create_header_with_help("Generate Experiment Plan", "When ready, click Generate to call the LLM and create a plan.", icon="🧠")
     sanitized_metric_name = sanitize_text(exact_metric)
@@ -679,514 +864,29 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
                 st.session_state.output = ""
                 st.session_state.ai_parsed = None
 
-if st.session_state.get("ai_parsed") is not None or st.session_state.get("output"):
-    st.markdown("<hr>", unsafe_allow_html=True)
-    with st.expander("🔢 A/B Test Calculator: Fine-tune sample size", expanded=True):
-        calc_mde = st.session_state.get("calc_mde", st.session_state.get("ai_parsed", {}).get("success_criteria", {}).get("MDE", mde_default) if st.session_state.get("ai_parsed") else mde_default)
-        calc_conf = st.session_state.get("calc_confidence", 95)
-        calc_power = st.session_state.get("calc_power", 80)
-        calc_variants = st.session_state.get("calc_variants", 2)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            calc_mde = st.number_input("Minimum Detectable Effect (MDE) %", min_value=0.1, max_value=50.0, value=float(calc_mde), step=0.1)
-            calc_conf = st.number_input("Confidence Level (%)", min_value=80, max_value=99, value=int(calc_conf), step=1)
-        with col2:
-            calc_power = st.number_input("Statistical Power (%)", min_value=70, max_value=95, value=int(calc_power), step=1)
-            calc_variants = st.number_input("Number of Variants (Control + Variations)", min_value=2, max_value=5, value=int(calc_variants), step=1)
-
-        if metric_type == "Numeric Value" and std_dev is not None:
-            st.info(f"Standard Deviation pre-filled: {std_dev}")
-
-        col_act1, col_act2 = st.columns([1, 1])
-        with col_act1:
-            btn_label = "Calculate" if not st.session_state.get("calculated_sample_size_per_variant") else "Refresh Calculator"
-            refresh_btn = st.button(btn_label)
-        with col_act2:
-            lock_btn = False
-            if st.session_state.get("calculated_sample_size_per_variant"):
-                lock_btn = st.button("Lock Values for Plan")
-
-        if refresh_btn or st.session_state.get("calculate_now", False):
-            st.session_state.calculate_now = False
-            st.session_state.last_calc_mde = float(calc_mde)
-            st.session_state.last_calc_confidence = int(calc_conf)
-            st.session_state.last_calc_power = int(calc_power)
-            st.session_state.last_calc_variants = int(calc_variants)
-
-            alpha_calc = 1 - (st.session_state.last_calc_confidence / 100.0)
-            power_calc = st.session_state.last_calc_power / 100.0
-
-            sample_per_variant, total_sample = calculate_sample_size(
-                baseline=current_value,
-                mde=st.session_state.last_calc_mde,
-                alpha=alpha_calc,
-                power=power_calc,
-                num_variants=st.session_state.last_calc_variants,
-                metric_type=metric_type,
-                std_dev=std_dev,
-            )
-
-            st.session_state.calculated_sample_size_per_variant = sample_per_variant
-            st.session_state.calculated_total_sample_size = total_sample
-
-            dau_map = {"< 10K": 5000, "10K–100K": 50000, "100K–1M": 500000, "> 1M": 2000000}
-            dau = dau_map.get(user_base_choice, 10000)
-            users_to_test = st.session_state.calculated_total_sample_size or 0
-            st.session_state.calculated_duration_days = (users_to_test / dau) if dau > 0 and users_to_test else float("inf")
-
-        if st.session_state.get("calculated_sample_size_per_variant") and st.session_state.get("calculated_total_sample_size"):
-            st.markdown("---")
-            
-            # New metrics row
-            cols = st.columns(4)
-            with cols[0]:
-                st.metric("Current DAU", user_base_choice)
-            with cols[1]:
-                st.metric("Primary Metric", sanitized_metric_name)
-            with cols[2]:
-                st.metric("Current Value", formatted_current)
-            with cols[3]:
-                st.metric("Target Metric", formatted_target)
-            
-            st.markdown("---")
-            
-            # Old metrics row
-            cols = st.columns(3)
-            with cols[0]:
-                st.metric("Users Per Variant", f"{st.session_state.calculated_sample_size_per_variant:,}")
-            with cols[1]:
-                st.metric("Total Sample Size", f"{st.session_state.calculated_total_sample_size:,}")
-            with cols[2]:
-                duration_display = f"{st.session_state.calculated_duration_days:,.0f} days" if np.isfinite(st.session_state.calculated_duration_days) else "∞"
-                st.metric("Estimated Duration", duration_display)
-            
-            st.caption("Assumes all DAU are eligible and evenly split across variants.")
-        else:
-            st.info("Click 'Calculate' to compute sample size with current inputs.")
-
-        if lock_btn and st.session_state.get("calculated_sample_size_per_variant"):
-            st.session_state.calc_locked = True
-            st.session_state.locked_stats = {
-                "confidence_level": st.session_state.last_calc_confidence,
-                "statistical_power": st.session_state.last_calc_power,
-                "mde": st.session_state.last_calc_mde,
-                "users_per_variant": st.session_state.calculated_sample_size_per_variant,
-                "total_sample_size": st.session_state.calculated_total_sample_size,
-                "estimated_test_duration_days": st.session_state.calculated_duration_days if np.isfinite(st.session_state.calculated_duration_days) else 'Not applicable',
-            }
-            st.success("Calculator values locked and will be used in the final plan.")
-        st.markdown("<hr>", unsafe_allow_html=True)
-
-if st.session_state.get("ai_parsed") is None and st.session_state.get("output"):
-    st.markdown("<div class='blue-section'>", unsafe_allow_html=True)
-    create_header_with_help("Raw LLM Output (fix JSON here)", "When parsing fails you'll see the raw LLM output — edit it then click Parse JSON.", icon="🛠️")
-    raw_edit = st.text_area("Raw LLM output / edit here", value=st.session_state.get("raw_llm_edit", ""), height=400, key="raw_llm_edit")
-    if st.button("Parse JSON"):
-        parsed_try = extract_json(raw_edit)
-        if parsed_try:
-            st.session_state.ai_parsed = parsed_try
-            st.success("Manual parse succeeded — plan is now usable.")
-        else:
-            st.error("Manual parse failed — edit the text and try again.")
-    st.markdown("</div>", unsafe_allow_html=True)
-
+# Results Display
 if st.session_state.get("ai_parsed"):
     plan = st.session_state.ai_parsed
-    if "context" not in st.session_state:
-        st.session_state.context = {"metric_unit": metric_unit}
-
     unit = st.session_state.context.get("metric_unit", metric_unit)
     
-    st.markdown("<div class='green-section'>", unsafe_allow_html=True)
-    create_header_with_help("Inferred Product Goal", "The AI's interpretation of your goal. Edit if needed.", icon="🎯")
-    safe_display(post_process_llm_text(goal_with_units, unit))
-
-    create_header_with_help("Problem Statement", "Clear description of the gap and why it matters.", icon="🧩")
-    problem_statement = generate_problem_statement(plan, current_value, target_value, unit)
-    st.markdown(problem_statement or "⚠️ Problem statement not generated by the model.")
-    with st.expander("Edit Problem Statement"):
-        st.text_area("Problem Statement (edit)", value=problem_statement, key="editable_problem", height=160)
-
-    create_header_with_help("Hypotheses", "Testable hypotheses with full details.", icon="🧪")
-    hypotheses = plan.get("hypotheses", [])
-    if not hypotheses or not isinstance(hypotheses, list):
-        st.warning("No hypotheses found in the generated plan.")
-        hypotheses = []
-        
-    for i, h in enumerate(hypotheses):
-        with st.container():
-            cols = st.columns([5, 1])
-            with cols[0]:
-                st.markdown(f"""
-                    **H{i+1}:** {h.get('hypothesis', '')}  
-                    *Rationale:* {h.get('rationale', h.get('behavioral_basis', ''))}  
-                    *Example:* {h.get('example_implementation', '')}
-                """)
-            with cols[1]:
-                if st.button("Select", key=f"select_{i}"):
-                    st.session_state.selected_index = i
-                    st.session_state.hypothesis_confirmed = True
-
-    if st.session_state.get("hypothesis_confirmed") and st.session_state.get("selected_index") is not None:
-        # Add safety check for hypothesis indexing
-        if st.session_state.selected_index >= len(hypotheses):
-            st.session_state.selected_index = None
-            st.session_state.hypothesis_confirmed = False
-        else:
-            selected_hypo = hypotheses[st.session_state.selected_index]
-
-            st.subheader("🔍 Selected Hypothesis Details")
-            cols = st.columns([4, 1])
-            with cols[0]:
-                st.markdown(f"**Hypothesis:** {selected_hypo.get('hypothesis', 'N/A')}")
-                st.markdown(f"**Rationale:** {selected_hypo.get('rationale', selected_hypo.get('behavioral_basis', 'N/A'))}")
-                st.markdown(f"**Example:** {selected_hypo.get('example_implementation', 'N/A')}")
-
-                with st.expander("✏️ Edit This Hypothesis"):
-                    edited_hypo = {
-                        "hypothesis": st.text_area(
-                            "Hypothesis Text",
-                            value=selected_hypo.get("hypothesis", ""),
-                            key="editable_hypothesis"
-                        ),
-                        "rationale": st.text_area(
-                            "Rationale",
-                            value=selected_hypo.get("rationale", selected_hypo.get("behavioral_basis", "")),
-                            key="editable_rationale"
-                        ),
-                        "example_implementation": st.text_area(
-                            "Implementation Example",
-                            value=selected_hypo.get("example_implementation", ""),
-                            key="editable_example"
-                        )
-                    }
-                    
-                    if st.button("Save Edits"):
-                        hypotheses[st.session_state.selected_index] = edited_hypo
-                        st.success("Hypothesis updated!")
-
-            with cols[1]:
-                if st.button("Clear Selection"):
-                    st.session_state.selected_index = None
-                    st.session_state.hypothesis_confirmed = False
-
-    metrics = plan.get("metrics", [])
-    if metrics:
-        create_header_with_help("Metrics", "Primary and secondary metrics", icon="📏")
-        
-        try:
-            normalized = []
-            for m in metrics:
-                if isinstance(m, dict):
-                    normalized.append({
-                        "name": m.get("name", "Unnamed"),
-                        "formula": m.get("formula", ""),
-                        "importance": m.get("importance", "Medium")
-                    })
-                else:
-                    normalized.append({
-                        "name": str(m),
-                        "formula": "",
-                        "importance": "Medium"
-                    })
-
-            if hasattr(st, "data_editor"):
-                df_metrics = pd.DataFrame(normalized)
-                edited_df = st.data_editor(
-                    df_metrics,
-                    column_config={
-                        "importance": st.column_config.SelectboxColumn(
-                            "Importance",
-                            options=["High", "Medium", "Low"],
-                            required=True
-                        )
-                    },
-                    num_rows="dynamic",
-                    key="metrics_data_editor"
-                )
-                st.session_state.metrics_table = edited_df.to_dict(orient="records")
-            else:
-                st.table(pd.DataFrame(normalized))
-        except Exception as e:
-            st.error(f"Metrics display error: {e}")
-            st.json(metrics)
-
-    segments = plan.get("segments", [])
-    if segments:
-        create_header_with_help("Segments", "User segments for analysis", icon="👥")
-        st.markdown("\n".join([f"- {s}" for s in segments if str(s).strip()]))
-        with st.expander("Edit Segments"):
-            st.text_area(
-                "Segments (one per line)",
-                value="\n".join(segments),
-                key="editable_segments",
-                height=120
-            )
-
-    risks = plan.get("risks_and_assumptions", [])
-    if risks:
-        create_header_with_help("Risks & Mitigations", "Potential issues and solutions", icon="⚠️")
-        
-        risk_text = []
-        edited_risks = []
-        for r in risks:
-            if isinstance(r, dict):
-                risk_str = f"• {r.get('risk', 'Risk')}"
-                if r.get('severity'):
-                    risk_str += f" (Severity: {r['severity']})"
-                if r.get('mitigation'):
-                    risk_str += f"\n  → Mitigation: {r['mitigation']}"
-                else:
-                    risk_str += "\n  → Mitigation: To be determined"
-                risk_text.append(risk_str)
-            else:
-                risk_text.append(f"• {str(r)}\n  → Mitigation: To be determined")
-        
-        st.markdown("\n\n".join(risk_text))
-        
-        with st.expander("Edit Risks"):
-            edited_risks = []
-            for i, r in enumerate(risks):
-                cols = st.columns([3, 1, 3])
-                with cols[0]:
-                    risk = st.text_input(
-                        f"Risk {i+1}", 
-                        value=r.get('risk', '') if isinstance(r, dict) else str(r),
-                        key=f"risk_{i}"
-                    )
-                with cols[1]:
-                    severity = st.selectbox(
-                        "Severity",
-                        ["High", "Medium", "Low"],
-                        index=["High", "Medium", "Low"].index(
-                            r.get('severity', 'Medium') if isinstance(r, dict) else 'Medium'
-                        ),
-                        key=f"severity_{i}"
-                    )
-                with cols[2]:
-                    mitigation = st.text_input(
-                        "Mitigation",
-                        value=r.get('mitigation', 'To be determined') if isinstance(r, dict) else 'To be determined',
-                        key=f"mitigation_{i}"
-                    )
-                edited_risks.append({
-                    "risk": risk,
-                    "severity": severity,
-                    "mitigation": mitigation
-                })
-
-    next_steps = plan.get("next_steps", [
-        "Finalize experiment design",
-        "Implement tracking metrics",
-        "Recruit users for testing"
-    ])
-
-    create_header_with_help("Next Steps", "Action items to execute the test", icon="✅")
-    st.markdown("\n".join([f"- {step}" for step in next_steps]))
-    with st.expander("Edit Next Steps"):
-        edited_steps = st.text_area(
-            "Next Steps (one per line)",
-            value="\n".join(next_steps),
-            key="editable_next_steps",
-            height=120
-        )
-
-    if st.session_state.get("calculated_sample_size_per_variant") and st.session_state.get("calculated_total_sample_size"):
-        st.markdown("---")
-        create_header_with_help("Experiment Calculations", "Statistical requirements for valid results", icon="🧮")
-        
-        cols = st.columns(4)
-        with cols[0]:
-            st.metric("Current DAU", user_base_choice)
-        with cols[1]:
-            st.metric("Primary Metric", sanitized_metric_name)
-        with cols[2]:
-            st.metric("Current Value", formatted_current)
-        with cols[3]:
-            st.metric("Target Metric", formatted_target)
-        
-        st.markdown("---")
-        
-        cols = st.columns(3)
-        with cols[0]:
-            st.metric("Users Per Variant", f"{st.session_state.calculated_sample_size_per_variant:,}")
-        with cols[1]:
-            st.metric("Total Sample Size", f"{st.session_state.calculated_total_sample_size:,}")
-        with cols[2]:
-            duration = st.session_state.calculated_duration_days
-            duration_str = f"{duration:,.0f} days" if np.isfinite(duration) else "∞"
-            st.metric("Estimated Duration", duration_str)
-        
-        st.caption("Assumes all DAU are eligible and evenly split across variants.")
-
+    st.markdown("<hr>", unsafe_allow_html=True)
+    
+    # Generate the ultimate PRD
     prd_dict = {
         "goal": goal_with_units,
-        "problem_statement": st.session_state.get("editable_problem", problem_statement),
-        "hypotheses": [
-            {
-                "hypothesis": h.get("hypothesis", ""),
-                "rationale": h.get("rationale", h.get("behavioral_basis", "")),
-                "example_implementation": h.get("example_implementation", ""),
-                **({"behavioral_basis": h["behavioral_basis"]} if "behavioral_basis" in h else {})
-            } for h in hypotheses
-        ],
-        "metrics": st.session_state.get("metrics_table", metrics),
-        "segments": [
-            s.strip() for s in 
-            st.session_state.get("editable_segments", "").split("\n") 
-            if s.strip()
-        ],
+        "problem_statement": st.session_state.get("editable_problem", generate_problem_statement(plan, current_value, target_value, unit)),
+        "hypotheses": plan.get("hypotheses", []),
+        "metrics": st.session_state.get("metrics_table", plan.get("metrics", [])),
+        "segments": plan.get("segments", []),
         "success_criteria": st.session_state.get("locked_stats", plan.get("success_criteria", {})),
-        "risks_and_assumptions": edited_risks if 'edited_risks' in locals() else [],
-        "next_steps": [
-            ns.strip() for ns in 
-            st.session_state.get("editable_next_steps", "").split("\n")
-            if ns.strip()
-        ],
-        "statistical_rationale": plan.get("statistical_rationale", "")
+        "risks_and_assumptions": plan.get("risks_and_assumptions", []),
+        "next_steps": plan.get("next_steps", [])
     }
-
-    create_header_with_help("Final PRD Preview", "Production-ready experiment document", icon="📄")
     
-    def render_list(items):
-        if not items or not any(str(item).strip() for item in items):
-            return "None specified"
-        html = "<ul>"
-        for item in items:
-            if isinstance(item, dict):
-                item_text = f"<b>{item.get('name','Unnamed')}:</b> {item.get('formula','')}"
-            else:
-                item_text = str(item)
-            if item_text:
-                html += f"<li>{item_text}</li>"
-        html += "</ul>"
-        return html
+    # Display the ultimate PRD
+    st.markdown(generate_ultimate_prd(prd_dict, st.session_state.context), unsafe_allow_html=True)
 
-    # --- Start of the updated PRD HTML section ---
-    
-    # Render Hypotheses (only the selected one)
-    hypotheses_html = ""
-    selected_index = st.session_state.get("selected_index")
-    if selected_index is not None and len(prd_dict["hypotheses"]) > selected_index:
-        selected_hypo = prd_dict["hypotheses"][selected_index]
-        hypotheses_html = f"""
-        <ol>
-            <li>
-                <p class="hypothesis-title">{selected_hypo.get('hypothesis', 'Hypothesis not available.')}</p>
-                <p class="rationale"><i>Rationale:</i> {selected_hypo.get('rationale', '')}</p>
-                <p class="example"><i>Example:</i> {selected_hypo.get('example_implementation', '')}</p>
-            </li>
-        </ol>
-        """
-    else:
-        hypotheses_html = "<p>No hypothesis selected for the final PRD.</p>"
-
-    # Render Risks
-    risks_html = "<ul>"
-    for r in prd_dict.get("risks_and_assumptions", []):
-        severity_class = r.get('severity', 'Medium').lower()
-        risks_html += f"""
-        <li>
-            <p>Potential risk: {r.get('risk', '')} <span class="severity {severity_class}">(Severity: {r.get('severity', 'Medium')})</span></p>
-            <p>Mitigation: {r.get('mitigation', 'To be determined')}</p>
-        </li>
-        """
-    risks_html += "</ul>"
-
-    # Render Metric Calculations
-    stats_html = ""
-    stats = st.session_state.get("locked_stats")
-    if stats:
-        stats_html = f"""
-        <div class="prd-section">
-            <div class="prd-section-title">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25m0-1.5h1.5a2.25 2.25 0 012.25 2.25V21m0 0l-3-3m3 3l3-3m-3 3v-3.75m-4.5-5.25H7.5m3-2.25H12m-3 5.25h.375M12 10.5h.375M12 10.5v3.75m9-8.25H15M3.75 9h16.5" />
-                </svg>
-                <h2>Experiment Calculations</h2>
-            </div>
-            <ul class="stats-list">
-                <li>Confidence Level: {stats.get('confidence_level', 'N/A')}%</li>
-                <li>Statistical Power: {stats.get('statistical_power', 'N/A')}%</li>
-                <li>Minimum Detectable Effect (MDE): {stats.get('mde', 'N/A')}%</li>
-                <li>Users per Variant: {stats.get('users_per_variant', 'N/A'):,}</li>
-                <li>Total Sample Size: {stats.get('total_sample_size', 'N/A'):,}</li>
-                <li>Estimated Test Duration: {f"{stats.get('estimated_test_duration_days', 'N/A'):,.0f} days" if isinstance(stats.get('estimated_test_duration_days'), (int, float)) else stats.get('estimated_test_duration_days', 'N/A')}</li>
-            </ul>
-        </div>
-        """
-    
-    # Combine all sections into the final PRD HTML
-    prd_html = f"""
-    <div class="prd-card">
-        <div class="prd-header">
-            <div class="logo-wrapper">A/B</div>
-            <div class="header-text">
-                <h1>Experiment PRD</h1>
-                <p>{prd_dict.get('goal', '')}</p>
-            </div>
-        </div>
-
-        <div class="prd-section">
-            <div class="prd-section-title">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 01-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 013.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 013.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 01-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.455L14.25 6l1.035-.259a3.375 3.375 0 002.455-2.455L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.455L21.75 6l-1.035.259a3.375 3.375 0 00-2.455 2.455zM19.5 17.25l-1.5.75L18 17.25m-1.5-.75l1.5.75V17.25l-1.5-.75L18 17.25z" />
-                </svg>
-                <h2>Problem Statement</h2>
-            </div>
-            <div class="prd-section-content problem-statement">{prd_dict.get('problem_statement', 'No problem statement provided.')}</div>
-        </div>
-
-        <div class="prd-section">
-            <div class="prd-section-title">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.004 4.004 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.005 4.005 0 00-3.7 3.7c-.017.22-.032.44-.046.662M19.5 12l3-3m-3 3l-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.004 4.004 0 003.7 3.7 48.657 48.657 0 007.324 0 4.005 4.005 0 003.7-3.7c.017-.22.032-.44.046-.662M4.5 12l3 3m-3-3l-3 3" />
-                </svg>
-                <h2>Hypothesis</h2>
-            </div>
-            {hypotheses_html}
-        </div>
-
-        {stats_html}
-
-        <div class="prd-section">
-            <div class="prd-section-title">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25m0-1.5h1.5a2.25 2.25 0 012.25 2.25V21m0 0l-3-3m3 3l3-3m-3 3v-3.75m-4.5-5.25H7.5m3-2.25H12m-3 5.25h.375M12 10.5h.375M12 10.5v3.75m9-8.25H15M3.75 9h16.5" />
-                </svg>
-                <h2>Metrics</h2>
-            </div>
-            <ul class="metrics">{render_list(prd_dict.get('metrics', []))}</ul>
-        </div>
-        
-        <div class="prd-section">
-            <div class="prd-section-title">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 12.337L1.5 21.75a3.75 3.75 0 005.303 5.303l1.5-1.5a3.75 3.75 0 005.303-5.303L12 9zM12 15.75h.007V15.75z" />
-                </svg>
-                <h2>Risks & Mitigations</h2>
-            </div>
-            {risks_html}
-        </div>
-
-        <div class="prd-section">
-            <div class="prd-section-title">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-3h6M6 12h12" />
-                </svg>
-                <h2>Next Steps</h2>
-            </div>
-            <ul class="next-steps">{render_list(prd_dict.get('next_steps', []))}</ul>
-        </div>
-
-        <div class="prd-footer">
-            Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}
-        </div>
-    </div>
-    """
-    st.markdown(prd_html, unsafe_allow_html=True)
-
+    # Download buttons
     col_dl1, col_dl2, col_dl3, col_dl4 = st.columns([1,1,1,1])
     with col_dl1:
         st.download_button(
@@ -1206,8 +906,7 @@ if st.session_state.get("ai_parsed"):
         <html>
         <head><meta charset='utf-8'></head>
         <body>
-            <h1>Experiment PRD</h1>
-            <pre>{json.dumps(prd_dict, indent=2)}</pre>
+            {generate_ultimate_prd(prd_dict, st.session_state.context)}
         </body>
         </html>
         """
@@ -1231,8 +930,7 @@ if st.session_state.get("ai_parsed"):
         else:
             st.info("PDF export requires reportlab")
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
+# Debug Section
 st.markdown("<hr>", unsafe_allow_html=True)
 with st.expander("⚙️ Debug & Trace"):
     st.write("Last LLM hash:", st.session_state.get("last_llm_hash"))
