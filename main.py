@@ -905,13 +905,23 @@ if st.session_state.get("ai_parsed"):
         # Build HTML for Risks
         risks_html = ""
         for r in plan.get("risks_and_assumptions", []):
-            if not isinstance(r, dict): continue # Defensive check
-            severity_class = r.get('severity', 'medium').lower()
+            # Ensure the item is a dictionary and contains the expected keys
+            if not isinstance(r, dict):
+                continue
+            
+            risk_text = r.get('risk', 'N/A')
+            severity_text = r.get('severity', 'Medium')
+            mitigation_text = r.get('mitigation', 'N/A')
+
+            # Ensure severity_text is one of the expected values before using it in a class name
+            valid_severities = ['high', 'medium', 'low']
+            severity_class = severity_text.lower() if severity_text and severity_text.lower() in valid_severities else 'medium'
+            
             risks_html += f"""
                 <div class='section-list-item'>
-                    <p><strong>Risk:</strong> {html_sanitize(r.get('risk', ''))}</p>
-                    <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(r.get('severity', ''))}</span></p>
-                    <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', ''))}</p>
+                    <p><strong>Risk:</strong> {html_sanitize(risk_text)}</p>
+                    <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(severity_text)}</span></p>
+                    <p><strong>Mitigation:</strong> {html_sanitize(mitigation_text)}</p>
                 </div>
             """
         
