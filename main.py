@@ -293,29 +293,38 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     
     add_section_header("2. Hypotheses")
     for idx, h in enumerate(prd.get("hypotheses", [])):
-        if isinstance(h, dict):  # ADDED DEFENSIVE CHECK
-            story.append(Paragraph(f"<b>Hypothesis {idx + 1}:</b> {pdf_sanitize(h.get('hypothesis', ''))}", styles["BodyTextCustom"]))
-            story.append(Paragraph(f"<b>Rationale:</b> {pdf_sanitize(h.get('rationale', ''))}", styles["BodyTextCustom"]))
-            story.append(Paragraph(f"<b>Example Implementation:</b> {pdf_sanitize(h.get('example_implementation', ''))}", styles["BodyTextCustom"]))
-            story.append(Paragraph(f"<b>Behavioral Basis:</b> {pdf_sanitize(h.get('behavioral_basis', ''))}", styles["BodyTextCustom"]))
-            story.append(Spacer(1, 10))
+        try: # NEW: ROBUST ERROR HANDLING
+            if h and isinstance(h, dict):
+                story.append(Paragraph(f"<b>Hypothesis {idx + 1}:</b> {pdf_sanitize(h.get('hypothesis', ''))}", styles["BodyTextCustom"]))
+                story.append(Paragraph(f"<b>Rationale:</b> {pdf_sanitize(h.get('rationale', ''))}", styles["BodyTextCustom"]))
+                story.append(Paragraph(f"<b>Example Implementation:</b> {pdf_sanitize(h.get('example_implementation', ''))}", styles["BodyTextCustom"]))
+                story.append(Paragraph(f"<b>Behavioral Basis:</b> {pdf_sanitize(h.get('behavioral_basis', ''))}", styles["BodyTextCustom"]))
+                story.append(Spacer(1, 10))
+        except Exception:
+            pass # Skips malformed items
     
     add_section_header("3. Variants")
     for v in prd.get("variants", []):
-        if isinstance(v, dict):  # ADDED DEFENSIVE CHECK
-            story.append(Paragraph(f"<b>Control:</b> {pdf_sanitize(v.get('control', ''))}", styles["BodyTextCustom"]))
-            story.append(Paragraph(f"<b>Variation:</b> {pdf_sanitize(v.get('variation', ''))}", styles["BodyTextCustom"]))
-            story.append(Spacer(1, 10))
+        try: # NEW: ROBUST ERROR HANDLING
+            if v and isinstance(v, dict):
+                story.append(Paragraph(f"<b>Control:</b> {pdf_sanitize(v.get('control', ''))}", styles["BodyTextCustom"]))
+                story.append(Paragraph(f"<b>Variation:</b> {pdf_sanitize(v.get('variation', ''))}", styles["BodyTextCustom"]))
+                story.append(Spacer(1, 10))
+        except Exception:
+            pass # Skips malformed items
     
     add_section_header("4. Metrics")
     metrics_data = [['Name', 'Formula', 'Importance']]
     for m in prd.get("metrics", []):
-        if isinstance(m, dict):  # ADDED DEFENSIVE CHECK
-            metrics_data.append([
-                pdf_sanitize(m.get('name', '')),
-                pdf_sanitize(m.get('formula', '')),
-                pdf_sanitize(m.get('importance', ''))
-            ])
+        try: # NEW: ROBUST ERROR HANDLING
+            if m and isinstance(m, dict):
+                metrics_data.append([
+                    pdf_sanitize(m.get('name', '')),
+                    pdf_sanitize(m.get('formula', '')),
+                    pdf_sanitize(m.get('importance', ''))
+                ])
+        except Exception:
+            pass # Skips malformed items
     if len(metrics_data) > 1:
         table_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f0f0f0')),
@@ -335,7 +344,6 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         story.append(Paragraph("No metrics defined.", styles["BodyTextCustom"]))
         
     add_section_header("5. Success Criteria & Statistical Rationale")
-    # FIX: Safely retrieve the 'success_criteria' dictionary.
     criteria = prd.get("success_criteria", {})
     story.append(Paragraph(f"<b>Confidence Level:</b> {criteria.get('confidence_level', '')}%", styles["BodyTextCustom"]))
     story.append(Paragraph(f"<b>Minimum Detectable Effect (MDE):</b> {criteria.get('MDE', '')}%", styles["BodyTextCustom"]))
@@ -357,12 +365,15 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     add_section_header("6. Risks and Assumptions")
     risks_data = [['Risk', 'Severity', 'Mitigation']]
     for r in prd.get("risks_and_assumptions", []):
-        if isinstance(r, dict):  # ADDED DEFENSIVE CHECK
-            risks_data.append([
-                pdf_sanitize(r.get('risk', '')),
-                pdf_sanitize(r.get('severity', '')),
-                pdf_sanitize(r.get('mitigation', ''))
-            ])
+        try: # NEW: ROBUST ERROR HANDLING
+            if r and isinstance(r, dict):
+                risks_data.append([
+                    pdf_sanitize(r.get('risk', '')),
+                    pdf_sanitize(r.get('severity', '')),
+                    pdf_sanitize(r.get('mitigation', ''))
+                ])
+        except Exception:
+            pass # Skips malformed items
     if len(risks_data) > 1:
         risks_table = Table(risks_data, colWidths=[2.5*inch, 1*inch, 3*inch])
         risks_table.setStyle(table_style)
@@ -373,7 +384,11 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     add_section_header("7. Next Steps")
     next_steps_data = [['Action']]
     for step in prd.get("next_steps", []):
-        next_steps_data.append([pdf_sanitize(step)])
+        try: # NEW: ROBUST ERROR HANDLING
+            if step and isinstance(step, str):
+                next_steps_data.append([pdf_sanitize(step)])
+        except Exception:
+            pass # Skips malformed items
     if len(next_steps_data) > 1:
         next_steps_table = Table(next_steps_data, colWidths=[6.5*inch])
         next_steps_table.setStyle(table_style)
