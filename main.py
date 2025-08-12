@@ -602,6 +602,7 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
     create_header_with_help("Generate Experiment Plan", "When ready, click Generate to call the LLM and create a plan.", icon="🧠")
     sanitized_metric_name = sanitize_text(exact_metric)
     
+    # --- FIX: Move this calculation outside the button block so the MDE input always has a value ---
     try:
         if current_value is not None and current_value != 0:
             expected_lift_val = round(((target_value - current_value) / current_value) * 100, 2)
@@ -756,19 +757,29 @@ if st.session_state.get("ai_parsed"):
         # --- A/B Test Calculator Section ---
         with st.expander("🔢 A/B Test Calculator: Fine-tune sample size", expanded=True):
             plan = st.session_state.ai_parsed
-            calc_mde = st.session_state.get("calc_mde", plan.get("success_criteria", {}).get("MDE", 5.0))
+            
+            # --- FIX: Set the initial value correctly based on the state ---
+            if plan is not None and plan.get("success_criteria", {}).get("MDE") is not None:
+                # Use the MDE from the AI-generated plan if available
+                calc_mde_initial = plan["success_criteria"]["MDE"]
+            else:
+                # Use the MDE calculated from the user inputs as the default
+                calc_mde_initial = mde_default
+
+            calc_mde = st.session_state.get("calc_mde", calc_mde_initial)
             calc_conf = st.session_state.get("calc_confidence", plan.get("success_criteria", {}).get("confidence_level", 95))
             calc_power = st.session_state.get("calc_power", 80)
             calc_variants = st.session_state.get("calc_variants", 2)
             
             col1, col2 = st.columns(2)
             with col1:
+                # Ensure the value is never below the min_value of 0.1
                 calc_mde = st.number_input("Minimum Detectable Effect (MDE) %", min_value=0.1, max_value=50.0, value=float(max(0.1, float(calc_mde))), step=0.1, key="calc_mde_key")
-                # --- FIX: Ensure value is never below the min_value of 80 ---
+                # Ensure value is never below the min_value of 80
                 calc_conf = st.number_input("Confidence Level (%)", 
                                             min_value=80, 
                                             max_value=99, 
-                                            value=int(max(80, int(calc_conf))), # <-- The fix is here
+                                            value=int(max(80, int(calc_conf))),
                                             step=1, 
                                             key="calc_conf_key")
             with col2:
