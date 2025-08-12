@@ -1085,7 +1085,7 @@ if st.session_state.get("ai_parsed"):
                 if st.form_submit_button("Save Changes"):
                     st.session_state.ai_parsed = edited_plan
                     st.success("Plan updated successfully!")
-                    st.experimental_rerun()
+                    st.rerun()
                 
             st.markdown("<hr>", unsafe_allow_html=True)
             col_export_final = st.columns([1])
