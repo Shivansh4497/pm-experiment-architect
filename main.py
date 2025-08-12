@@ -612,7 +612,6 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
     create_header_with_help("Generate Experiment Plan", "When ready, click Generate to call the LLM and create a plan.", icon="🧠")
     sanitized_metric_name = sanitize_text(exact_metric)
     
-    # --- FIX: Move this calculation outside the button block so the MDE input always has a value ---
     try:
         if current_value is not None and current_value != 0:
             expected_lift_val = round(((target_value - current_value) / current_value) * 100, 2)
@@ -624,7 +623,6 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
         expected_lift_val = 0.0
         mde_default = 5.0
 
-    # Ensure the default MDE value is never below the min_value of 0.1 for the number_input widget
     mde_default = max(mde_default, 0.1)
 
     formatted_current = format_value_with_unit(current_value, metric_unit) if sanitized_metric_name and current_value is not None else ""
@@ -780,9 +778,7 @@ if st.session_state.get("ai_parsed"):
             
             col1, col2 = st.columns(2)
             with col1:
-                # Ensure the value is never below the min_value of 0.1
                 calc_mde = st.number_input("Minimum Detectable Effect (MDE) %", min_value=0.1, max_value=50.0, value=float(max(0.1, float(calc_mde))), step=0.1, key="calc_mde_key")
-                # Ensure value is never below the min_value of 80
                 calc_conf = st.number_input("Confidence Level (%)", 
                                             min_value=80, 
                                             max_value=99, 
@@ -886,21 +882,24 @@ if st.session_state.get("ai_parsed"):
         total_sample_size = st.session_state.get('calculated_total_sample_size')
         duration_days = st.session_state.get('calculated_duration_days')
 
-        stats_html = f"""
+        # This section has been corrected for the syntax error
+        stats_html_parts = []
+        stats_html_parts.append(f"""
             <div class='section-list-item'>
                 <p><strong>Confidence:</strong> {criteria.get('confidence_level', '')}%</p>
                 <p><strong>MDE:</strong> {criteria.get('MDE', '')}%</p>
                 <p><strong>Statistical Rationale:</strong> {html_sanitize(plan.get('statistical_rationale', 'No rationale provided.'))}</p>
-        """
+            """)
 
         if sample_size_per_variant is not None:
-            stats_html += f"<p><strong>Sample Size per Variant:</strong> {sample_size_per_variant:,}</p>"
+            stats_html_parts.append(f"<p><strong>Sample Size per Variant:</strong> {sample_size_per_variant:,}</p>")
         if total_sample_size is not None:
-            stats_html += f"<p><strong>Total Sample Size:</strong> {total_sample_size:,}</p>"
+            stats_html_parts.append(f"<p><strong>Total Sample Size:</strong> {total_sample_size:,}</p>")
         if duration_days is not None:
-            stats_html += f"<p><strong>Estimated Duration:</strong> {round(duration_days, 1)} days</p>"
-
-        stats_html += "</div>" # This is the missing closing div
+            stats_html_parts.append(f"<p><strong>Estimated Duration:</strong> {round(duration_days, 1)} days</p>")
+        
+        stats_html_parts.append("</div>") # Close the div
+        stats_html = "".join(stats_html_parts)
 
         # Build HTML for Risks
         risks_html = ""
@@ -1042,11 +1041,10 @@ if st.session_state.get("ai_parsed"):
                         edited_plan['metrics'][i]['name'] = st.text_input("Name", value=m.get('name', ''), key=f"edit_metric_name_{i}")
                         edited_plan['metrics'][i]['formula'] = st.text_input("Formula", value=m.get('formula', ''), key=f"edit_metric_formula_{i}")
                         
-                        # --- FIX: New, more robust logic for handling the 'importance' value ---
                         options = ["Primary", "Secondary", "Guardrail"]
                         importance_value = m.get('importance', 'Primary')
                         if importance_value not in options:
-                            importance_value = "Primary" # Fallback to a safe default
+                            importance_value = "Primary"
                         
                         edited_plan['metrics'][i]['importance'] = st.selectbox("Importance", options=options, index=options.index(importance_value), key=f"edit_metric_imp_{i}")
                         
@@ -1085,7 +1083,7 @@ if st.session_state.get("ai_parsed"):
                 if st.form_submit_button("Save Changes"):
                     st.session_state.ai_parsed = edited_plan
                     st.success("Plan updated successfully!")
-                    st.rerun()
+                    st.rerun() # Use st.rerun() instead of the deprecated st.experimental_rerun()
                 
             st.markdown("<hr>", unsafe_allow_html=True)
             col_export_final = st.columns([1])
