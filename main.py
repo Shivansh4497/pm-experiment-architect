@@ -64,6 +64,13 @@ def html_sanitize(text: Any) -> str:
     text = text.replace("'", "&apos;")
     return text
 
+def strip_html_tags(text: Any) -> str:
+    """Removes HTML tags from a string."""
+    if not isinstance(text, str):
+        return str(text)
+    clean_text = re.sub(r'<[^>]+>', '', text)
+    return clean_text
+
 def generate_problem_statement(plan: Dict, current: float, target: float, unit: str) -> str:
     base = plan.get("problem_statement", "")
     if not base.strip():
@@ -259,7 +266,7 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
             if effect_size == 0:
                 return None, None
             analysis = TTestIndPower()
-            sample_size_per_variant = analysis.solve_power(effect_size=effect_size, alpha=alpha, power=power, alternative="two-sided")
+            sample_size_per_variant = analysis.solve_power(effect_size=effect_size, alpha=alpha, power=power, ratio=1.0, alternative="two-sided")
         else:
             return None, None
         if sample_size_per_variant is None or sample_size_per_variant <= 0 or not np.isfinite(sample_size_per_variant):
@@ -906,12 +913,17 @@ if st.session_state.get("ai_parsed"):
         risks_html = ""
         for r in plan.get("risks_and_assumptions", []):
             if not isinstance(r, dict): continue # Defensive check
-            severity_class = r.get('severity', 'medium').lower()
+            # FIX: Apply strip_html_tags before sanitizing for display
+            risk_text = html_sanitize(strip_html_tags(r.get('risk', '')))
+            severity_text = html_sanitize(strip_html_tags(r.get('severity', '')))
+            mitigation_text = html_sanitize(strip_html_tags(r.get('mitigation', '')))
+
+            severity_class = severity_text.lower()
             risks_html += f"""
                 <div class='section-list-item'>
-                    <p><strong>Risk:</strong> {html_sanitize(r.get('risk', ''))}</p>
-                    <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(r.get('severity', ''))}</span></p>
-                    <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', ''))}</p>
+                    <p><strong>Risk:</strong> {risk_text}</p>
+                    <p><strong>Severity:</strong> <span class='severity {severity_class}'>{severity_text}</span></p>
+                    <p><strong>Mitigation:</strong> {mitigation_text}</p>
                 </div>
             """
         
