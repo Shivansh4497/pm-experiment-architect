@@ -293,38 +293,29 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     
     add_section_header("2. Hypotheses")
     for idx, h in enumerate(prd.get("hypotheses", [])):
-        try: # NEW: ROBUST ERROR HANDLING
-            if h and isinstance(h, dict):
-                story.append(Paragraph(f"<b>Hypothesis {idx + 1}:</b> {pdf_sanitize(h.get('hypothesis', ''))}", styles["BodyTextCustom"]))
-                story.append(Paragraph(f"<b>Rationale:</b> {pdf_sanitize(h.get('rationale', ''))}", styles["BodyTextCustom"]))
-                story.append(Paragraph(f"<b>Example Implementation:</b> {pdf_sanitize(h.get('example_implementation', ''))}", styles["BodyTextCustom"]))
-                story.append(Paragraph(f"<b>Behavioral Basis:</b> {pdf_sanitize(h.get('behavioral_basis', ''))}", styles["BodyTextCustom"]))
-                story.append(Spacer(1, 10))
-        except Exception:
-            pass # Skips malformed items
+        if not isinstance(h, dict): continue # Defensive check
+        story.append(Paragraph(f"<b>Hypothesis {idx + 1}:</b> {pdf_sanitize(h.get('hypothesis', ''))}", styles["BodyTextCustom"]))
+        story.append(Paragraph(f"<b>Rationale:</b> {pdf_sanitize(h.get('rationale', ''))}", styles["BodyTextCustom"]))
+        story.append(Paragraph(f"<b>Example Implementation:</b> {pdf_sanitize(h.get('example_implementation', ''))}", styles["BodyTextCustom"]))
+        story.append(Paragraph(f"<b>Behavioral Basis:</b> {pdf_sanitize(h.get('behavioral_basis', ''))}", styles["BodyTextCustom"]))
+        story.append(Spacer(1, 10))
     
     add_section_header("3. Variants")
     for v in prd.get("variants", []):
-        try: # NEW: ROBUST ERROR HANDLING
-            if v and isinstance(v, dict):
-                story.append(Paragraph(f"<b>Control:</b> {pdf_sanitize(v.get('control', ''))}", styles["BodyTextCustom"]))
-                story.append(Paragraph(f"<b>Variation:</b> {pdf_sanitize(v.get('variation', ''))}", styles["BodyTextCustom"]))
-                story.append(Spacer(1, 10))
-        except Exception:
-            pass # Skips malformed items
+        if not isinstance(v, dict): continue # Defensive check
+        story.append(Paragraph(f"<b>Control:</b> {pdf_sanitize(v.get('control', ''))}", styles["BodyTextCustom"]))
+        story.append(Paragraph(f"<b>Variation:</b> {pdf_sanitize(v.get('variation', ''))}", styles["BodyTextCustom"]))
+        story.append(Spacer(1, 10))
     
     add_section_header("4. Metrics")
     metrics_data = [['Name', 'Formula', 'Importance']]
     for m in prd.get("metrics", []):
-        try: # NEW: ROBUST ERROR HANDLING
-            if m and isinstance(m, dict):
-                metrics_data.append([
-                    pdf_sanitize(m.get('name', '')),
-                    pdf_sanitize(m.get('formula', '')),
-                    pdf_sanitize(m.get('importance', ''))
-                ])
-        except Exception:
-            pass # Skips malformed items
+        if not isinstance(m, dict): continue # Defensive check
+        metrics_data.append([
+            pdf_sanitize(m.get('name', '')),
+            pdf_sanitize(m.get('formula', '')),
+            pdf_sanitize(m.get('importance', ''))
+        ])
     if len(metrics_data) > 1:
         table_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f0f0f0')),
@@ -365,15 +356,12 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     add_section_header("6. Risks and Assumptions")
     risks_data = [['Risk', 'Severity', 'Mitigation']]
     for r in prd.get("risks_and_assumptions", []):
-        try: # NEW: ROBUST ERROR HANDLING
-            if r and isinstance(r, dict):
-                risks_data.append([
-                    pdf_sanitize(r.get('risk', '')),
-                    pdf_sanitize(r.get('severity', '')),
-                    pdf_sanitize(r.get('mitigation', ''))
-                ])
-        except Exception:
-            pass # Skips malformed items
+        if not isinstance(r, dict): continue # Defensive check
+        risks_data.append([
+            pdf_sanitize(r.get('risk', '')),
+            pdf_sanitize(r.get('severity', '')),
+            pdf_sanitize(r.get('mitigation', ''))
+        ])
     if len(risks_data) > 1:
         risks_table = Table(risks_data, colWidths=[2.5*inch, 1*inch, 3*inch])
         risks_table.setStyle(table_style)
@@ -384,11 +372,8 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     add_section_header("7. Next Steps")
     next_steps_data = [['Action']]
     for step in prd.get("next_steps", []):
-        try: # NEW: ROBUST ERROR HANDLING
-            if step and isinstance(step, str):
-                next_steps_data.append([pdf_sanitize(step)])
-        except Exception:
-            pass # Skips malformed items
+        if not isinstance(step, str): continue # Defensive check
+        next_steps_data.append([pdf_sanitize(step)])
     if len(next_steps_data) > 1:
         next_steps_table = Table(next_steps_data, colWidths=[6.5*inch])
         next_steps_table.setStyle(table_style)
@@ -861,38 +846,38 @@ if st.session_state.get("ai_parsed"):
         # Build HTML for Hypotheses
         hypotheses_html = ""
         for h in plan.get("hypotheses", []):
-            if isinstance(h, dict):
-                hypotheses_html += f"""
-                    <div class='section-list-item'>
-                        <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
-                        <p class='rationale'><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
-                        <p class='example'><strong>Example:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
-                        <p class='behavioral-basis'><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
-                    </div>
-                """
+            if not isinstance(h, dict): continue # Defensive check
+            hypotheses_html += f"""
+                <div class='section-list-item'>
+                    <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
+                    <p class='rationale'><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
+                    <p class='example'><strong>Example:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
+                    <p class='behavioral-basis'><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
+                </div>
+            """
 
         # Build HTML for Variants
         variants_html = ""
         for v in plan.get("variants", []):
-            if isinstance(v, dict):
-                variants_html += f"""
-                    <div class='section-list-item'>
-                        <p><strong>Control:</strong> {html_sanitize(v.get('control', ''))}</p>
-                        <p><strong>Variation:</strong> {html_sanitize(v.get('variation', ''))}</p>
-                    </div>
-                """
+            if not isinstance(v, dict): continue # Defensive check
+            variants_html += f"""
+                <div class='section-list-item'>
+                    <p><strong>Control:</strong> {html_sanitize(v.get('control', ''))}</p>
+                    <p><strong>Variation:</strong> {html_sanitize(v.get('variation', ''))}</p>
+                </div>
+            """
 
         # Build HTML for Metrics
         metrics_html = ""
         for m in plan.get("metrics", []):
-            if isinstance(m, dict):
-                metrics_html += f"""
-                    <div class='section-list-item'>
-                        <p><strong>Name:</strong> {html_sanitize(m.get('name', ''))}</p>
-                        <p><strong>Formula:</strong> <code class='formula-code'>{html_sanitize(m.get('formula', ''))}</code></p>
-                        <p><strong>Importance:</strong> <span class='importance'>{html_sanitize(m.get('importance', ''))}</span></p>
-                    </div>
-                """
+            if not isinstance(m, dict): continue # Defensive check
+            metrics_html += f"""
+                <div class='section-list-item'>
+                    <p><strong>Name:</strong> {html_sanitize(m.get('name', ''))}</p>
+                    <p><strong>Formula:</strong> <code class='formula-code'>{html_sanitize(m.get('formula', ''))}</code></p>
+                    <p><strong>Importance:</strong> <span class='importance'>{html_sanitize(m.get('importance', ''))}</span></p>
+                </div>
+            """
         
         # Build HTML for Success Criteria
         criteria = plan.get('success_criteria', {})
@@ -921,19 +906,20 @@ if st.session_state.get("ai_parsed"):
         # Build HTML for Risks
         risks_html = ""
         for r in plan.get("risks_and_assumptions", []):
-            if isinstance(r, dict):
-                severity_class = r.get('severity', 'medium').lower()
-                risks_html += f"""
-                    <div class='section-list-item'>
-                        <p><strong>Risk:</strong> {html_sanitize(r.get('risk', ''))}</p>
-                        <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(r.get('severity', ''))}</span></p>
-                        <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', ''))}</p>
-                    </div>
-                """
+            if not isinstance(r, dict): continue # Defensive check
+            severity_class = r.get('severity', 'medium').lower()
+            risks_html += f"""
+                <div class='section-list-item'>
+                    <p><strong>Risk:</strong> {html_sanitize(r.get('risk', ''))}</p>
+                    <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(r.get('severity', ''))}</span></p>
+                    <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', ''))}</p>
+                </div>
+            """
         
         # Build HTML for Next Steps
         next_steps_html = ""
         for step in plan.get("next_steps", []):
+            if not isinstance(step, str): continue # Defensive check
             next_steps_html += f"<div class='section-list-item'><p>{html_sanitize(step)}</p></div>"
 
 
@@ -1012,6 +998,7 @@ if st.session_state.get("ai_parsed"):
                 st.subheader("2. Hypotheses")
                 if 'hypotheses' not in edited_plan: edited_plan['hypotheses'] = []
                 for i, h in enumerate(edited_plan.get("hypotheses", [])):
+                    if not isinstance(h, dict): continue # Defensive check
                     with st.expander(f"Hypothesis {i+1}", expanded=True):
                         edited_plan['hypotheses'][i]['hypothesis'] = st.text_input("Hypothesis", value=h.get('hypothesis', ''), key=f"edit_hyp_{i}")
                         edited_plan['hypotheses'][i]['rationale'] = st.text_area("Rationale", value=h.get('rationale', ''), key=f"edit_rat_{i}", height=50)
@@ -1028,6 +1015,7 @@ if st.session_state.get("ai_parsed"):
                 st.subheader("3. Variants")
                 if 'variants' not in edited_plan: edited_plan['variants'] = []
                 for i, v in enumerate(edited_plan.get('variants', [])):
+                    if not isinstance(v, dict): continue # Defensive check
                     with st.expander(f"Variant {i+1}", expanded=True):
                         edited_plan['variants'][i]['control'] = st.text_input("Control", value=v.get('control', ''), key=f'edit_control_{i}')
                         edited_plan['variants'][i]['variation'] = st.text_input("Variation", value=v.get('variation', ''), key=f'edit_variation_{i}')
@@ -1042,6 +1030,7 @@ if st.session_state.get("ai_parsed"):
                 st.subheader("4. Metrics")
                 if 'metrics' not in edited_plan: edited_plan['metrics'] = []
                 for i, m in enumerate(edited_plan.get("metrics", [])):
+                    if not isinstance(m, dict): continue # Defensive check
                     with st.expander(f"Metric {i+1}", expanded=True):
                         edited_plan['metrics'][i]['name'] = st.text_input("Name", value=m.get('name', ''), key=f"edit_metric_name_{i}")
                         edited_plan['metrics'][i]['formula'] = st.text_input("Formula", value=m.get('formula', ''), key=f"edit_metric_formula_{i}")
@@ -1065,6 +1054,7 @@ if st.session_state.get("ai_parsed"):
                 st.subheader("6. Risks and Assumptions")
                 if 'risks_and_assumptions' not in edited_plan: edited_plan['risks_and_assumptions'] = []
                 for i, r in enumerate(edited_plan.get("risks_and_assumptions", [])):
+                    if not isinstance(r, dict): continue # Defensive check
                     with st.expander(f"Risk {i+1}", expanded=True):
                         edited_plan['risks_and_assumptions'][i]['risk'] = st.text_input("Risk", value=r.get('risk', ''), key=f"edit_risk_{i}")
                         edited_plan['risks_and_assumptions'][i]['severity'] = st.selectbox("Severity", options=["High", "Medium", "Low"], index=["High", "Medium", "Low"].index(r.get('severity', 'Medium')), key=f"edit_risk_sev_{i}")
