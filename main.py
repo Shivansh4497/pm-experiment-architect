@@ -765,9 +765,6 @@ if st.session_state.get("ai_parsed"):
         st.subheader("Step 3: Refine the Full Plan")
         st.info("Your experiment plan is ready! Now you can edit any of the sections, starting with the A/B test calculator.")
 
-        if not st.session_state.temp_plan_edit:
-            st.session_state.temp_plan_edit = st.session_state.ai_parsed.copy()
-        
         # --- A/B Test Calculator Section ---
         with st.expander("🔢 A/B Test Calculator: Fine-tune sample size", expanded=True):
             plan = st.session_state.ai_parsed
@@ -990,8 +987,16 @@ if st.session_state.get("ai_parsed"):
         
         with st.expander("✏️ Edit Experiment Plan", expanded=False):
             st.header("Edit Plan")
-            edited_plan = st.session_state.temp_plan_edit
+
+            # --- This is the key fix ---
+            # Ensure the temp dictionary is populated with the main plan data
+            # every time this expander is opened, but only if it's not already
+            # populated.
+            if not st.session_state.get("temp_plan_edit"):
+                st.session_state.temp_plan_edit = st.session_state.ai_parsed.copy()
             
+            edited_plan = st.session_state.temp_plan_edit
+
             with st.form(key='edit_form'):
                 st.subheader("1. Problem Statement")
                 edited_plan['problem_statement'] = st.text_area("Problem Statement", value=edited_plan.get('problem_statement', ''), height=100)
