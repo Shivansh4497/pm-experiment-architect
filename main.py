@@ -13,7 +13,7 @@ import hashlib
 from datetime import datetime
 from io import BytesIO
 import ast
-from streamlit_modal import Modal
+# Removed: from streamlit_modal import Modal
 
 # PDF Export Setup
 REPORTLAB_AVAILABLE = False
@@ -553,7 +553,6 @@ if "calculated_total_sample_size" not in st.session_state:
 if "calculated_duration_days" not in st.session_state:
     st.session_state.calculated_duration_days = None
 
-
 st.title("💡 A/B Test Architect — AI-assisted experiment PRD generator")
 st.markdown("Create experiment PRDs, hypotheses, stats, and sample-size guidance — faster and with guardrails.")
 
@@ -978,25 +977,25 @@ if st.session_state.get("ai_parsed"):
         """
         st.markdown(plan_html, unsafe_allow_html=True)
         
-        col_edit, col_export = st.columns([2, 1])
-        with col_edit:
-            edit_modal = Modal(key="edit_modal", title="Edit Experiment Plan")
-            if st.button("✏️ Edit Plan"):
-                st.session_state.edit_modal_open = True
-                st.session_state.temp_plan_edit = plan.copy()
-                edit_modal.open()
-        
-        if st.session_state.edit_modal_open:
-            with edit_modal.container():
-                st.header("Edit Plan")
-                edited_plan = st.session_state.temp_plan_edit
-                
+        # Replaced the modal with an expander for editing
+        with st.expander("✏️ Edit Experiment Plan", expanded=False):
+            st.header("Edit Plan")
+            edited_plan = st.session_state.ai_parsed
+            
+            # --- Use st.form for atomic submissions ---
+            with st.form(key='edit_form'):
                 st.subheader("1. Problem Statement")
-                edited_plan['problem_statement'] = st.text_area("Problem Statement", value=edited_plan.get('problem_statement', ''), height=100, key="edit_prob_stmt")
+                edited_plan['problem_statement'] = st.text_area("Problem Statement", value=edited_plan.get('problem_statement', ''), height=100)
                 st.markdown("---")
                 
                 st.subheader("2. Hypotheses")
                 if 'hypotheses' not in edited_plan: edited_plan['hypotheses'] = []
+                num_hypotheses = st.number_input("Number of Hypotheses", min_value=0, value=len(edited_plan['hypotheses']), key='num_hyp')
+                
+                # Dynamic list generation
+                if num_hypotheses != len(edited_plan['hypotheses']):
+                    edited_plan['hypotheses'] = edited_plan['hypotheses'][:num_hypotheses] + [{"hypothesis": "New Hypothesis", "rationale": "", "example_implementation": "", "behavioral_basis": ""}] * (num_hypotheses - len(edited_plan['hypotheses']))
+
                 for i, h in enumerate(edited_plan.get("hypotheses", [])):
                     if not isinstance(h, dict): continue # Defensive check
                     with st.expander(f"Hypothesis {i+1}", expanded=True):
@@ -1004,48 +1003,39 @@ if st.session_state.get("ai_parsed"):
                         edited_plan['hypotheses'][i]['rationale'] = st.text_area("Rationale", value=h.get('rationale', ''), key=f"edit_rat_{i}", height=50)
                         edited_plan['hypotheses'][i]['behavioral_basis'] = st.text_input("Behavioral Basis", value=h.get('behavioral_basis', ''), key=f"edit_behav_{i}")
                         edited_plan['hypotheses'][i]['example_implementation'] = st.text_area("Implementation Example", value=h.get('example_implementation', ''), key=f"edit_impl_{i}", height=50)
-                        if st.button(f"Delete Hypothesis {i+1}", key=f"del_hyp_{i}"):
-                            edited_plan['hypotheses'].pop(i)
-                            st.rerun()
-                if st.button("Add New Hypothesis", key="add_hyp"):
-                    edited_plan['hypotheses'].append({"hypothesis": "New Hypothesis", "rationale": "", "example_implementation": "", "behavioral_basis": ""})
-                    st.rerun()
                 st.markdown("---")
                 
                 st.subheader("3. Variants")
                 if 'variants' not in edited_plan: edited_plan['variants'] = []
+                num_variants = st.number_input("Number of Variants", min_value=1, value=len(edited_plan['variants']), key='num_variants')
+                
+                if num_variants != len(edited_plan['variants']):
+                    edited_plan['variants'] = edited_plan['variants'][:num_variants] + [{"control": "", "variation": ""}] * (num_variants - len(edited_plan['variants']))
+
                 for i, v in enumerate(edited_plan.get('variants', [])):
                     if not isinstance(v, dict): continue # Defensive check
                     with st.expander(f"Variant {i+1}", expanded=True):
                         edited_plan['variants'][i]['control'] = st.text_input("Control", value=v.get('control', ''), key=f'edit_control_{i}')
                         edited_plan['variants'][i]['variation'] = st.text_input("Variation", value=v.get('variation', ''), key=f'edit_variation_{i}')
-                        if st.button(f"Delete Variant {i+1}", key=f"del_variant_{i}"):
-                            edited_plan['variants'].pop(i)
-                            st.rerun()
-                if st.button("Add New Variant", key="add_variant"):
-                    edited_plan['variants'].append({"control": "", "variation": ""})
-                    st.rerun()
                 st.markdown("---")
-                
+
                 st.subheader("4. Metrics")
                 if 'metrics' not in edited_plan: edited_plan['metrics'] = []
+                num_metrics = st.number_input("Number of Metrics", min_value=1, value=len(edited_plan['metrics']), key='num_metrics')
+                
+                if num_metrics != len(edited_plan['metrics']):
+                    edited_plan['metrics'] = edited_plan['metrics'][:num_metrics] + [{"name": "", "formula": "", "importance": "Primary"}] * (num_metrics - len(edited_plan['metrics']))
+
                 for i, m in enumerate(edited_plan.get("metrics", [])):
                     if not isinstance(m, dict): continue # Defensive check
                     with st.expander(f"Metric {i+1}", expanded=True):
                         edited_plan['metrics'][i]['name'] = st.text_input("Name", value=m.get('name', ''), key=f"edit_metric_name_{i}")
                         edited_plan['metrics'][i]['formula'] = st.text_input("Formula", value=m.get('formula', ''), key=f"edit_metric_formula_{i}")
                         edited_plan['metrics'][i]['importance'] = st.selectbox("Importance", options=["Primary", "Secondary", "Guardrail"], index=["Primary", "Secondary", "Guardrail"].index(m.get('importance', 'Primary')), key=f"edit_metric_imp_{i}")
-                        if st.button(f"Delete Metric {i+1}", key=f"del_metric_{i}"):
-                            edited_plan['metrics'].pop(i)
-                            st.rerun()
-                if st.button("Add New Metric", key="add_metric"):
-                    edited_plan['metrics'].append({"name": "", "formula": "", "importance": "Primary"})
-                    st.rerun()
                 st.markdown("---")
                 
                 st.subheader("5. Success Criteria & Statistical Rationale")
-                if 'success_criteria' not in edited_plan:
-                    edited_plan['success_criteria'] = {}
+                if 'success_criteria' not in edited_plan: edited_plan['success_criteria'] = {}
                 edited_plan['success_criteria']['confidence_level'] = st.number_input("Confidence Level (%)", value=edited_plan['success_criteria'].get('confidence_level', 95), key="edit_conf")
                 edited_plan['success_criteria']['MDE'] = st.number_input("Minimum Detectable Effect (%)", min_value=0.1, value=edited_plan['success_criteria'].get('MDE', 5.0), key="edit_mde")
                 edited_plan['statistical_rationale'] = st.text_area("Statistical Rationale", value=edited_plan.get('statistical_rationale', ''), key="edit_rationale", height=100)
@@ -1053,52 +1043,43 @@ if st.session_state.get("ai_parsed"):
                 
                 st.subheader("6. Risks and Assumptions")
                 if 'risks_and_assumptions' not in edited_plan: edited_plan['risks_and_assumptions'] = []
+                num_risks = st.number_input("Number of Risks", min_value=0, value=len(edited_plan['risks_and_assumptions']), key='num_risks')
+                
+                if num_risks != len(edited_plan['risks_and_assumptions']):
+                    edited_plan['risks_and_assumptions'] = edited_plan['risks_and_assumptions'][:num_risks] + [{"risk": "", "severity": "Medium", "mitigation": ""}] * (num_risks - len(edited_plan['risks_and_assumptions']))
+
                 for i, r in enumerate(edited_plan.get("risks_and_assumptions", [])):
                     if not isinstance(r, dict): continue # Defensive check
                     with st.expander(f"Risk {i+1}", expanded=True):
                         edited_plan['risks_and_assumptions'][i]['risk'] = st.text_input("Risk", value=r.get('risk', ''), key=f"edit_risk_{i}")
                         edited_plan['risks_and_assumptions'][i]['severity'] = st.selectbox("Severity", options=["High", "Medium", "Low"], index=["High", "Medium", "Low"].index(r.get('severity', 'Medium')), key=f"edit_risk_sev_{i}")
                         edited_plan['risks_and_assumptions'][i]['mitigation'] = st.text_area("Mitigation", value=r.get('mitigation', ''), key=f"edit_risk_mit_{i}", height=50)
-                        if st.button(f"Delete Risk {i+1}", key=f"del_risk_{i}"):
-                            edited_plan['risks_and_assumptions'].pop(i)
-                            st.rerun()
-                if st.button("Add New Risk", key="add_risk"):
-                    edited_plan['risks_and_assumptions'].append({"risk": "", "severity": "Medium", "mitigation": ""})
-                    st.rerun()
                 st.markdown("---")
                 
                 st.subheader("7. Next Steps")
                 if 'next_steps' not in edited_plan: edited_plan['next_steps'] = []
-                next_steps_list = st.session_state.temp_plan_edit.get('next_steps', [])
-                new_next_steps = st.text_area("Next Steps (one per line)", value="\n".join(next_steps_list), height=150, key="edit_next_steps")
+                next_steps_text = "\n".join(edited_plan.get('next_steps', []))
+                new_next_steps = st.text_area("Next Steps (one per line)", value=next_steps_text, height=150)
                 edited_plan['next_steps'] = [step.strip() for step in new_next_steps.split('\n') if step.strip()]
                 
                 st.markdown("---")
                 
-                col_save, col_cancel = st.columns([1, 1])
-                with col_save:
-                    if st.button("Save Changes"):
-                        st.session_state.ai_parsed = edited_plan
-                        st.session_state.edit_modal_open = False
-                        st.success("Plan updated successfully!")
-                        st.rerun()
-                with col_cancel:
-                    if st.button("Cancel"):
-                        st.session_state.edit_modal_open = False
-                        st.warning("Changes were discarded.")
-                        st.rerun()
-
-        with col_export:
-            if REPORTLAB_AVAILABLE:
-                pdf_bytes = generate_pdf_bytes_from_prd_dict(plan, title=f"Experiment PRD: {sanitized_metric_name}")
-                if pdf_bytes:
-                    st.download_button(
-                        label="⬇️ Export to PDF",
-                        data=pdf_bytes,
-                        file_name=f"experiment_prd_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                        mime="application/pdf"
-                    )
-            else:
-                st.warning("PDF export is not available. Please install reportlab (`pip install reportlab`).")
-st.success("This is the new, fixed code.")
-
+                if st.form_submit_button("Save Changes"):
+                    st.session_state.ai_parsed = edited_plan
+                    st.success("Plan updated successfully!")
+                    st.experimental_rerun()
+                
+            st.markdown("<hr>", unsafe_allow_html=True)
+            col_export_final = st.columns([1])
+            with col_export_final[0]:
+                if REPORTLAB_AVAILABLE:
+                    pdf_bytes = generate_pdf_bytes_from_prd_dict(plan, title=f"Experiment PRD: {sanitized_metric_name}")
+                    if pdf_bytes:
+                        st.download_button(
+                            label="⬇️ Export to PDF",
+                            data=pdf_bytes,
+                            file_name=f"experiment_prd_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                            mime="application/pdf"
+                        )
+                else:
+                    st.warning("PDF export is not available. Please install reportlab (`pip install reportlab`).")
