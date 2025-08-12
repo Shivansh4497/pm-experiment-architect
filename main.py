@@ -900,7 +900,7 @@ if st.session_state.get("ai_parsed"):
         if duration_days is not None:
             stats_html += f"<p><strong>Estimated Duration:</strong> {round(duration_days, 1)} days</p>"
 
-        stats_html += "</div>"
+        stats_html += "</div>" # This is the missing closing div
 
         # Build HTML for Risks
         risks_html = ""
