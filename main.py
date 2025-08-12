@@ -1031,7 +1031,15 @@ if st.session_state.get("ai_parsed"):
                     with st.expander(f"Metric {i+1}", expanded=True):
                         edited_plan['metrics'][i]['name'] = st.text_input("Name", value=m.get('name', ''), key=f"edit_metric_name_{i}")
                         edited_plan['metrics'][i]['formula'] = st.text_input("Formula", value=m.get('formula', ''), key=f"edit_metric_formula_{i}")
-                        edited_plan['metrics'][i]['importance'] = st.selectbox("Importance", options=["Primary", "Secondary", "Guardrail"], index=["Primary", "Secondary", "Guardrail"].index(m.get('importance', 'Primary')), key=f"edit_metric_imp_{i}")
+                        
+                        # --- FIX: New, more robust logic for handling the 'importance' value ---
+                        options = ["Primary", "Secondary", "Guardrail"]
+                        importance_value = m.get('importance', 'Primary')
+                        if importance_value not in options:
+                            importance_value = "Primary" # Fallback to a safe default
+                        
+                        edited_plan['metrics'][i]['importance'] = st.selectbox("Importance", options=options, index=options.index(importance_value), key=f"edit_metric_imp_{i}")
+                        
                 st.markdown("---")
                 
                 st.subheader("5. Success Criteria & Statistical Rationale")
