@@ -336,8 +336,8 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         
     add_section_header("5. Success Criteria & Statistical Rationale")
     criteria = prd.get("success_criteria", {})
-    story.append(Paragraph(f"<b>Confidence Level:</b> {criteria.get('confidence_level', '')}%", styles["BodyTextCustom"]))
-    story.append(Paragraph(f"<b>Minimum Detectable Effect (MDE):</b> {criteria.get('MDE', '')}%", styles["BodyTextCustom"]))
+    story.append(Paragraph(f"<b>Confidence Level:</b> {pdf_sanitize(criteria.get('confidence_level', ''))}%", styles["BodyTextCustom"]))
+    story.append(Paragraph(f"<b>Minimum Detectable Effect (MDE):</b> {pdf_sanitize(criteria.get('MDE', ''))}%", styles["BodyTextCustom"]))
     story.append(Paragraph(f"<b>Statistical Rationale:</b> {pdf_sanitize(prd.get('statistical_rationale', ''))}", styles["BodyTextCustom"]))
     story.append(Paragraph(f"<b>Benchmark:</b> {pdf_sanitize(criteria.get('benchmark', ''))}", styles["BodyTextCustom"]))
     story.append(Paragraph(f"<b>Monitoring:</b> {pdf_sanitize(criteria.get('monitoring', ''))}", styles["BodyTextCustom"]))
@@ -1083,7 +1083,7 @@ if st.session_state.get("ai_parsed"):
                 if st.form_submit_button("Save Changes"):
                     st.session_state.ai_parsed = edited_plan
                     st.success("Plan updated successfully!")
-                    st.rerun() # Use st.rerun() instead of the deprecated st.experimental_rerun()
+                    st.rerun() 
                 
             st.markdown("<hr>", unsafe_allow_html=True)
             col_export_final = st.columns([1])
