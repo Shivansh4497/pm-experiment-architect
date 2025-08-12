@@ -176,7 +176,7 @@ def extract_json(text: Any) -> Optional[Dict]:
                         raise ValueError("Extracted JSON with single quotes parsed but was not an object.")
                 except Exception:
                     st.error("Could not parse extracted JSON block. See snippet below.")
-                    st.code(candidate_clean[:3000] + ("..." if len(candidate_clean) > 3000 else ""))
+                    st.code(candidate_clean[:2000] + ("..." if len(candidate_clean) > 2000 else ""))
                     return None
     try:
         converted_full = _safe_single_to_double_quotes(raw)
@@ -189,7 +189,7 @@ def extract_json(text: Any) -> Optional[Dict]:
         pass
     st.error("LLM output could not be parsed as JSON. Please inspect or edit the raw output below.")
     try:
-        st.code(raw[:3000] + ("..." if len(raw) > 3000 else ""))
+        st.code(raw[:2000] + ("..." if len(raw) > 2000 else ""))
     except Exception:
         st.write("LLM output could not be displayed.")
     return None
@@ -335,6 +335,7 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         story.append(Paragraph("No metrics defined.", styles["BodyTextCustom"]))
         
     add_section_header("5. Success Criteria & Statistical Rationale")
+    # FIX: Safely retrieve the 'success_criteria' dictionary.
     criteria = prd.get("success_criteria", {})
     story.append(Paragraph(f"<b>Confidence Level:</b> {criteria.get('confidence_level', '')}%", styles["BodyTextCustom"]))
     story.append(Paragraph(f"<b>Minimum Detectable Effect (MDE):</b> {criteria.get('MDE', '')}%", styles["BodyTextCustom"]))
