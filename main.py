@@ -290,26 +290,32 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     story.append(Paragraph(title, styles["PRDTitle"]))
     add_section_header("1. Problem Statement")
     story.append(Paragraph(pdf_sanitize(prd.get("problem_statement", "")), styles["BodyTextCustom"]))
+    
     add_section_header("2. Hypotheses")
     for idx, h in enumerate(prd.get("hypotheses", [])):
-        story.append(Paragraph(f"<b>Hypothesis {idx + 1}:</b> {pdf_sanitize(h.get('hypothesis', ''))}", styles["BodyTextCustom"]))
-        story.append(Paragraph(f"<b>Rationale:</b> {pdf_sanitize(h.get('rationale', ''))}", styles["BodyTextCustom"]))
-        story.append(Paragraph(f"<b>Example Implementation:</b> {pdf_sanitize(h.get('example_implementation', ''))}", styles["BodyTextCustom"]))
-        story.append(Paragraph(f"<b>Behavioral Basis:</b> {pdf_sanitize(h.get('behavioral_basis', ''))}", styles["BodyTextCustom"]))
-        story.append(Spacer(1, 10))
+        if isinstance(h, dict):  # ADDED DEFENSIVE CHECK
+            story.append(Paragraph(f"<b>Hypothesis {idx + 1}:</b> {pdf_sanitize(h.get('hypothesis', ''))}", styles["BodyTextCustom"]))
+            story.append(Paragraph(f"<b>Rationale:</b> {pdf_sanitize(h.get('rationale', ''))}", styles["BodyTextCustom"]))
+            story.append(Paragraph(f"<b>Example Implementation:</b> {pdf_sanitize(h.get('example_implementation', ''))}", styles["BodyTextCustom"]))
+            story.append(Paragraph(f"<b>Behavioral Basis:</b> {pdf_sanitize(h.get('behavioral_basis', ''))}", styles["BodyTextCustom"]))
+            story.append(Spacer(1, 10))
+    
     add_section_header("3. Variants")
     for v in prd.get("variants", []):
-        story.append(Paragraph(f"<b>Control:</b> {pdf_sanitize(v.get('control', ''))}", styles["BodyTextCustom"]))
-        story.append(Paragraph(f"<b>Variation:</b> {pdf_sanitize(v.get('variation', ''))}", styles["BodyTextCustom"]))
-        story.append(Spacer(1, 10))
+        if isinstance(v, dict):  # ADDED DEFENSIVE CHECK
+            story.append(Paragraph(f"<b>Control:</b> {pdf_sanitize(v.get('control', ''))}", styles["BodyTextCustom"]))
+            story.append(Paragraph(f"<b>Variation:</b> {pdf_sanitize(v.get('variation', ''))}", styles["BodyTextCustom"]))
+            story.append(Spacer(1, 10))
+    
     add_section_header("4. Metrics")
     metrics_data = [['Name', 'Formula', 'Importance']]
     for m in prd.get("metrics", []):
-        metrics_data.append([
-            pdf_sanitize(m.get('name', '')),
-            pdf_sanitize(m.get('formula', '')),
-            pdf_sanitize(m.get('importance', ''))
-        ])
+        if isinstance(m, dict):  # ADDED DEFENSIVE CHECK
+            metrics_data.append([
+                pdf_sanitize(m.get('name', '')),
+                pdf_sanitize(m.get('formula', '')),
+                pdf_sanitize(m.get('importance', ''))
+            ])
     if len(metrics_data) > 1:
         table_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f0f0f0')),
@@ -327,6 +333,7 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         story.append(metrics_table)
     else:
         story.append(Paragraph("No metrics defined.", styles["BodyTextCustom"]))
+        
     add_section_header("5. Success Criteria & Statistical Rationale")
     criteria = prd.get("success_criteria", {})
     story.append(Paragraph(f"<b>Confidence Level:</b> {criteria.get('confidence_level', '')}%", styles["BodyTextCustom"]))
@@ -349,17 +356,19 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     add_section_header("6. Risks and Assumptions")
     risks_data = [['Risk', 'Severity', 'Mitigation']]
     for r in prd.get("risks_and_assumptions", []):
-        risks_data.append([
-            pdf_sanitize(r.get('risk', '')),
-            pdf_sanitize(r.get('severity', '')),
-            pdf_sanitize(r.get('mitigation', ''))
-        ])
+        if isinstance(r, dict):  # ADDED DEFENSIVE CHECK
+            risks_data.append([
+                pdf_sanitize(r.get('risk', '')),
+                pdf_sanitize(r.get('severity', '')),
+                pdf_sanitize(r.get('mitigation', ''))
+            ])
     if len(risks_data) > 1:
         risks_table = Table(risks_data, colWidths=[2.5*inch, 1*inch, 3*inch])
         risks_table.setStyle(table_style)
         story.append(risks_table)
     else:
         story.append(Paragraph("No risks defined.", styles["BodyTextCustom"]))
+        
     add_section_header("7. Next Steps")
     next_steps_data = [['Action']]
     for step in prd.get("next_steps", []):
@@ -370,6 +379,7 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         story.append(next_steps_table)
     else:
         story.append(Paragraph("No next steps defined.", styles["BodyTextCustom"]))
+        
     doc.build(story)
     buffer.seek(0)
     pdf_bytes = buffer.getvalue()
@@ -835,35 +845,38 @@ if st.session_state.get("ai_parsed"):
         # Build HTML for Hypotheses
         hypotheses_html = ""
         for h in plan.get("hypotheses", []):
-            hypotheses_html += f"""
-                <div class='section-list-item'>
-                    <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
-                    <p class='rationale'><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
-                    <p class='example'><strong>Example:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
-                    <p class='behavioral-basis'><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
-                </div>
-            """
+            if isinstance(h, dict):
+                hypotheses_html += f"""
+                    <div class='section-list-item'>
+                        <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
+                        <p class='rationale'><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
+                        <p class='example'><strong>Example:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
+                        <p class='behavioral-basis'><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
+                    </div>
+                """
 
         # Build HTML for Variants
         variants_html = ""
         for v in plan.get("variants", []):
-            variants_html += f"""
-                <div class='section-list-item'>
-                    <p><strong>Control:</strong> {html_sanitize(v.get('control', ''))}</p>
-                    <p><strong>Variation:</strong> {html_sanitize(v.get('variation', ''))}</p>
-                </div>
-            """
+            if isinstance(v, dict):
+                variants_html += f"""
+                    <div class='section-list-item'>
+                        <p><strong>Control:</strong> {html_sanitize(v.get('control', ''))}</p>
+                        <p><strong>Variation:</strong> {html_sanitize(v.get('variation', ''))}</p>
+                    </div>
+                """
 
         # Build HTML for Metrics
         metrics_html = ""
         for m in plan.get("metrics", []):
-            metrics_html += f"""
-                <div class='section-list-item'>
-                    <p><strong>Name:</strong> {html_sanitize(m.get('name', ''))}</p>
-                    <p><strong>Formula:</strong> <code class='formula-code'>{html_sanitize(m.get('formula', ''))}</code></p>
-                    <p><strong>Importance:</strong> <span class='importance'>{html_sanitize(m.get('importance', ''))}</span></p>
-                </div>
-            """
+            if isinstance(m, dict):
+                metrics_html += f"""
+                    <div class='section-list-item'>
+                        <p><strong>Name:</strong> {html_sanitize(m.get('name', ''))}</p>
+                        <p><strong>Formula:</strong> <code class='formula-code'>{html_sanitize(m.get('formula', ''))}</code></p>
+                        <p><strong>Importance:</strong> <span class='importance'>{html_sanitize(m.get('importance', ''))}</span></p>
+                    </div>
+                """
         
         # Build HTML for Success Criteria
         criteria = plan.get('success_criteria', {})
@@ -892,14 +905,15 @@ if st.session_state.get("ai_parsed"):
         # Build HTML for Risks
         risks_html = ""
         for r in plan.get("risks_and_assumptions", []):
-            severity_class = r.get('severity', 'medium').lower()
-            risks_html += f"""
-                <div class='section-list-item'>
-                    <p><strong>Risk:</strong> {html_sanitize(r.get('risk', ''))}</p>
-                    <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(r.get('severity', ''))}</span></p>
-                    <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', ''))}</p>
-                </div>
-            """
+            if isinstance(r, dict):
+                severity_class = r.get('severity', 'medium').lower()
+                risks_html += f"""
+                    <div class='section-list-item'>
+                        <p><strong>Risk:</strong> {html_sanitize(r.get('risk', ''))}</p>
+                        <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(r.get('severity', ''))}</span></p>
+                        <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', ''))}</p>
+                    </div>
+                """
         
         # Build HTML for Next Steps
         next_steps_html = ""
