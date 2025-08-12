@@ -1,11 +1,7 @@
-"""
-Ultimate prompt engine with:
-1. Hyper-contextual responses using all user inputs
-2. Three detailed hypotheses with implementation examples
-3. Professional-grade rigor
-4. Built-in validation layer
-5. Guaranteed complete outputs
-"""
+# prompt_engine.py
+
+# This file contains the prompts and logic for calling the LLM to generate
+# experiment plans and hypothesis details.
 
 import os
 import json
@@ -18,63 +14,64 @@ try:
     GROQ_AVAILABLE = True
 except Exception:
     GROQ_AVAILABLE = False
+    print("Warning: Groq client not available. Please ensure the groq library is installed and the GROQ_API_KEY environment variable is set for full functionality.")
 
 def _build_validation_prompt(prd: Dict[str, Any], context: Dict[str, Any]) -> str:
-    """Create a rigorous validation prompt for the generated PRD"""
-    return f"""
-You are a Principal Product Manager reviewing an experiment plan.
-Perform a quality check with these lenses:
+    """Create a rigorous validation prompt for the generated PRD."""
+    return textwrap.dedent(f"""
+    You are a Principal Product Manager reviewing an experiment plan.
+    Perform a quality check with these lenses:
 
-CONTEXT:
-- Product: {context.get('type', '')} ({context.get('users', '')})
-- Persona: {context.get('user_persona', '')}
-- Metric: {context.get('exact_metric', '')} ({context.get('current_value', '')} → {context.get('target_value', '')})
-- Goal: {context.get('strategic_goal', '')}
+    CONTEXT:
+    - Product: {context.get('type', '')} ({context.get('users', '')})
+    - Persona: {context.get('user_persona', '')}
+    - Metric: {context.get('exact_metric', '')} ({context.get('current_value', '')} → {context.get('target_value', '')})
+    - Goal: {context.get('strategic_goal', '')}
 
-VALIDATION CRITERIA:
-1. Statistical Soundness:
-    - Is MDE {prd.get('success_criteria', {}).get('MDE', '')}% realistic for {context.get('type', '')}?
-    - Does sample size account for novelty effects?
+    VALIDATION CRITERIA:
+    1. Statistical Soundness:
+        - Is MDE {prd.get('success_criteria', {}).get('MDE', '')}% realistic for {context.get('type', '')}?
+        - Does sample size account for novelty effects?
 
-2. Hypothesis Quality (3 required):
-    - Does each hypothesis include:
-      * Clear if-then-because statement
-      * Behavioral science/data reference
-      * Concrete implementation example
-      * Psychological principle
+    2. Hypothesis Quality (3 required):
+        - Does each hypothesis include:
+          * Clear if-then-because statement
+          * Behavioral science/data reference
+          * Concrete implementation example
+          * Psychological principle
 
-3. Completeness:
-    - Are all next steps actionable?
-    - Are risks paired with mitigations?
-    - Is the problem statement metric-driven?
+    3. Completeness:
+        - Are all next steps actionable?
+        - Are risks paired with mitigations?
+        - Is the problem statement metric-driven?
 
-PRD TO REVIEW:
-{json.dumps(prd, indent=2)}
+    PRD TO REVIEW:
+    {json.dumps(prd, indent=2)}
 
-Return JSON with:
-{{
-    "is_valid": boolean,
-    "critical_issues": [str],
-    "suggested_improvements": [str],
-    "pro_tips": [str]
-}}
-"""
+    Return JSON with:
+    {{
+        "is_valid": boolean,
+        "critical_issues": [str],
+        "suggested_improvements": [str],
+        "pro_tips": [str]
+    }}
+    """).strip()
 
 def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
-    """Build the main LLM instruction prompt with maximum context utilization"""
+    """Build the main LLM instruction prompt with maximum context utilization."""
     ctx = {k: ("" if v is None else str(v)) for k, v in context.items()}
     
-    # Custom, personalized introduction using user inputs
     prompt_intro = f"You are a Principal Product Manager at a company working on a {ctx.get('type', 'SaaS')} product. Your primary goal is to address the strategic business objective of '{ctx.get('strategic_goal', 'improving a key metric')}'. The specific challenge is to find an effective way to move a crucial metric: {ctx.get('exact_metric', 'an unspecified metric')} from its current value of {ctx.get('current_value', 'N/A')}{ctx.get('metric_unit', '')} to a target of {ctx.get('target_value', 'N/A')}{ctx.get('metric_unit', '')}."
     
     if ctx.get('user_persona'):
         prompt_intro += f" The experiment should be specifically tailored to the user persona: '{ctx.get('user_persona', '')}'."
     
-    # Combine the new intro with the rest of the prompt
+    # A new line has been added to the prompt to explicitly enforce the complete JSON structure.
+    # This prevents the LLM from omitting sections like "risks_and_assumptions" or "next_steps".
     full_prompt = textwrap.dedent(f"""
     {prompt_intro}
     
-    Your output MUST be a valid JSON object.
+    Your output MUST be a valid JSON object. All keys in the schema below must be present in the final output. If a section has no content, use an empty list or an empty string.
     
     MANDATORY REQUIREMENTS:
     1. For each of 3 hypotheses:
@@ -102,18 +99,18 @@ def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
     - Strategic Goal: {ctx.get('strategic_goal', '')}
     - Metric Type: {ctx.get('metric_type', '')}
     - Data Notes: {ctx.get('notes', '')}
+    - Standard Deviation: {ctx.get('std_dev', 'N/A')}
 
     OUTPUT SCHEMA:
     {{
       "problem_statement": str,
       "hypotheses": [
         {{
-          "hypothesis": str,  # "If we X, then Y because Z"
-          "rationale": str,    # "Baymard Institute shows..."
-          "example_implementation": str,  # "Remove these 2 fields..."
-          "behavioral_basis": str  # "Hick's Law..."
-        }},
-        {{...}}  # 3 total
+          "hypothesis": str,
+          "rationale": str,
+          "example_implementation": str,
+          "behavioral_basis": str
+        }}
       ],
       "variants": [{{"control": str, "variation": str}}],
       "metrics": [{{"name": str, "formula": str, "importance": str}}],
@@ -130,42 +127,12 @@ def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
           "mitigation": str
         }}
       ],
-      "next_steps": [str],  # ["Create mockups by Fri (Design)"]
+      "next_steps": [str],
       "statistical_rationale": str
     }}
 
-    EXAMPLE OUTPUT:
-    {{
-      "problem_statement": "The problem statement goes here, starting with a metric.",
-      "hypotheses": [
-        {{
-          "hypothesis": "If [change] then [outcome] because [rationale]",
-          "rationale": "Data-backed or research-based rationale.",
-          "example_implementation": "Specific changes to the UI or flow.",
-          "behavioral_basis": "A relevant psychological principle."
-        }},
-        {{...}}
-      ],
-      "variants": [
-        {{ "control": "Current design", "variation": "New design" }}
-      ],
-      "metrics": [
-        {{ "name": "Primary Metric", "formula": "Click-through-rate (CTR)", "importance": "Primary" }}
-      ],
-      "success_criteria": {{
-        "confidence_level": 95,
-        "MDE": 3,
-        "benchmark": "Industry average",
-        "monitoring": "Daily via dashboards"
-      }},
-      "risks_and_assumptions": [
-        {{ "risk": "Seasonality", "severity": "Medium", "mitigation": "Run experiment longer" }}
-      ],
-      "next_steps": [
-        "Step 1 (Owner)",
-        "Step 2 (Owner)"
-      ]
-    }}""").strip()
+    Based on the provided context, please generate the JSON output for a complete experiment plan.
+    """).strip()
 
     return full_prompt
 
@@ -187,7 +154,7 @@ def _build_hypothesis_prompt(hypothesis_text: str, context: Dict[str, Any]) -> s
 
     OUTPUT SCHEMA:
     {{
-      "hypothesis": str,  # The original hypothesis text, unchanged
+      "hypothesis": str,
       "rationale": str,
       "example_implementation": str,
       "behavioral_basis": str
