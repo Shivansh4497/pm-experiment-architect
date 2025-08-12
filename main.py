@@ -758,16 +758,13 @@ if st.session_state.get("ai_parsed"):
         with st.expander("🔢 A/B Test Calculator: Fine-tune sample size", expanded=True):
             plan = st.session_state.ai_parsed
             
-            # --- FIX: Set the initial value correctly based on the state ---
-            if plan is not None and plan.get("success_criteria", {}).get("MDE") is not None:
-                # Use the MDE from the AI-generated plan if available
-                calc_mde_initial = plan["success_criteria"]["MDE"]
-            else:
-                # Use the MDE calculated from the user inputs as the default
-                calc_mde_initial = mde_default
-
+            # --- FIX: Safely get the initial MDE value and create success_criteria if it doesn't exist ---
+            if 'success_criteria' not in plan or not isinstance(plan['success_criteria'], dict):
+                plan['success_criteria'] = {}
+            calc_mde_initial = plan['success_criteria'].get('MDE', mde_default)
+            
             calc_mde = st.session_state.get("calc_mde", calc_mde_initial)
-            calc_conf = st.session_state.get("calc_confidence", plan.get("success_criteria", {}).get("confidence_level", 95))
+            calc_conf = st.session_state.get("calc_confidence", plan['success_criteria'].get("confidence_level", 95))
             calc_power = st.session_state.get("calc_power", 80)
             calc_variants = st.session_state.get("calc_variants", 2)
             
@@ -823,6 +820,11 @@ if st.session_state.get("ai_parsed"):
                 
             if lock_btn:
                 st.session_state.calc_locked = True
+                
+                # --- FIX: Safely update the plan dictionary ---
+                if 'success_criteria' not in st.session_state.ai_parsed:
+                    st.session_state.ai_parsed['success_criteria'] = {}
+                
                 st.session_state.ai_parsed['success_criteria']['MDE'] = calc_mde
                 st.session_state.ai_parsed['success_criteria']['confidence_level'] = calc_conf
                 st.success("Calculator values locked into the plan!")
@@ -1023,8 +1025,10 @@ if st.session_state.get("ai_parsed"):
                 st.markdown("---")
                 
                 st.subheader("5. Success Criteria & Statistical Rationale")
-                edited_plan['success_criteria']['confidence_level'] = st.number_input("Confidence Level (%)", value=edited_plan.get('success_criteria', {}).get('confidence_level', 95), key="edit_conf")
-                edited_plan['success_criteria']['MDE'] = st.number_input("Minimum Detectable Effect (%)", value=edited_plan.get('success_criteria', {}).get('MDE', 5.0), key="edit_mde")
+                if 'success_criteria' not in edited_plan:
+                    edited_plan['success_criteria'] = {}
+                edited_plan['success_criteria']['confidence_level'] = st.number_input("Confidence Level (%)", value=edited_plan['success_criteria'].get('confidence_level', 95), key="edit_conf")
+                edited_plan['success_criteria']['MDE'] = st.number_input("Minimum Detectable Effect (%)", min_value=0.1, value=edited_plan['success_criteria'].get('MDE', 5.0), key="edit_mde")
                 edited_plan['statistical_rationale'] = st.text_area("Statistical Rationale", value=edited_plan.get('statistical_rationale', ''), key="edit_rationale", height=100)
                 st.markdown("---")
                 
@@ -1033,8 +1037,8 @@ if st.session_state.get("ai_parsed"):
                 for i, r in enumerate(edited_plan.get("risks_and_assumptions", [])):
                     with st.expander(f"Risk {i+1}", expanded=True):
                         edited_plan['risks_and_assumptions'][i]['risk'] = st.text_input("Risk", value=r.get('risk', ''), key=f"edit_risk_{i}")
-                        edited_plan['risks_and_assumptions'][i]['severity'] = st.selectbox("Severity", options=["High", "Medium", "Low"], index=["High", "Medium", "Low"].index(r.get('severity', 'Medium')), key=f"edit_sev_{i}")
-                        edited_plan['risks_and_assumptions'][i]['mitigation'] = st.text_area("Mitigation", value=r.get('mitigation', ''), height=50, key=f"edit_mit_{i}")
+                        edited_plan['risks_and_assumptions'][i]['severity'] = st.selectbox("Severity", options=["High", "Medium", "Low"], index=["High", "Medium", "Low"].index(r.get('severity', 'Medium')), key=f"edit_risk_sev_{i}")
+                        edited_plan['risks_and_assumptions'][i]['mitigation'] = st.text_area("Mitigation", value=r.get('mitigation', ''), key=f"edit_risk_mit_{i}", height=50)
                         if st.button(f"Delete Risk {i+1}", key=f"del_risk_{i}"):
                             edited_plan['risks_and_assumptions'].pop(i)
                             st.rerun()
@@ -1045,40 +1049,34 @@ if st.session_state.get("ai_parsed"):
                 
                 st.subheader("7. Next Steps")
                 if 'next_steps' not in edited_plan: edited_plan['next_steps'] = []
-                for i, step in enumerate(edited_plan.get("next_steps", [])):
-                    col_s1, col_s2 = st.columns([5,1])
-                    with col_s1:
-                        edited_plan['next_steps'][i] = st.text_input("Next Step", value=step, key=f"edit_step_{i}")
-                    with col_s2:
-                        if st.button("Delete", key=f"del_step_{i}"):
-                            edited_plan['next_steps'].pop(i)
-                            st.rerun()
-                if st.button("Add New Next Step", key="add_step"):
-                    edited_plan['next_steps'].append("")
-                    st.rerun()
+                next_steps_list = st.session_state.temp_plan_edit.get('next_steps', [])
+                new_next_steps = st.text_area("Next Steps (one per line)", value="\n".join(next_steps_list), height=150, key="edit_next_steps")
+                edited_plan['next_steps'] = [step.strip() for step in new_next_steps.split('\n') if step.strip()]
+                
                 st.markdown("---")
                 
-                if st.button("Save Changes and Close"):
-                    st.session_state.ai_parsed = edited_plan
-                    st.session_state.edit_modal_open = False
-                    st.rerun()
-        
+                col_save, col_cancel = st.columns([1, 1])
+                with col_save:
+                    if st.button("Save Changes"):
+                        st.session_state.ai_parsed = edited_plan
+                        st.session_state.edit_modal_open = False
+                        st.success("Plan updated successfully!")
+                        st.rerun()
+                with col_cancel:
+                    if st.button("Cancel"):
+                        st.session_state.edit_modal_open = False
+                        st.warning("Changes were discarded.")
+                        st.rerun()
+
         with col_export:
-            col_exp1, col_exp2 = st.columns([1,1])
-            with col_exp1:
-                st.download_button(
-                    label="Download JSON",
-                    data=json.dumps(plan, indent=2, ensure_ascii=False),
-                    file_name="experiment_plan.json",
-                    mime="application/json",
-                )
             if REPORTLAB_AVAILABLE:
-                pdf_bytes = generate_pdf_bytes_from_prd_dict(plan, title=plan.get("name", "Experiment PRD"))
+                pdf_bytes = generate_pdf_bytes_from_prd_dict(plan, title=f"Experiment PRD: {sanitized_metric_name}")
                 if pdf_bytes:
-                    with col_exp2:
-                        st.download_button(
-                            label="Download PDF",
-                            data=pdf_bytes,
-                            file_name="experiment_plan.pdf",
-                            mime="application/pdf",
-                        )
+                    st.download_button(
+                        label="⬇️ Export to PDF",
+                        data=pdf_bytes,
+                        file_name=f"experiment_prd_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                        mime="application/pdf"
+                    )
+            else:
+                st.warning("PDF export is not available. Please install reportlab (`pip install reportlab`).")
