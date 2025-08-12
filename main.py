@@ -797,8 +797,7 @@ if st.session_state.get("ai_parsed"):
 
             col_act1, col_act2 = st.columns([1, 1])
             with col_act1:
-                btn_label = "Calculate"
-                refresh_btn = st.button(btn_label, key="calc_btn")
+                refresh_btn = st.button("Calculate", key="calc_btn")
             with col_act2:
                 lock_btn = False
                 if st.session_state.get("calculated_sample_size_per_variant"):
@@ -830,7 +829,6 @@ if st.session_state.get("ai_parsed"):
             if lock_btn:
                 st.session_state.calc_locked = True
                 
-                # Safely update the plan dictionary
                 if 'success_criteria' not in st.session_state.ai_parsed:
                     st.session_state.ai_parsed['success_criteria'] = {}
                 
@@ -844,7 +842,7 @@ if st.session_state.get("ai_parsed"):
         # Build HTML for Hypotheses
         hypotheses_html = ""
         for h in plan.get("hypotheses", []):
-            if not isinstance(h, dict): continue # Defensive check
+            if not isinstance(h, dict): continue
             hypotheses_html += f"""
                 <div class='section-list-item'>
                     <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
@@ -857,7 +855,7 @@ if st.session_state.get("ai_parsed"):
         # Build HTML for Variants
         variants_html = ""
         for v in plan.get("variants", []):
-            if not isinstance(v, dict): continue # Defensive check
+            if not isinstance(v, dict): continue
             variants_html += f"""
                 <div class='section-list-item'>
                     <p><strong>Control:</strong> {html_sanitize(v.get('control', ''))}</p>
@@ -868,7 +866,7 @@ if st.session_state.get("ai_parsed"):
         # Build HTML for Metrics
         metrics_html = ""
         for m in plan.get("metrics", []):
-            if not isinstance(m, dict): continue # Defensive check
+            if not isinstance(m, dict): continue
             metrics_html += f"""
                 <div class='section-list-item'>
                     <p><strong>Name:</strong> {html_sanitize(m.get('name', ''))}</p>
@@ -880,7 +878,6 @@ if st.session_state.get("ai_parsed"):
         # Build HTML for Success Criteria
         criteria = plan.get('success_criteria', {})
         
-        # Add calculator values to the display
         sample_size_per_variant = st.session_state.get('calculated_sample_size_per_variant')
         total_sample_size = st.session_state.get('calculated_total_sample_size')
         duration_days = st.session_state.get('calculated_duration_days')
@@ -900,7 +897,7 @@ if st.session_state.get("ai_parsed"):
         if duration_days is not None:
             stats_html_parts.append(f"<p><strong>Estimated Duration:</strong> {round(duration_days, 1)} days</p>")
         
-        stats_html_parts.append("</div>") # Close the div
+        stats_html_parts.append("</div>")
         stats_html = "".join(stats_html_parts)
 
         # Build HTML for Risks
@@ -930,7 +927,6 @@ if st.session_state.get("ai_parsed"):
             next_steps_html += f"<div class='section-list-item'><p>{html_sanitize(step)}</p></div>"
 
 
-        # Generate a single HTML string for the entire card with consistent formatting
         plan_html = f"""
             <div class='prd-card'>
                 <div class="prd-header">
@@ -988,18 +984,13 @@ if st.session_state.get("ai_parsed"):
         with st.expander("✏️ Edit Experiment Plan", expanded=False):
             st.header("Edit Plan")
 
-            # --- This is the key fix ---
-            # Ensure the temp dictionary is populated with the main plan data
-            # every time this expander is opened, but only if it's not already
-            # populated.
-            if not st.session_state.get("temp_plan_edit"):
-                st.session_state.temp_plan_edit = st.session_state.ai_parsed.copy()
+            # Initialize a copy of the plan for editing. This ensures
+            # the form is pre-filled with the current data.
+            edited_plan = st.session_state.ai_parsed.copy()
             
-            edited_plan = st.session_state.temp_plan_edit
-
             with st.form(key='edit_form'):
                 st.subheader("1. Problem Statement")
-                edited_plan['problem_statement'] = st.text_area("Problem Statement", value=edited_plan.get('problem_statement', ''), height=100)
+                edited_plan['problem_statement'] = st.text_area("Problem Statement", value=edited_plan.get('problem_statement', ''), height=100, key="edit_problem_statement")
                 st.markdown("---")
                 
                 st.subheader("2. Hypotheses")
@@ -1007,12 +998,12 @@ if st.session_state.get("ai_parsed"):
                 
                 num_hypotheses = st.number_input("Number of Hypotheses", min_value=0, value=len(edited_plan['hypotheses']), key='num_hyp')
                 
-                if num_hypotheses != len(edited_plan['hypotheses']):
-                    new_hypotheses = edited_plan['hypotheses'][:num_hypotheses] + [{"hypothesis": "New Hypothesis", "rationale": "", "example_implementation": "", "behavioral_basis": ""}] * (num_hypotheses - len(edited_plan['hypotheses']))
-                    edited_plan['hypotheses'] = new_hypotheses
-                    st.session_state.temp_plan_edit = edited_plan
-                    st.rerun()
-
+                # Dynamic resizing of the hypotheses list
+                if num_hypotheses > len(edited_plan['hypotheses']):
+                    edited_plan['hypotheses'].extend([{"hypothesis": "", "rationale": "", "example_implementation": "", "behavioral_basis": ""}] * (num_hypotheses - len(edited_plan['hypotheses'])))
+                elif num_hypotheses < len(edited_plan['hypotheses']):
+                    edited_plan['hypotheses'] = edited_plan['hypotheses'][:num_hypotheses]
+                    
                 for i, h in enumerate(edited_plan.get("hypotheses", [])):
                     if not isinstance(h, dict): continue
                     with st.expander(f"Hypothesis {i+1}", expanded=True):
@@ -1025,12 +1016,11 @@ if st.session_state.get("ai_parsed"):
                 st.subheader("3. Variants")
                 if 'variants' not in edited_plan or not isinstance(edited_plan['variants'], list): edited_plan['variants'] = []
                 num_variants = st.number_input("Number of Variants", min_value=1, value=len(edited_plan['variants']), key='num_variants')
-                
-                if num_variants != len(edited_plan['variants']):
-                    new_variants = edited_plan['variants'][:num_variants] + [{"control": "", "variation": ""}] * (num_variants - len(edited_plan['variants']))
-                    edited_plan['variants'] = new_variants
-                    st.session_state.temp_plan_edit = edited_plan
-                    st.rerun()
+
+                if num_variants > len(edited_plan['variants']):
+                    edited_plan['variants'].extend([{"control": "", "variation": ""}] * (num_variants - len(edited_plan['variants'])))
+                elif num_variants < len(edited_plan['variants']):
+                    edited_plan['variants'] = edited_plan['variants'][:num_variants]
 
                 for i, v in enumerate(edited_plan.get('variants', [])):
                     if not isinstance(v, dict): continue
@@ -1043,11 +1033,10 @@ if st.session_state.get("ai_parsed"):
                 if 'metrics' not in edited_plan or not isinstance(edited_plan['metrics'], list): edited_plan['metrics'] = []
                 num_metrics = st.number_input("Number of Metrics", min_value=1, value=len(edited_plan['metrics']), key='num_metrics')
                 
-                if num_metrics != len(edited_plan['metrics']):
-                    new_metrics = edited_plan['metrics'][:num_metrics] + [{"name": "", "formula": "", "importance": "Primary"}] * (num_metrics - len(edited_plan['metrics']))
-                    edited_plan['metrics'] = new_metrics
-                    st.session_state.temp_plan_edit = edited_plan
-                    st.rerun()
+                if num_metrics > len(edited_plan['metrics']):
+                    edited_plan['metrics'].extend([{"name": "", "formula": "", "importance": "Primary"}] * (num_metrics - len(edited_plan['metrics'])))
+                elif num_metrics < len(edited_plan['metrics']):
+                    edited_plan['metrics'] = edited_plan['metrics'][:num_metrics]
 
                 for i, m in enumerate(edited_plan.get("metrics", [])):
                     if not isinstance(m, dict): continue
@@ -1075,11 +1064,10 @@ if st.session_state.get("ai_parsed"):
                 if 'risks_and_assumptions' not in edited_plan or not isinstance(edited_plan['risks_and_assumptions'], list): edited_plan['risks_and_assumptions'] = []
                 num_risks = st.number_input("Number of Risks", min_value=0, value=len(edited_plan['risks_and_assumptions']), key='num_risks')
                 
-                if num_risks != len(edited_plan['risks_and_assumptions']):
-                    new_risks = edited_plan['risks_and_assumptions'][:num_risks] + [{"risk": "", "severity": "Medium", "mitigation": ""}] * (num_risks - len(edited_plan['risks_and_assumptions']))
-                    edited_plan['risks_and_assumptions'] = new_risks
-                    st.session_state.temp_plan_edit = edited_plan
-                    st.rerun()
+                if num_risks > len(edited_plan['risks_and_assumptions']):
+                    edited_plan['risks_and_assumptions'].extend([{"risk": "", "severity": "Medium", "mitigation": ""}] * (num_risks - len(edited_plan['risks_and_assumptions'])))
+                elif num_risks < len(edited_plan['risks_and_assumptions']):
+                    edited_plan['risks_and_assumptions'] = edited_plan['risks_and_assumptions'][:num_risks]
 
                 for i, r in enumerate(edited_plan.get("risks_and_assumptions", [])):
                     if not isinstance(r, dict): continue
@@ -1092,15 +1080,15 @@ if st.session_state.get("ai_parsed"):
                 st.subheader("7. Next Steps")
                 if 'next_steps' not in edited_plan or not isinstance(edited_plan['next_steps'], list): edited_plan['next_steps'] = []
                 next_steps_text = "\n".join(edited_plan.get('next_steps', []))
-                new_next_steps = st.text_area("Next Steps (one per line)", value=next_steps_text, height=150)
+                new_next_steps = st.text_area("Next Steps (one per line)", value=next_steps_text, height=150, key="edit_next_steps")
                 edited_plan['next_steps'] = [step.strip() for step in new_next_steps.split('\n') if step.strip()]
                 
                 st.markdown("---")
                 
-                if st.form_submit_button("Save Changes"):
+                submitted = st.form_submit_button("Save Changes")
+                if submitted:
                     st.session_state.ai_parsed = edited_plan
                     st.success("Plan updated successfully!")
-                    st.rerun()
                 
             st.markdown("<hr>", unsafe_allow_html=True)
             col_export_final = st.columns([1])
