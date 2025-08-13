@@ -674,6 +674,35 @@ st.markdown(
         text-align: left;
     }
 }
+.section-list-item {
+    overflow-wrap: break-word;
+    word-break: break-word;
+    hyphens: auto;
+}
+.section-list-item p {
+    white-space: normal;
+    margin-bottom: 0.5rem;
+}
+.section-list-item p:last-child {
+    margin-bottom: 0;
+}
+.severity {
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.severity.high { 
+    color: #ef4444;
+    background-color: #fee2e2;
+}
+.severity.medium { 
+    color: #f97316;
+    background-color: #ffedd5;
+}
+.severity.low { 
+    color: #22c55e;
+    background-color: #dcfce7;
+}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
 """,
@@ -1006,8 +1035,8 @@ if st.session_state.get("ai_parsed"):
             if not isinstance(v, dict): continue
             variants_html += f"""
                 <div class='section-list-item'>
-                    <p><strong>Control:</strong> {html_sanitize(v.get('control', ''))}</p>
-                    <p><strong>Variation:</strong> {html_sanitize(v.get('variation', ''))}</p>
+                    <p><strong>Control:</strong> {html_sanitize(v.get('control', 'N/A'))}</p>
+                    <p><strong>Variation:</strong> {html_sanitize(v.get('variation', 'N/A'))}</p>
                 </div>
             """
 
@@ -1060,13 +1089,26 @@ if st.session_state.get("ai_parsed"):
             valid_severities = ['high', 'medium', 'low']
             severity_class = severity_text.lower() if severity_text and severity_text.lower() in valid_severities else 'medium'
             
-            risks_html += f"""
-                <div class='section-list-item'>
-                    <p><strong>Risk:</strong> {html_sanitize(risk_text)}</p>
-                    <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(severity_text)}</span></p>
-                    <p><strong>Mitigation:</strong> {html_sanitize(mitigation_text)}</p>
-                </div>
-            """
+            risks_html = ""
+            for r in plan.get("risks_and_assumptions", []):
+                if not isinstance(r, dict): continue
+    
+                risk_text = r.get('risk', 'N/A')
+                severity_text = r.get('severity', 'Medium')
+                mitigation_text = r.get('mitigation', 'N/A')
+
+                # Validate severity
+                severity_class = "medium"  # default
+                if severity_text.lower() in ['high', 'medium', 'low']:
+                    severity_class = severity_text.lower()
+    
+                risks_html += f"""
+                    <div class='section-list-item'>
+                        <p><strong>Risk:</strong> {html_sanitize(risk_text)}</p>
+                        <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(severity_text)}</span></p>
+                        <p><strong>Mitigation:</strong> {html_sanitize(mitigation_text)}</p>
+                    </div>
+                """
         
         # Build HTML for Next Steps
         next_steps_html = ""
