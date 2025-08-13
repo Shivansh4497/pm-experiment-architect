@@ -4,7 +4,8 @@ import json
 import re
 import os
 import pandas as pd
-from typing import Any, Dict, Optional, Tuple, List
+from typing import Any, Dict, Optional, Tuple, List, Union
+from pydantic import BaseModel, ValidationError
 from prompt_engine import generate_experiment_plan, generate_hypothesis_details
 from statsmodels.stats.power import NormalIndPower, TTestIndPower
 from statsmodels.stats.proportion import proportion_effectsize
@@ -13,6 +14,8 @@ import hashlib
 from datetime import datetime
 from io import BytesIO
 import ast
+import bleach
+import markdown
 # Removed: from streamlit_modal import Modal
 
 # PDF Export Setup
@@ -26,6 +29,43 @@ try:
     REPORTLAB_AVAILABLE = True
 except Exception:
     REPORTLAB_AVAILABLE = False
+
+# --- Pydantic Models for Validation ---
+class Hypothesis(BaseModel):
+    hypothesis: str
+    rationale: str
+    example_implementation: str
+    behavioral_basis: str
+
+class Variant(BaseModel):
+    control: str
+    variation: str
+
+class Metric(BaseModel):
+    name: str
+    formula: str
+    importance: str
+
+class Risk(BaseModel):
+    risk: str
+    severity: str
+    mitigation: str
+
+class SuccessCriteria(BaseModel):
+    confidence_level: float
+    MDE: float
+    benchmark: str
+    monitoring: str
+
+class ExperimentPlan(BaseModel):
+    problem_statement: str
+    hypotheses: List[Hypothesis]
+    variants: List[Variant]
+    metrics: List[Metric]
+    success_criteria: SuccessCriteria
+    risks_and_assumptions: List[Risk]
+    next_steps: List[str]
+    statistical_rationale: str
 
 # --- Helper Functions ---
 def create_header_with_help(header_text: str, help_text: str, icon: str = "🔗"):
@@ -50,19 +90,16 @@ def sanitize_text(text: Any) -> str:
             text = str(text)
         except Exception:
             return ""
-    text = text.replace("\r", " ").replace("\t", " ")
+    text = text.replace("\r", ").replace("\t", " ")
     text = re.sub(r"[ \f\v]+", " ", text)
     return text.strip()
 
 def html_sanitize(text: Any) -> str:
     if text is None: return ""
     text = str(text)
-    text = text.replace("&", "&amp;")
-    text = text.replace("<", "&lt;")
-    text = text.replace(">", "&gt;")
-    text = text.replace('"', "&quot;")
-    text = text.replace("'", "&apos;")
-    return text
+    # Use bleach to clean HTML and markdown to properly render it
+    text = bleach.clean(text, tags=[], attributes={}, protocols=[], strip=True)
+    return markdown.markdown(text)
 
 def generate_problem_statement(plan: Dict, current: float, target: float, unit: str) -> str:
     base = plan.get("problem_statement", "")
@@ -80,24 +117,23 @@ def generate_problem_statement(plan: Dict, current: float, target: float, unit: 
 def safe_display(text: Any, method=st.info):
     method(sanitize_text(text))
 
-def _extract_json_first_braces(text: str) -> Optional[str]:
-    if not isinstance(text, str):
+def validate_llm_output(raw_output: Union[str, dict]) -> Optional[Dict]:
+    """Validate LLM output against our schema using Pydantic"""
+    if isinstance(raw_output, str):
+        try:
+            parsed = json.loads(raw_output)
+        except json.JSONDecodeError:
+            st.error("LLM returned invalid JSON. Please try again.")
+            return None
+    else:
+        parsed = raw_output
+
+    try:
+        validated = ExperimentPlan(**parsed)
+        return validated.dict()
+    except ValidationError as e:
+        st.error(f"LLM output validation failed: {str(e)}")
         return None
-    tag_match = re.search(r"<json>([\s\S]+?)</json>", text, re.IGNORECASE)
-    if tag_match:
-        return tag_match.group(1).strip()
-    start = text.find("{")
-    if start == -1:
-        return None
-    depth = 0
-    for i in range(start, len(text)):
-        if text[i] == "{":
-            depth += 1
-        elif text[i] == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start : i + 1]
-    return None
 
 def _safe_single_to_double_quotes(s: str) -> str:
     s = re.sub(r"(?<=[:\{\[,]\s*)'([^']*?)'(?=\s*[,}\]])", r'"\1"', s)
@@ -105,94 +141,53 @@ def _safe_single_to_double_quotes(s: str) -> str:
     return s
 
 def extract_json(text: Any) -> Optional[Dict]:
+    """Improved JSON extraction with Pydantic validation"""
     if text is None:
         st.error("No output returned from LLM.")
         return None
     if isinstance(text, dict):
-        return text
+        return validate_llm_output(text)
     if isinstance(text, list):
         if all(isinstance(i, dict) for i in text):
-            return {"items": text}
+            return validate_llm_output({"items": text})
         st.error("LLM returned a JSON list when an object was expected.")
         return None
+    
     try:
         raw = str(text)
     except Exception as e:
         st.error(f"Unexpected LLM output type: {e}")
         return None
+    
+    # Try direct JSON parse first
     try:
         parsed = json.loads(raw)
-        if isinstance(parsed, dict):
-            return parsed
-        if isinstance(parsed, list) and all(isinstance(i, dict) for i in parsed):
-            return {"items": parsed}
-        st.error("Parsed JSON was not an object; expected an object.")
-        return None
-    except Exception:
+        return validate_llm_output(parsed)
+    except json.JSONDecodeError:
         pass
-    try:
-        parsed_ast = ast.literal_eval(raw)
-        if isinstance(parsed_ast, dict):
-            return parsed_ast
-        if isinstance(parsed_ast, list) and all(isinstance(i, dict) for i in parsed_ast):
-            return {"items": parsed_ast}
-    except Exception:
-        pass
-    candidate = _extract_json_first_braces(raw)
+    
+    # Try extracting JSON from markdown or other wrappers
+    candidate = re.search(r"```(?:json)?\n([\s\S]+?)\n```|{[\s\S]+?}", raw)
     if candidate:
-        candidate_clean = candidate
-        candidate_clean = re.sub(r"^```(?:json)?\s*", "", candidate_clean).strip()
-        candidate_clean = re.sub(r"\s*```$", "", candidate_clean).strip()
-        candidate_clean = re.sub(r',\s*,', ',', candidate_clean)
-        candidate_clean = re.sub(r',\s*\}', '}', candidate_clean)
-        candidate_clean = re.sub(r',\s*\]', ']', candidate_clean)
         try:
-            parsed = json.loads(candidate_clean)
-            if isinstance(parsed, dict):
-                return parsed
-            if isinstance(parsed, list) and all(isinstance(i, dict) for i in parsed):
-                return {"items": parsed}
-            st.error("Extracted JSON parsed but was not an object.")
-            st.code(candidate_clean[:2000] + ("..." if len(candidate_clean) > 2000 else ""))
-            return None
+            clean_candidate = candidate.group(1) if candidate.group(1) else candidate.group(0)
+            clean_candidate = re.sub(r',\s*,', ',', clean_candidate)
+            clean_candidate = re.sub(r',\s*\}', '}', clean_candidate)
+            clean_candidate = re.sub(r',\s*\]', ']', clean_candidate)
+            parsed = json.loads(clean_candidate)
+            return validate_llm_output(parsed)
         except Exception:
-            try:
-                parsed_ast = ast.literal_eval(candidate_clean)
-                if isinstance(parsed_ast, dict):
-                    return parsed_ast
-                if isinstance(parsed_ast, list) and all(isinstance(i, dict) for i in parsed_ast):
-                    return {"items": parsed_ast}
-                else:
-                    raise ValueError("Extracted JSON parsed as a list but was expected to be an object.")
-            except Exception:
-                try:
-                    converted = _safe_single_to_double_quotes(candidate_clean)
-                    parsed = json.loads(converted)
-                    if isinstance(parsed, dict):
-                        return parsed
-                    if isinstance(parsed, list) and all(isinstance(i, dict) for i in parsed):
-                        return {"items": parsed}
-                    else:
-                        raise ValueError("Extracted JSON with single quotes parsed but was not an object.")
-                except Exception:
-                    st.error("Could not parse extracted JSON block. See snippet below.")
-                    st.code(candidate_clean[:2000] + ("..." if len(candidate_clean) > 2000 else ""))
-                    return None
+            pass
+    
+    # Final fallback with single quote handling
     try:
-        converted_full = _safe_single_to_double_quotes(raw)
-        parsed = json.loads(converted_full)
-        if isinstance(parsed, dict):
-            return parsed
-        if isinstance(parsed, list) and all(isinstance(i, dict) for i in parsed):
-            return {"items": parsed}
+        converted = _safe_single_to_double_quotes(raw)
+        parsed = json.loads(converted)
+        return validate_llm_output(parsed)
     except Exception:
-        pass
-    st.error("LLM output could not be parsed as JSON. Please inspect or edit the raw output below.")
-    try:
+        st.error("LLM output could not be parsed as valid JSON.")
         st.code(raw[:2000] + ("..." if len(raw) > 2000 else ""))
-    except Exception:
-        st.write("LLM output could not be displayed.")
-    return None
+        return None
 
 def post_process_llm_text(text: Any, unit: str) -> str:
     if text is None:
@@ -234,8 +229,18 @@ def _parse_value_from_text(text: str, default_unit: str = '%') -> Tuple[Optional
 
 def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type, std_dev=None) -> Tuple[Optional[int], Optional[int]]:
     try:
+        # Guard against invalid inputs
         if baseline is None or mde is None:
             return None, None
+            
+        if metric_type == "Conversion Rate" and baseline == 0:
+            st.error("Baseline cannot be zero for conversion rates.")
+            return None, None
+            
+        if metric_type == "Numeric Value" and (std_dev is None or std_dev <= 0):
+            st.error("Standard deviation must be positive for numeric metrics.")
+            return None, None
+
         mde_relative = float(mde) / 100.0
         if metric_type == "Conversion Rate":
             try:
@@ -250,72 +255,145 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
             if effect_size == 0:
                 return None, None
             analysis = NormalIndPower()
-            sample_size_per_variant = analysis.solve_power(effect_size=effect_size, alpha=alpha, power=power, alternative="two-sided")
+            sample_size_per_variant = analysis.solve_power(
+                effect_size=effect_size,
+                alpha=alpha,
+                power=power,
+                alternative="two-sided"
+            )
         elif metric_type == "Numeric Value":
-            if std_dev is None or float(std_dev) == 0:
-                return None, None
             mde_absolute = float(baseline) * mde_relative
             effect_size = mde_absolute / float(std_dev)
             if effect_size == 0:
                 return None, None
             analysis = TTestIndPower()
-            sample_size_per_variant = analysis.solve_power(effect_size=effect_size, alpha=alpha, power=power, alternative="two-sided")
+            sample_size_per_variant = analysis.solve_power(
+                effect_size=effect_size,
+                alpha=alpha,
+                power=power,
+                alternative="two-sided"
+            )
         else:
             return None, None
+            
         if sample_size_per_variant is None or sample_size_per_variant <= 0 or not np.isfinite(sample_size_per_variant):
             return None, None
+            
         total = sample_size_per_variant * num_variants
         return int(np.ceil(sample_size_per_variant)), int(np.ceil(total))
-    except Exception:
+    except Exception as e:
+        st.error(f"Sample size calculation error: {str(e)}")
         return None, None
 
 def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -> Optional[bytes]:
     if not REPORTLAB_AVAILABLE:
         return None
+        
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=50,
+        leftMargin=50,
+        topMargin=50,
+        bottomMargin=50
+    )
+    
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="PRDTitle", fontSize=20, leading=24, spaceAfter=12, alignment=1))
-    styles.add(ParagraphStyle(name="SectionHeading", fontSize=13, leading=16, spaceBefore=12, spaceAfter=6, fontName="Helvetica-Bold"))
-    styles.add(ParagraphStyle(name="BodyTextCustom", fontSize=10.5, leading=14))
-    styles.add(ParagraphStyle(name="BulletText", fontSize=10.5, leading=14, leftIndent=12, bulletIndent=6))
+    styles.add(ParagraphStyle(
+        name="PRDTitle",
+        fontSize=20,
+        leading=24,
+        spaceAfter=12,
+        alignment=1
+    ))
+    styles.add(ParagraphStyle(
+        name="SectionHeading",
+        fontSize=13,
+        leading=16,
+        spaceBefore=12,
+        spaceAfter=6,
+        fontName="Helvetica-Bold"
+    ))
+    styles.add(ParagraphStyle(
+        name="BodyTextCustom",
+        fontSize=10.5,
+        leading=14
+    ))
+    styles.add(ParagraphStyle(
+        name="BulletText",
+        fontSize=10.5,
+        leading=14,
+        leftIndent=12,
+        bulletIndent=6
+    ))
+    
     story: List[Any] = []
+    
     def pdf_sanitize(text: Any) -> str:
         if text is None: return ""
-        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return html_sanitize(text).replace("<p>", "").replace("</p>", "\n")
+        
     def add_section_header(title: str):
         story.append(Spacer(1, 12))
         story.append(Paragraph(title, styles["SectionHeading"]))
         story.append(Spacer(1, 6))
+        
     story.append(Paragraph(title, styles["PRDTitle"]))
+    
+        # Continued from Part 1...
+
+    # Problem Statement Section
     add_section_header("1. Problem Statement")
     story.append(Paragraph(pdf_sanitize(prd.get("problem_statement", "")), styles["BodyTextCustom"]))
     
+    # Hypotheses Section
     add_section_header("2. Hypotheses")
     for idx, h in enumerate(prd.get("hypotheses", [])):
-        if not isinstance(h, dict): continue # Defensive check
-        story.append(Paragraph(f"<b>Hypothesis {idx + 1}:</b> {pdf_sanitize(h.get('hypothesis', ''))}", styles["BodyTextCustom"]))
-        story.append(Paragraph(f"<b>Rationale:</b> {pdf_sanitize(h.get('rationale', ''))}", styles["BodyTextCustom"]))
-        story.append(Paragraph(f"<b>Example Implementation:</b> {pdf_sanitize(h.get('example_implementation', ''))}", styles["BodyTextCustom"]))
-        story.append(Paragraph(f"<b>Behavioral Basis:</b> {pdf_sanitize(h.get('behavioral_basis', ''))}", styles["BodyTextCustom"]))
+        if not isinstance(h, dict): continue
+        story.append(Paragraph(
+            f"<b>Hypothesis {idx + 1}:</b> {pdf_sanitize(h.get('hypothesis', ''))}", 
+            styles["BodyTextCustom"]
+        ))
+        story.append(Paragraph(
+            f"<b>Rationale:</b> {pdf_sanitize(h.get('rationale', ''))}", 
+            styles["BodyTextCustom"]
+        ))
+        story.append(Paragraph(
+            f"<b>Example Implementation:</b> {pdf_sanitize(h.get('example_implementation', ''))}", 
+            styles["BodyTextCustom"]
+        ))
+        story.append(Paragraph(
+            f"<b>Behavioral Basis:</b> {pdf_sanitize(h.get('behavioral_basis', ''))}", 
+            styles["BodyTextCustom"]
+        ))
         story.append(Spacer(1, 10))
     
+    # Variants Section
     add_section_header("3. Variants")
     for v in prd.get("variants", []):
-        if not isinstance(v, dict): continue # Defensive check
-        story.append(Paragraph(f"<b>Control:</b> {pdf_sanitize(v.get('control', ''))}", styles["BodyTextCustom"]))
-        story.append(Paragraph(f"<b>Variation:</b> {pdf_sanitize(v.get('variation', ''))}", styles["BodyTextCustom"]))
+        if not isinstance(v, dict): continue
+        story.append(Paragraph(
+            f"<b>Control:</b> {pdf_sanitize(v.get('control', ''))}", 
+            styles["BodyTextCustom"]
+        ))
+        story.append(Paragraph(
+            f"<b>Variation:</b> {pdf_sanitize(v.get('variation', ''))}", 
+            styles["BodyTextCustom"]
+        ))
         story.append(Spacer(1, 10))
     
+    # Metrics Section
     add_section_header("4. Metrics")
     metrics_data = [['Name', 'Formula', 'Importance']]
     for m in prd.get("metrics", []):
-        if not isinstance(m, dict): continue # Defensive check
+        if not isinstance(m, dict): continue
         metrics_data.append([
             pdf_sanitize(m.get('name', '')),
             pdf_sanitize(m.get('formula', '')),
             pdf_sanitize(m.get('importance', ''))
         ])
+    
     if len(metrics_data) > 1:
         table_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f0f0f0')),
@@ -334,34 +412,61 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     else:
         story.append(Paragraph("No metrics defined.", styles["BodyTextCustom"]))
         
+    # Success Criteria Section
     add_section_header("5. Success Criteria & Statistical Rationale")
     criteria = prd.get("success_criteria", {})
-    story.append(Paragraph(f"<b>Confidence Level:</b> {pdf_sanitize(criteria.get('confidence_level', ''))}%", styles["BodyTextCustom"]))
-    story.append(Paragraph(f"<b>Minimum Detectable Effect (MDE):</b> {pdf_sanitize(criteria.get('MDE', ''))}%", styles["BodyTextCustom"]))
-    story.append(Paragraph(f"<b>Statistical Rationale:</b> {pdf_sanitize(prd.get('statistical_rationale', ''))}", styles["BodyTextCustom"]))
-    story.append(Paragraph(f"<b>Benchmark:</b> {pdf_sanitize(criteria.get('benchmark', ''))}", styles["BodyTextCustom"]))
-    story.append(Paragraph(f"<b>Monitoring:</b> {pdf_sanitize(criteria.get('monitoring', ''))}", styles["BodyTextCustom"]))
+    story.append(Paragraph(
+        f"<b>Confidence Level:</b> {pdf_sanitize(criteria.get('confidence_level', ''))}%", 
+        styles["BodyTextCustom"]
+    ))
+    story.append(Paragraph(
+        f"<b>Minimum Detectable Effect (MDE):</b> {pdf_sanitize(criteria.get('MDE', ''))}%", 
+        styles["BodyTextCustom"]
+    ))
+    story.append(Paragraph(
+        f"<b>Statistical Rationale:</b> {pdf_sanitize(prd.get('statistical_rationale', ''))}", 
+        styles["BodyTextCustom"]
+    ))
+    story.append(Paragraph(
+        f"<b>Benchmark:</b> {pdf_sanitize(criteria.get('benchmark', ''))}", 
+        styles["BodyTextCustom"]
+    ))
+    story.append(Paragraph(
+        f"<b>Monitoring:</b> {pdf_sanitize(criteria.get('monitoring', ''))}", 
+        styles["BodyTextCustom"]
+    ))
     
     # Add calculator values if available
     sample_size_per_variant = st.session_state.get('calculated_sample_size_per_variant')
     if sample_size_per_variant:
-        story.append(Paragraph(f"<b>Sample Size per Variant:</b> {sample_size_per_variant:,}", styles["BodyTextCustom"]))
+        story.append(Paragraph(
+            f"<b>Sample Size per Variant:</b> {sample_size_per_variant:,}", 
+            styles["BodyTextCustom"]
+        ))
     total_sample_size = st.session_state.get('calculated_total_sample_size')
     if total_sample_size:
-        story.append(Paragraph(f"<b>Total Sample Size:</b> {total_sample_size:,}", styles["BodyTextCustom"]))
+        story.append(Paragraph(
+            f"<b>Total Sample Size:</b> {total_sample_size:,}", 
+            styles["BodyTextCustom"]
+        ))
     duration_days = st.session_state.get('calculated_duration_days')
     if duration_days:
-        story.append(Paragraph(f"<b>Estimated Duration:</b> {round(duration_days, 1)} days", styles["BodyTextCustom"]))
+        story.append(Paragraph(
+            f"<b>Estimated Duration:</b> {round(duration_days, 1)} days", 
+            styles["BodyTextCustom"]
+        ))
         
+    # Risks Section
     add_section_header("6. Risks and Assumptions")
     risks_data = [['Risk', 'Severity', 'Mitigation']]
     for r in prd.get("risks_and_assumptions", []):
-        if not isinstance(r, dict): continue # Defensive check
+        if not isinstance(r, dict): continue
         risks_data.append([
             pdf_sanitize(r.get('risk', '')),
             pdf_sanitize(r.get('severity', '')),
             pdf_sanitize(r.get('mitigation', ''))
         ])
+    
     if len(risks_data) > 1:
         risks_table = Table(risks_data, colWidths=[2.5*inch, 1*inch, 3*inch])
         risks_table.setStyle(table_style)
@@ -369,11 +474,13 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     else:
         story.append(Paragraph("No risks defined.", styles["BodyTextCustom"]))
         
+    # Next Steps Section
     add_section_header("7. Next Steps")
     next_steps_data = [['Action']]
     for step in prd.get("next_steps", []):
-        if not isinstance(step, str): continue # Defensive check
+        if not isinstance(step, str): continue
         next_steps_data.append([pdf_sanitize(step)])
+    
     if len(next_steps_data) > 1:
         next_steps_table = Table(next_steps_data, colWidths=[6.5*inch])
         next_steps_table.setStyle(table_style)
@@ -388,7 +495,13 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     return pdf_bytes
 
 # --- Streamlit UI Code ---
-st.set_page_config(page_title="A/B Test Architect", layout="wide")
+st.set_page_config(
+    page_title="A/B Test Architect", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Improved CSS with mobile responsiveness
 st.markdown(
     """
 <style>
@@ -398,75 +511,72 @@ st.markdown(
 .small-muted { color: #7a7a7a; font-size: 13px; }
 .prd-card {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    max-width: 900px;
     width: 100%;
+    max-width: 100%;
     background: #ffffff;
     border-radius: 16px;
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    padding: 2.5rem;
+    padding: 1.5rem;
     border: 1px solid #e5e7eb;
+    margin: 0 auto;
 }
 .prd-header {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    margin-bottom: 2.5rem;
-    padding-bottom: 1.5rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
     border-bottom: 1px solid #e5e7eb;
 }
 .logo-wrapper {
     background: #0b63c6;
     color: white;
-    padding: 1.5rem 2rem;
+    padding: 1rem 1.5rem;
     border-radius: 12px;
     font-weight: 800;
-    font-size: 2.5rem;
+    font-size: 2rem;
     line-height: 1;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-    margin-right: 1.5rem;
+    margin-bottom: 1rem;
     transform: rotate(-3deg);
 }
 .header-text h1 {
     margin: 0;
-    font-size: 2.25rem;
+    font-size: 1.75rem;
     font-weight: 900;
     color: #052a4a;
+    text-align: center;
 }
 .header-text p {
     margin: 0.25rem 0 0;
-    font-size: 1.125rem;
+    font-size: 1rem;
     color: #4b5563;
+    text-align: center;
 }
 .prd-section {
-    margin-bottom: 2rem;
+    margin-bottom: 1.5rem;
 }
 .prd-section-title {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
     color: #0b63c6;
 }
 .prd-section-title h2 {
     margin: 0;
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     font-weight: 700;
-}
-.prd-section-title svg {
-    color: #0b63c6;
-    width: 24px;
-    height: 24px;
 }
 .prd-section-content {
     background: #f3f8ff;
     border-left: 4px solid #0b63c6;
-    padding: 1.5rem;
+    padding: 1rem;
     border-radius: 8px;
-    line-height: 1.8;
+    line-height: 1.6;
     color: #1f2937;
-    margin-bottom: 1.5rem;
-}
-.prd-section-content:last-child {
-    margin-bottom: 0;
+    margin-bottom: 1rem;
+    overflow-wrap: break-word;
 }
 .problem-statement {
     font-weight: 500;
@@ -479,14 +589,14 @@ st.markdown(
     margin: 0;
 }
 .section-list .list-item {
-    padding: 1rem;
+    padding: 0.75rem;
     background: #fdfefe;
     border-radius: 8px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     border: 1px solid #e5e7eb;
-    position: relative;
-    line-height: 1.6;
-    margin-bottom: 1rem;
+    line-height: 1.5;
+    margin-bottom: 0.75rem;
+    overflow-wrap: break-word;
 }
 .section-list .list-item:last-child {
     margin-bottom: 0;
@@ -497,43 +607,61 @@ st.markdown(
 }
 .section-list .list-item p strong {
     display: block;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.25rem;
     color: #052a4a;
 }
 .hypothesis-title {
-    font-size: 1.1rem;
+    font-size: 1rem;
     font-weight: 600;
     color: #052a4a;
 }
-.metrics-list .list-item p, .stats-list .list-item p, .risks-list .list-item p, .next-steps-list .list-item p, .variants-list .list-item p {
-    margin: 0;
-    color: #4b5563; /* Ensure consistent text color */
-}
 .formula-code {
     background-color: #eef2ff;
-    padding: 2px 6px;
+    padding: 2px 4px;
     border-radius: 4px;
     font-family: 'Courier New', Courier, monospace;
-    font-size: 0.9em;
+    font-size: 0.85em;
     color: #3b5998;
 }
-.metrics-list .list-item span.importance {
+.importance {
     font-weight: 600;
     color: #0b63c6;
 }
-.risks-list .list-item span.severity {
+.severity {
     font-weight: 600;
 }
-.risks-list .list-item span.severity.high { color: #ef4444; }
-.risks-list .list-item span.severity.medium { color: #f97316; }
-.risks-list .list-item span.severity.low { color: #22c55e; }
+.severity.high { color: #ef4444; }
+.severity.medium { color: #f97316; }
+.severity.low { color: #22c55e; }
 .prd-footer {
-    margin-top: 2rem;
-    padding-top: 1.5rem;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
     border-top: 1px solid #e5e7eb;
     text-align: center;
-    font-size: 0.875rem;
+    font-size: 0.8rem;
     color: #6b7280;
+}
+
+@media (min-width: 768px) {
+    .prd-card {
+        padding: 2.5rem;
+        max-width: 900px;
+    }
+    .prd-header {
+        flex-direction: row;
+        align-items: center;
+    }
+    .logo-wrapper {
+        margin-right: 1rem;
+        margin-bottom: 0;
+    }
+    .header-text h1 {
+        font-size: 2.25rem;
+        text-align: left;
+    }
+    .header-text p {
+        text-align: left;
+    }
 }
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
@@ -542,19 +670,31 @@ st.markdown(
 )
 
 # --- Session State Initialization ---
-if "edit_modal_open" not in st.session_state:
-    st.session_state.edit_modal_open = False
-if "stage" not in st.session_state:
-    st.session_state.stage = "input"
-if "calculated_sample_size_per_variant" not in st.session_state:
-    st.session_state.calculated_sample_size_per_variant = None
-if "calculated_total_sample_size" not in st.session_state:
-    st.session_state.calculated_total_sample_size = None
-if "calculated_duration_days" not in st.session_state:
-    st.session_state.calculated_duration_days = None
-if "temp_plan_edit" not in st.session_state:
-    st.session_state.temp_plan_edit = {}
+def init_session_state():
+    if "edit_modal_open" not in st.session_state:
+        st.session_state.edit_modal_open = False
+    if "stage" not in st.session_state:
+        st.session_state.stage = "input"
+    if "calculated_sample_size_per_variant" not in st.session_state:
+        st.session_state.calculated_sample_size_per_variant = None
+    if "calculated_total_sample_size" not in st.session_state:
+        st.session_state.calculated_total_sample_size = None
+    if "calculated_duration_days" not in st.session_state:
+        st.session_state.calculated_duration_days = None
+    if "temp_plan_edit" not in st.session_state:
+        st.session_state.temp_plan_edit = {}
+    if "ai_parsed" not in st.session_state:
+        st.session_state.ai_parsed = None
+    if "hypotheses_from_llm" not in st.session_state:
+        st.session_state.hypotheses_from_llm = []
+    if "calc_locked" not in st.session_state:
+        st.session_state.calc_locked = False
+    if "locked_stats" not in st.session_state:
+        st.session_state.locked_stats = {}
 
+init_session_state()
+
+# --- Input Sections ---
 st.title("💡 A/B Test Architect — AI-assisted experiment PRD generator")
 st.markdown("Create experiment PRDs, hypotheses, stats, and sample-size guidance — faster and with guardrails.")
 
@@ -682,7 +822,7 @@ with st.expander("🧠 Generate Experiment Plan", expanded=True):
                     st.error("Plan generation failed. Please check inputs and try again.")
                     st.session_state.stage = "input"
             except Exception as e:
-                st.error(f"LLM generation failed: {e}")
+                st.error(f"LLM generation failed: {str(e)}")
                 st.session_state.stage = "input"
 
 # --- Main Guided Workflow ---
@@ -746,11 +886,9 @@ if st.session_state.get("ai_parsed"):
                         }
                         
                         try:
-                            # New, focused LLM call for hypothesis details
                             hyp_details_raw = generate_hypothesis_details(new_hyp_text, context)
                             hyp_details_parsed = extract_json(hyp_details_raw)
                             if hyp_details_parsed:
-                                # Update the main plan with the new hypothesis
                                 st.session_state.ai_parsed['hypotheses'].append(hyp_details_parsed)
                                 st.session_state.stage = "full_plan"
                                 st.session_state.temp_plan_edit = st.session_state.ai_parsed.copy()
@@ -758,7 +896,7 @@ if st.session_state.get("ai_parsed"):
                             else:
                                 st.error("Failed to generate details for your hypothesis. Please try again.")
                         except Exception as e:
-                            st.error(f"LLM call failed: {e}")
+                            st.error(f"LLM call failed: {str(e)}")
 
 
     elif st.session_state.stage == "full_plan":
@@ -769,7 +907,6 @@ if st.session_state.get("ai_parsed"):
         with st.expander("🔢 A/B Test Calculator: Fine-tune sample size", expanded=True):
             plan = st.session_state.ai_parsed
             
-            # Safely get the initial MDE value and create success_criteria if it doesn't exist
             if 'success_criteria' not in plan or not isinstance(plan['success_criteria'], dict):
                 plan['success_criteria'] = {}
             calc_mde_initial = plan['success_criteria'].get('MDE', mde_default)
@@ -984,8 +1121,7 @@ if st.session_state.get("ai_parsed"):
         with st.expander("✏️ Edit Experiment Plan", expanded=False):
             st.header("Edit Plan")
 
-            # Initialize a copy of the plan for editing. This ensures
-            # the form is pre-filled with the current data.
+            # Initialize a copy of the plan for editing
             edited_plan = st.session_state.ai_parsed.copy()
             
             with st.form(key='edit_form'):
@@ -994,7 +1130,8 @@ if st.session_state.get("ai_parsed"):
                 st.markdown("---")
                 
                 st.subheader("2. Hypotheses")
-                if 'hypotheses' not in edited_plan or not isinstance(edited_plan['hypotheses'], list): edited_plan['hypotheses'] = []
+                if 'hypotheses' not in edited_plan or not isinstance(edited_plan['hypotheses'], list): 
+                    edited_plan['hypotheses'] = []
                 
                 num_hypotheses = st.number_input("Number of Hypotheses", min_value=0, value=len(edited_plan['hypotheses']), key='num_hyp')
                 
@@ -1014,7 +1151,8 @@ if st.session_state.get("ai_parsed"):
                 st.markdown("---")
                 
                 st.subheader("3. Variants")
-                if 'variants' not in edited_plan or not isinstance(edited_plan['variants'], list): edited_plan['variants'] = []
+                if 'variants' not in edited_plan or not isinstance(edited_plan['variants'], list): 
+                    edited_plan['variants'] = []
                 num_variants = st.number_input("Number of Variants", min_value=1, value=len(edited_plan['variants']), key='num_variants')
 
                 if num_variants > len(edited_plan['variants']):
@@ -1030,7 +1168,8 @@ if st.session_state.get("ai_parsed"):
                 st.markdown("---")
 
                 st.subheader("4. Metrics")
-                if 'metrics' not in edited_plan or not isinstance(edited_plan['metrics'], list): edited_plan['metrics'] = []
+                if 'metrics' not in edited_plan or not isinstance(edited_plan['metrics'], list): 
+                    edited_plan['metrics'] = []
                 num_metrics = st.number_input("Number of Metrics", min_value=1, value=len(edited_plan['metrics']), key='num_metrics')
                 
                 if num_metrics > len(edited_plan['metrics']):
@@ -1054,14 +1193,16 @@ if st.session_state.get("ai_parsed"):
                 st.markdown("---")
                 
                 st.subheader("5. Success Criteria & Statistical Rationale")
-                if 'success_criteria' not in edited_plan or not isinstance(edited_plan['success_criteria'], dict): edited_plan['success_criteria'] = {}
+                if 'success_criteria' not in edited_plan or not isinstance(edited_plan['success_criteria'], dict): 
+                    edited_plan['success_criteria'] = {}
                 edited_plan['success_criteria']['confidence_level'] = st.number_input("Confidence Level (%)", value=edited_plan['success_criteria'].get('confidence_level', 95), key="edit_conf")
                 edited_plan['success_criteria']['MDE'] = st.number_input("Minimum Detectable Effect (%)", min_value=0.1, value=edited_plan['success_criteria'].get('MDE', 5.0), key="edit_mde")
                 edited_plan['statistical_rationale'] = st.text_area("Statistical Rationale", value=edited_plan.get('statistical_rationale', ''), key="edit_rationale", height=100)
                 st.markdown("---")
                 
                 st.subheader("6. Risks and Assumptions")
-                if 'risks_and_assumptions' not in edited_plan or not isinstance(edited_plan['risks_and_assumptions'], list): edited_plan['risks_and_assumptions'] = []
+                if 'risks_and_assumptions' not in edited_plan or not isinstance(edited_plan['risks_and_assumptions'], list): 
+                    edited_plan['risks_and_assumptions'] = []
                 num_risks = st.number_input("Number of Risks", min_value=0, value=len(edited_plan['risks_and_assumptions']), key='num_risks')
                 
                 if num_risks > len(edited_plan['risks_and_assumptions']):
@@ -1078,7 +1219,8 @@ if st.session_state.get("ai_parsed"):
                 st.markdown("---")
                 
                 st.subheader("7. Next Steps")
-                if 'next_steps' not in edited_plan or not isinstance(edited_plan['next_steps'], list): edited_plan['next_steps'] = []
+                if 'next_steps' not in edited_plan or not isinstance(edited_plan['next_steps'], list): 
+                    edited_plan['next_steps'] = []
                 next_steps_text = "\n".join(edited_plan.get('next_steps', []))
                 new_next_steps = st.text_area("Next Steps (one per line)", value=next_steps_text, height=150, key="edit_next_steps")
                 edited_plan['next_steps'] = [step.strip() for step in new_next_steps.split('\n') if step.strip()]
@@ -1104,3 +1246,11 @@ if st.session_state.get("ai_parsed"):
                         )
                 else:
                     st.warning("PDF export is not available. Please install reportlab (`pip install reportlab`).")
+                    if st.button("⬇️ Export to JSON"):
+                        st.download_button(
+                            label="Download JSON",
+                            data=json.dumps(plan, indent=2),
+                            file_name=f"experiment_prd_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                            mime="application/json"
+                        )
+    
