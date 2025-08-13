@@ -14,7 +14,7 @@ import hashlib
 from datetime import datetime
 from io import BytesIO
 import ast
-# Removed: from streamlit_modal import Modal
+import html
 
 # PDF Export Setup
 REPORTLAB_AVAILABLE = False
@@ -65,7 +65,7 @@ class ExperimentPlan(BaseModel):
     next_steps: List[str]
     statistical_rationale: str
 
-# --- Helper Functions ---
+# --- Improved Helper Functions ---
 def create_header_with_help(header_text: str, help_text: str, icon: str = "🔗"):
     st.markdown(
         f"""
@@ -96,15 +96,8 @@ def html_sanitize(text: Any) -> str:
     if text is None: 
         return ""
     text = str(text)
-    # Basic HTML escaping
-    text = (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-        .replace("'", "&#39;")
-    )
-    return text
+    # Only escape dangerous characters, preserve HTML structure
+    return html.escape(text)
 
 def generate_problem_statement(plan: Dict, current: float, target: float, unit: str) -> str:
     base = plan.get("problem_statement", "")
@@ -351,8 +344,6 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         story.append(Spacer(1, 6))
         
     story.append(Paragraph(title, styles["PRDTitle"]))
-    
-        # Continued from Part 1...
 
     # Problem Statement Section
     add_section_header("1. Problem Statement")
@@ -422,8 +413,8 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         story.append(metrics_table)
     else:
         story.append(Paragraph("No metrics defined.", styles["BodyTextCustom"]))
-        
-    # Success Criteria Section
+
+        # Success Criteria Section
     add_section_header("5. Success Criteria & Statistical Rationale")
     criteria = prd.get("success_criteria", {})
     story.append(Paragraph(
@@ -640,10 +631,21 @@ st.markdown(
 }
 .severity {
     font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
 }
-.severity.high { color: #ef4444; }
-.severity.medium { color: #f97316; }
-.severity.low { color: #22c55e; }
+.severity.high { 
+    color: #ef4444;
+    background-color: #fee2e2;
+}
+.severity.medium { 
+    color: #f97316;
+    background-color: #ffedd5;
+}
+.severity.low { 
+    color: #22c55e;
+    background-color: #dcfce7;
+}
 .prd-footer {
     margin-top: 1.5rem;
     padding-top: 1rem;
@@ -685,23 +687,6 @@ st.markdown(
 }
 .section-list-item p:last-child {
     margin-bottom: 0;
-}
-.severity {
-    font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 4px;
-}
-.severity.high { 
-    color: #ef4444;
-    background-color: #fee2e2;
-}
-.severity.medium { 
-    color: #f97316;
-    background-color: #ffedd5;
-}
-.severity.low { 
-    color: #22c55e;
-    background-color: #dcfce7;
 }
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
@@ -789,7 +774,6 @@ with st.expander("🎯 Metric Improvement Objective (click to expand)", expanded
     if metric_type == "Conversion Rate" and metric_unit != "%":
         st.warning("For 'Conversion Rate' metric type, the unit should be '%'.")
         metric_inputs_valid = False
-
 with st.expander("🧠 Generate Experiment Plan", expanded=True):
     create_header_with_help("Generate Experiment Plan", "When ready, click Generate to call the LLM and create a plan.", icon="🧠")
     sanitized_metric_name = sanitize_text(exact_metric)
@@ -937,7 +921,6 @@ if st.session_state.get("ai_parsed"):
                                 st.error("Failed to generate details for your hypothesis. Please try again.")
                         except Exception as e:
                             st.error(f"LLM call failed: {str(e)}")
-
 
     elif st.session_state.stage == "full_plan":
         st.subheader("Step 3: Refine the Full Plan")
@@ -1115,7 +1098,6 @@ if st.session_state.get("ai_parsed"):
         for step in plan.get("next_steps", []):
             if not isinstance(step, str): continue
             next_steps_html += f"<div class='section-list-item'><p>{html_sanitize(step)}</p></div>"
-
 
         plan_html = f"""
             <div class='prd-card'>
@@ -1306,4 +1288,3 @@ if st.session_state.get("ai_parsed"):
                             file_name=f"experiment_prd_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
                             mime="application/json"
                         )
-    
