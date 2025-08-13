@@ -1234,8 +1234,22 @@ if st.session_state.get("ai_parsed"):
                 if 'success_criteria' not in edited_plan or not isinstance(edited_plan['success_criteria'], dict): 
                     edited_plan['success_criteria'] = {}
                 edited_plan['success_criteria']['confidence_level'] = st.number_input("Confidence Level (%)", value=edited_plan['success_criteria'].get('confidence_level', 95), key="edit_conf")
-                mde_value = max(0.1, float(edited_plan['success_criteria'].get('MDE', 5.0))
-                edited_plan['success_criteria']['MDE'] = st.number_input("Minimum Detectable Effect (%)", min_value=0.1, value=edited_plan['success_criteria'].get('MDE', 5.0), key="edit_mde")
+                try:
+                    # Safely get MDE value with proper validation
+                    raw_mde = edited_plan['success_criteria'].get('MDE', 5.0)
+                    mde_value = max(0.1, float(raw_mde)) if raw_mde is not None else 5.0
+                except (ValueError, TypeError):
+                    mde_value = 5.0  # Fallback to default if conversion fails
+
+                edited_plan['success_criteria']['MDE'] = st.number_input(
+                    "Minimum Detectable Effect (%)", 
+                    min_value=0.1, 
+                    max_value=100.0,  # Added reasonable upper bound
+                    value=float(mde_value),
+                    step=0.1,
+                    format="%.1f",  # Ensures consistent decimal display
+                    key="edit_mde"
+                )
                 edited_plan['statistical_rationale'] = st.text_area("Statistical Rationale", value=edited_plan.get('statistical_rationale', ''), key="edit_rationale", height=100)
                 st.markdown("---")
                 
