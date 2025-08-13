@@ -338,14 +338,14 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
     story: List[Any] = []
     
     def pdf_sanitize(text: Any) -> str:
-    if text is None: 
-        return ""
-    text = str(text)
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+        if text is None: 
+            return ""
+        text = str(text)
+        return (
+            text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
         
     def add_section_header(title: str):
         story.append(Spacer(1, 12))
