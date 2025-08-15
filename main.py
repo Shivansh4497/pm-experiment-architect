@@ -866,6 +866,21 @@ with st.expander("🧠 Generate Experiment Plan", expanded=st.session_state.expa
                 raw_llm = generate_experiment_plan(goal_with_units, context)
                 parsed = extract_json(raw_llm)
                 if parsed:
+                    if 'success_criteria' not in parsed:
+                        parsed['success_criteria'] = {}
+                    
+                    try:
+                        parsed['success_criteria']['confidence_level'] = max(80, min(99, 
+                            float(parsed['success_criteria'].get('confidence_level', 95)))
+                    except (ValueError, TypeError):
+                        parsed['success_criteria']['confidence_level'] = 95
+                    
+                    try:
+                        parsed['success_criteria']['MDE'] = max(0.1, 
+                            float(parsed['success_criteria'].get('MDE', mde_default)))
+                    except (ValueError, TypeError):
+                        parsed['success_criteria']['MDE'] = max(0.1, mde_default)
+                    
                     st.session_state.ai_parsed = parsed
                     st.session_state.hypotheses_from_llm = parsed.get("hypotheses", [])
                     st.success("Plan generated successfully — let's refine it step-by-step.")
@@ -876,7 +891,6 @@ with st.expander("🧠 Generate Experiment Plan", expanded=st.session_state.expa
                 st.error(f"LLM generation failed: {str(e)}")
                 st.session_state.stage = "input"
 
-# --- Main Guided Workflow ---
 if st.session_state.get("ai_parsed"):
     st.markdown("<hr>", unsafe_allow_html=True)
     st.markdown("### 🚀 Refine Your Experiment Plan")
@@ -961,46 +975,55 @@ if st.session_state.get("ai_parsed"):
         st.subheader("Step 3: Refine the Full Plan")
         st.info("Your experiment plan is ready! Now you can edit any of the sections, starting with the A/B test calculator.")
 
-        # --- A/B Test Calculator Section ---
         with st.expander("🔢 A/B Test Calculator: Fine-tune sample size", expanded=st.session_state.expander_states["calculator"]):
             plan = st.session_state.ai_parsed
             
             if 'success_criteria' not in plan or not isinstance(plan['success_criteria'], dict):
                 plan['success_criteria'] = {}
             
-            # Safely get MDE with validation
             try:
                 calc_mde_initial = float(plan['success_criteria'].get('MDE', mde_default))
                 calc_mde_initial = max(0.1, calc_mde_initial)
             except (ValueError, TypeError):
                 calc_mde_initial = max(0.1, mde_default)
             
-            calc_mde = st.session_state.get("calc_mde", calc_mde_initial)
-            calc_conf = st.session_state.get("calc_confidence", plan['success_criteria'].get("confidence_level", 95))
-            calc_power = st.session_state.get("calc_power", 80)
-            calc_variants = st.session_state.get("calc_variants", 2)
+            try:
+                calc_conf_initial = int(plan['success_criteria'].get('confidence_level', 95))
+                calc_conf_initial = max(80, min(99, calc_conf_initial))
+            except (ValueError, TypeError):
+                calc_conf_initial = 95
+                
+            try:
+                calc_power_initial = int(st.session_state.get('calc_power', 80))
+                calc_power_initial = max(70, min(95, calc_power_initial))
+            except (ValueError, TypeError):
+                calc_power_initial = 80
+                
+            calc_variants = st.session_state.get('calc_variants', 2)
             
             col1, col2 = st.columns(2)
             with col1:
                 calc_mde = st.number_input("Minimum Detectable Effect (MDE) %", 
-                                         min_value=0.0001, 
+                                         min_value=0.1, 
                                          max_value=50.0, 
-                                         value=float(calc_mde), 
+                                         value=float(calc_mde_initial), 
                                          step=0.1, 
                                          key="calc_mde_key")
+                                         
                 calc_conf = st.number_input("Confidence Level (%)", 
                                           min_value=80, 
                                           max_value=99, 
-                                          value=int(calc_conf),
+                                          value=int(calc_conf_initial),
                                           step=1, 
                                           key="calc_conf_key")
             with col2:
                 calc_power = st.number_input("Statistical Power (%)", 
                                            min_value=70, 
                                            max_value=95, 
-                                           value=int(calc_power), 
+                                           value=int(calc_power_initial), 
                                            step=1, 
                                            key="calc_power_key")
+                                           
                 calc_variants = st.number_input("Number of Variants (Control + Variations)", 
                                               min_value=2, 
                                               max_value=5, 
@@ -1065,12 +1088,146 @@ if st.session_state.get("ai_parsed"):
                 else:
                     st.markdown("**Estimated Duration:** Could not calculate (check DAU value)")
 
-        # --- Final Plan Preview (Read-Only) ---
         plan = st.session_state.ai_parsed
         
-        # [Previous HTML generation code remains exactly the same...]
-        # ... (keeping all the HTML template code from original)
+        hypotheses_html = ""
+        for h in plan.get("hypotheses", []):
+            if not isinstance(h, dict): continue
+            hypotheses_html += f"""
+                <div class='section-list-item'>
+                    <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
+                    <p class='rationale'><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
+                    <p class='example'><strong>Example:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
+                    <p class='behavioral-basis'><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
+                </div>
+            """
 
+        variants_html = ""
+        for i, v in enumerate(plan.get("variants", [])):
+            if not isinstance(v, dict): continue
+            variants_html += f"""
+                <div class='section-list-item'>
+                    <p><strong>Control {i+1}:</strong> {html_sanitize(v.get('control', 'N/A'))}</p>
+                    <p><strong>Variation {i+1}:</strong> {html_sanitize(v.get('variation', 'N/A'))}</p>
+                </div>
+            """
+
+        metrics_html = ""
+        for m in plan.get("metrics", []):
+            if not isinstance(m, dict): continue
+            metrics_html += f"""
+                <div class='section-list-item'>
+                    <p><strong>Name:</strong> {html_sanitize(m.get('name', ''))}</p>
+                    <p><strong>Formula:</strong> <code class='formula-code'>{html_sanitize(m.get('formula', ''))}</code></p>
+                    <p><strong>Importance:</strong> <span class='importance'>{html_sanitize(m.get('importance', ''))}</span></p>
+                </div>
+            """
+        
+        criteria = plan.get('success_criteria', {})
+        
+        sample_size_per_variant = st.session_state.get('calculated_sample_size_per_variant')
+        total_sample_size = st.session_state.get('calculated_total_sample_size')
+        duration_days = st.session_state.get('calculated_duration_days')
+
+        stats_html_parts = []
+        stats_html_parts.append(f"""
+            <div class='section-list-item'>
+                <p><strong>Confidence:</strong> {criteria.get('confidence_level', '')}%</p>
+                <p><strong>MDE:</strong> {criteria.get('MDE', '')}%</p>
+                <p><strong>Statistical Rationale:</strong> {html_sanitize(plan.get('statistical_rationale', 'No rationale provided.'))}</p>
+            """)
+
+        if sample_size_per_variant is not None:
+            stats_html_parts.append(f"<p><strong>Sample Size per Variant:</strong> {sample_size_per_variant:,}</p>")
+        if total_sample_size is not None:
+            stats_html_parts.append(f"<p><strong>Total Sample Size:</strong> {total_sample_size:,}</p>")
+        if duration_days is not None:
+            stats_html_parts.append(f"<p><strong>Estimated Duration:</strong> {round(duration_days, 1)} days</p>")
+        
+        stats_html_parts.append("</div>")
+        stats_html = "".join(stats_html_parts)
+
+        risks_html = ""
+        for r in plan.get("risks_and_assumptions", []):
+            if not isinstance(r, dict): continue
+    
+            risk_text = r.get('risk', 'N/A')
+            severity_text = r.get('severity', 'Medium')
+            mitigation_text = r.get('mitigation', 'N/A')
+
+            severity_class = "medium"
+            if severity_text.lower() in ['high', 'medium', 'low']:
+                severity_class = severity_text.lower()
+    
+            risks_html += f"""
+                <div class='section-list-item'>
+                    <p><strong>Risk:</strong> {html_sanitize(risk_text)}</p>
+                    <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(severity_text)}</span></p>
+                    <p><strong>Mitigation:</strong> {html_sanitize(mitigation_text)}</p>
+                </div>
+            """
+        
+        next_steps_html = ""
+        for step in plan.get("next_steps", []):
+            if not isinstance(step, str): continue
+            next_steps_html += f"""
+                <div class='section-list-item'>
+                    <p>{html_sanitize(step)}</p>
+                </div>
+            """
+
+        plan_html = f"""
+            <div class='prd-card'>
+                <div class="prd-header">
+                    <div class="logo-wrapper">A/B</div>
+                    <div class="header-text">
+                        <h1>Experiment PRD</h1>
+                        <p>An AI-generated plan for {sanitize_text(exact_metric)}</p>
+                    </div>
+                </div>
+                <div class="prd-section">
+                    <div class="prd-section-title"><h2>1. Problem Statement</h2></div>
+                    <div class="prd-section-content"><p class="problem-statement">{html_sanitize(plan.get("problem_statement", ""))}</p></div>
+                </div>
+                <div class="prd-section">
+                    <div class="prd-section-title"><h2>2. Hypotheses</h2></div>
+                    <div class="prd-section-content">
+                        <div class="section-list">{hypotheses_html}</div>
+                    </div>
+                </div>
+                <div class="prd-section">
+                    <div class="prd-section-title"><h2>3. Variants</h2></div>
+                    <div class="prd-section-content">
+                        <div class="section-list">{variants_html}</div>
+                    </div>
+                </div>
+                <div class="prd-section">
+                    <div class="prd-section-title"><h2>4. Metrics</h2></div>
+                    <div class="prd-section-content">
+                        <div class="section-list">{metrics_html}</div>
+                    </div>
+                </div>
+                <div class="prd-section">
+                    <div class="prd-section-title"><h2>5. Success Criteria & Statistical Rationale</h2></div>
+                    <div class="prd-section-content">
+                        <div class="section-list">{stats_html}</div>
+                    </div>
+                </div>
+                <div class="prd-section">
+                    <div class="prd-section-title"><h2>6. Risks and Assumptions</h2></div>
+                    <div class="prd-section-content">
+                        <div class="section-list">{risks_html}</div>
+                    </div>
+                </div>
+                <div class="prd-section">
+                    <div class="prd-section-title"><h2>7. Next Steps</h2></div>
+                    <div class="prd-section-content">
+                        <div class="section-list">{next_steps_html}</div>
+                    </div>
+                </div>
+                <div class='prd-footer'>Generated by A/B Test Architect on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</div>
+            </div>
+            """
         st.markdown(plan_html, unsafe_allow_html=True)
         
         with st.expander("✏️ Edit Experiment Plan", expanded=st.session_state.expander_states["edit_plan"]):
@@ -1078,8 +1235,135 @@ if st.session_state.get("ai_parsed"):
             edited_plan = st.session_state.ai_parsed.copy()
             
             with st.form(key='edit_form'):
-                # [Previous form editing code remains exactly the same...]
-                # ... (keeping all the form editing sections from original)
+                st.subheader("1. Problem Statement")
+                edited_plan['problem_statement'] = st.text_area("Problem Statement", value=edited_plan.get('problem_statement', ''), height=100, key="edit_problem_statement")
+                st.markdown("---")
+                
+                st.subheader("2. Hypotheses")
+                if 'hypotheses' not in edited_plan or not isinstance(edited_plan['hypotheses'], list): 
+                    edited_plan['hypotheses'] = []
+                
+                num_hypotheses = st.number_input("Number of Hypotheses", min_value=0, value=len(edited_plan['hypotheses']), key='num_hyp')
+                
+                if num_hypotheses > len(edited_plan['hypotheses']):
+                    edited_plan['hypotheses'].extend([{"hypothesis": "", "rationale": "", "example_implementation": "", "behavioral_basis": ""}] * (num_hypotheses - len(edited_plan['hypotheses'])))
+                elif num_hypotheses < len(edited_plan['hypotheses']):
+                    edited_plan['hypotheses'] = edited_plan['hypotheses'][:num_hypotheses]
+                    
+                for i, h in enumerate(edited_plan.get("hypotheses", [])):
+                    if not isinstance(h, dict): continue
+                    with st.expander(f"Hypothesis {i+1}", expanded=True):
+                        edited_plan['hypotheses'][i]['hypothesis'] = st.text_input("Hypothesis", value=h.get('hypothesis', ''), key=f"edit_hyp_{i}")
+                        edited_plan['hypotheses'][i]['rationale'] = st.text_area("Rationale", value=h.get('rationale', ''), key=f"edit_rat_{i}", height=50)
+                        edited_plan['hypotheses'][i]['behavioral_basis'] = st.text_input("Behavioral Basis", value=h.get('behavioral_basis', ''), key=f"edit_behav_{i}")
+                        edited_plan['hypotheses'][i]['example_implementation'] = st.text_area("Implementation Example", value=h.get('example_implementation', ''), key=f"edit_impl_{i}", height=50)
+                st.markdown("---")
+                
+                st.subheader("3. Variants")
+                if 'variants' not in edited_plan or not isinstance(edited_plan['variants'], list): 
+                    edited_plan['variants'] = []
+                num_variants = st.number_input("Number of Variants", min_value=1, value=len(edited_plan['variants']), key='num_variants')
+
+                if num_variants > len(edited_plan['variants']):
+                    edited_plan['variants'].extend([{"control": "", "variation": ""}] * (num_variants - len(edited_plan['variants'])))
+                elif num_variants < len(edited_plan['variants']):
+                    edited_plan['variants'] = edited_plan['variants'][:num_variants]
+
+                for i, v in enumerate(edited_plan.get('variants', [])):
+                    if not isinstance(v, dict): continue
+                    with st.expander(f"Variant {i+1}", expanded=True):
+                        edited_plan['variants'][i]['control'] = st.text_input("Control", value=v.get('control', ''), key=f'edit_control_{i}')
+                        edited_plan['variants'][i]['variation'] = st.text_input("Variation", value=v.get('variation', ''), key=f'edit_variation_{i}')
+                st.markdown("---")
+
+                st.subheader("4. Metrics")
+                if 'metrics' not in edited_plan or not isinstance(edited_plan['metrics'], list): 
+                    edited_plan['metrics'] = []
+                num_metrics = st.number_input("Number of Metrics", min_value=1, value=len(edited_plan['metrics']), key='num_metrics')
+                
+                if num_metrics > len(edited_plan['metrics']):
+                    edited_plan['metrics'].extend([{"name": "", "formula": "", "importance": "Primary"}] * (num_metrics - len(edited_plan['metrics'])))
+                elif num_metrics < len(edited_plan['metrics']):
+                    edited_plan['metrics'] = edited_plan['metrics'][:num_metrics]
+
+                for i, m in enumerate(edited_plan.get("metrics", [])):
+                    if not isinstance(m, dict): continue
+                    with st.expander(f"Metric {i+1}", expanded=True):
+                        edited_plan['metrics'][i]['name'] = st.text_input("Name", value=m.get('name', ''), key=f"edit_metric_name_{i}")
+                        edited_plan['metrics'][i]['formula'] = st.text_input("Formula", value=m.get('formula', ''), key=f"edit_metric_formula_{i}")
+                        
+                        options = ["Primary", "Secondary", "Guardrail"]
+                        importance_value = m.get('importance', 'Primary')
+                        if importance_value not in options:
+                            importance_value = "Primary"
+                        
+                        edited_plan['metrics'][i]['importance'] = st.selectbox("Importance", options=options, index=options.index(importance_value), key=f"edit_metric_imp_{i}")
+                        
+                st.markdown("---")
+                
+                st.subheader("5. Success Criteria & Statistical Rationale")
+                if 'success_criteria' not in edited_plan or not isinstance(edited_plan['success_criteria'], dict): 
+                    edited_plan['success_criteria'] = {}
+                
+                try:
+                    conf_level = int(edited_plan['success_criteria'].get('confidence_level', 95))
+                    conf_level = max(80, min(99, conf_level))
+                except (ValueError, TypeError):
+                    conf_level = 95
+                
+                edited_plan['success_criteria']['confidence_level'] = st.number_input(
+                    "Confidence Level (%)", 
+                    min_value=80, 
+                    max_value=99, 
+                    value=conf_level,
+                    step=1,
+                    key="edit_conf"
+                )
+                
+                try:
+                    raw_mde = edited_plan['success_criteria'].get('MDE', mde_default)
+                    mde_value = max(0.1, float(raw_mde)) if raw_mde is not None else max(0.1, mde_default)
+                except (ValueError, TypeError):
+                    mde_value = max(0.1, mde_default)
+
+                edited_plan['success_criteria']['MDE'] = st.number_input(
+                    "Minimum Detectable Effect (%)", 
+                    min_value=0.1, 
+                    max_value=100.0,
+                    value=float(mde_value),
+                    step=0.1,
+                    format="%.1f",
+                    key="edit_mde"
+                )
+                edited_plan['statistical_rationale'] = st.text_area("Statistical Rationale", value=edited_plan.get('statistical_rationale', ''), key="edit_rationale", height=100)
+                st.markdown("---")
+                
+                st.subheader("6. Risks and Assumptions")
+                if 'risks_and_assumptions' not in edited_plan or not isinstance(edited_plan['risks_and_assumptions'], list): 
+                    edited_plan['risks_and_assumptions'] = []
+                num_risks = st.number_input("Number of Risks", min_value=0, value=len(edited_plan['risks_and_assumptions']), key='num_risks')
+                
+                if num_risks > len(edited_plan['risks_and_assumptions']):
+                    edited_plan['risks_and_assumptions'].extend([{"risk": "", "severity": "Medium", "mitigation": ""}] * (num_risks - len(edited_plan['risks_and_assumptions'])))
+                elif num_risks < len(edited_plan['risks_and_assumptions']):
+                    edited_plan['risks_and_assumptions'] = edited_plan['risks_and_assumptions'][:num_risks]
+
+                for i, r in enumerate(edited_plan.get("risks_and_assumptions", [])):
+                    if not isinstance(r, dict): continue
+                    with st.expander(f"Risk {i+1}", expanded=True):
+                        edited_plan['risks_and_assumptions'][i]['risk'] = st.text_input("Risk", value=r.get('risk', ''), key=f"edit_risk_{i}")
+                        edited_plan['risks_and_assumptions'][i]['severity'] = st.selectbox("Severity", options=["High", "Medium", "Low"], index=["High", "Medium", "Low"].index(r.get('severity', 'Medium')), key=f"edit_risk_sev_{i}")
+                        edited_plan['risks_and_assumptions'][i]['mitigation'] = st.text_area("Mitigation", value=r.get('mitigation', ''), key=f"edit_risk_mit_{i}", height=50)
+                st.markdown("---")
+                
+                st.subheader("7. Next Steps")
+                if 'next_steps' not in edited_plan or not isinstance(edited_plan['next_steps'], list): 
+                    edited_plan['next_steps'] = []
+                next_steps_text = "\n".join(edited_plan.get('next_steps', []))
+                new_next_steps = st.text_area("Next Steps (one per line)", value=next_steps_text, height=150, key="edit_next_steps")
+                edited_plan['next_steps'] = [step.strip() for step in new_next_steps.split('\n') if step.strip()]
+                
+                st.markdown("---")
                 
                 submitted = st.form_submit_button("💾 Save Changes")
                 if submitted:
