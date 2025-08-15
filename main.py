@@ -546,6 +546,55 @@ def render_prd_plan(plan: Dict[str, Any]) -> None:
     </div>  <!-- Close prd-card -->
     """, unsafe_allow_html=True)
 
+def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -> Optional[bytes]:
+    """Generate PDF bytes with proper formatting and error handling"""
+    if not REPORTLAB_AVAILABLE:
+        return None
+        
+    prd = sanitize_experiment_plan(prd)
+    buffer = BytesIO()
+    
+    try:
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            rightMargin=50,
+            leftMargin=50,
+            topMargin=50,
+            bottomMargin=50
+        )
+        
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle(
+            name="PRDTitle",
+            fontSize=20,
+            leading=24,
+            spaceAfter=12,
+            alignment=TA_CENTER
+        ))
+        styles.add(ParagraphStyle(
+            name="SectionHeading",
+            fontSize=14,
+            leading=18,
+            spaceBefore=12,
+            spaceAfter=6,
+            fontName="Helvetica-Bold"
+        ))
+        styles.add(ParagraphStyle(
+            name="BodyText",
+            fontSize=11,
+            leading=14,
+            spaceAfter=6
+        ))
+        
+        story = []
+        
+        def pdf_sanitize(text: Any) -> str:
+            if text is None: 
+                return ""
+            text = str(text)
+            return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
 # --- Streamlit UI Setup ---
 st.set_page_config(
     page_title="A/B Test Architect", 
@@ -1443,54 +1492,6 @@ if st.session_state.get("ai_parsed"):
                     st.success("Plan updated successfully!")
                     st.rerun()
 
-def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -> Optional[bytes]:
-    """Generate PDF bytes with proper formatting and error handling"""
-    if not REPORTLAB_AVAILABLE:
-        return None
-        
-    prd = sanitize_experiment_plan(prd)
-    buffer = BytesIO()
-    
-    try:
-        doc = SimpleDocTemplate(
-            buffer,
-            pagesize=letter,
-            rightMargin=50,
-            leftMargin=50,
-            topMargin=50,
-            bottomMargin=50
-        )
-        
-        styles = getSampleStyleSheet()
-        styles.add(ParagraphStyle(
-            name="PRDTitle",
-            fontSize=20,
-            leading=24,
-            spaceAfter=12,
-            alignment=TA_CENTER
-        ))
-        styles.add(ParagraphStyle(
-            name="SectionHeading",
-            fontSize=14,
-            leading=18,
-            spaceBefore=12,
-            spaceAfter=6,
-            fontName="Helvetica-Bold"
-        ))
-        styles.add(ParagraphStyle(
-            name="BodyText",
-            fontSize=11,
-            leading=14,
-            spaceAfter=6
-        ))
-        
-        story = []
-        
-        def pdf_sanitize(text: Any) -> str:
-            if text is None: 
-                return ""
-            text = str(text)
-            return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         
         # Title
         story.append(Paragraph(pdf_sanitize(title), styles["PRDTitle"]))
