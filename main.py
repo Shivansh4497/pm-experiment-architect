@@ -654,7 +654,7 @@ def render_prd_plan(plan: Dict[str, Any]) -> None:
     for r in plan.get("risks_and_assumptions", []):
         severity = str(r.get('severity', 'Medium')).title()
         severity_class = severity.lower() if severity.lower() in ['high', 'medium', 'low'] else 'medium'
-        
+    
         risks_html += f"""
         <div class='section-list-item'>
             <p><strong>Risk:</strong> {html_sanitize(r.get('risk', ''))}</p>
@@ -662,7 +662,7 @@ def render_prd_plan(plan: Dict[str, Any]) -> None:
             <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', ''))}</p>
         </div>
         """
-    
+
     st.markdown(f"""
     <div class="prd-section">
         <div class="prd-section-title"><h2>6. Risks and Assumptions</h2></div>
@@ -680,7 +680,7 @@ def render_prd_plan(plan: Dict[str, Any]) -> None:
             <p>{html_sanitize(step)}</p>
         </div>
         """
-    
+
     st.markdown(f"""
     <div class="prd-section">
         <div class="prd-section-title"><h2>7. Next Steps</h2></div>
