@@ -983,7 +983,7 @@ if st.session_state.get("ai_parsed"):
             col1, col2 = st.columns(2)
             with col1:
                 calc_mde = st.number_input("Minimum Detectable Effect (MDE) %", 
-                                         min_value=0.1, 
+                                         min_value=0.0001, 
                                          max_value=50.0, 
                                          value=float(calc_mde), 
                                          step=0.1, 
