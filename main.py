@@ -1037,12 +1037,14 @@ if st.session_state.get("ai_parsed"):
             with col_act1:
                 refresh_btn = st.button("🔄 Calculate", key="calc_btn")
             with col_act2:
+                lock_btn = False
                 if st.session_state.get("calculated_sample_size_per_variant"):
                     lock_btn = st.button("🔒 Lock Values", key="lock_btn")
             with col_act3:
                 reset_btn = st.button("🔄 Reset Calculator", key="reset_calc_btn")
 
-            if refresh_btn or (st.session_state.get("calculated_sample_size_per_variant") is None and current_value is not None):
+            # Handle button actions
+            if refresh_btn:
                 alpha_calc = 1 - (calc_conf / 100.0)
                 power_calc = calc_power / 100.0
                 sample_per_variant, total_sample = calculate_sample_size(
@@ -1058,8 +1060,9 @@ if st.session_state.get("ai_parsed"):
                 st.session_state.calculated_total_sample_size = total_sample
                 users_to_test = st.session_state.calculated_total_sample_size or 0
                 st.session_state.calculated_duration_days = (users_to_test / dau) if dau > 0 and users_to_test else None
+                st.rerun()
 
-            if lock_btn:
+            if 'lock_btn' in locals() and lock_btn:
                 st.session_state.calc_locked = True
                 if 'success_criteria' not in st.session_state.ai_parsed:
                     st.session_state.ai_parsed['success_criteria'] = {}
