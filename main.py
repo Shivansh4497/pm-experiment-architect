@@ -395,7 +395,150 @@ def pdf_sanitize(text: Any) -> str:
 def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -> Optional[bytes]:
     """Generate PDF bytes with proper formatting and error handling"""
     if not REPORTLAB_AVAILABLE:
+        st.warning("PDF export requires ReportLab which is not available")
         return None
+
+    prd = sanitize_experiment_plan(prd)
+    buffer = BytesIO()
+    
+    try:
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            rightMargin=50,
+            leftMargin=50,
+            topMargin=50,
+            bottomMargin=50
+        )
+        
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle(
+            name="PRDTitle",
+            fontSize=20,
+            leading=24,
+            spaceAfter=12,
+            alignment=TA_CENTER
+        ))
+        styles.add(ParagraphStyle(
+            name="SectionHeading",
+            fontSize=14,
+            leading=18,
+            spaceBefore=12,
+            spaceAfter=6,
+            fontName="Helvetica-Bold"
+        ))
+        styles.add(ParagraphStyle(
+            name="BodyText",
+            fontSize=11,
+            leading=14,
+            spaceAfter=6
+        ))
+        
+        story = []
+        
+        # Title
+        story.append(Paragraph(pdf_sanitize(title), styles["PRDTitle"]))
+        story.append(Spacer(1, 24))
+        
+        # Problem Statement
+        story.append(Paragraph("1. Problem Statement", styles["SectionHeading"]))
+        story.append(Paragraph(pdf_sanitize(prd.get("problem_statement", "")), styles["BodyText"]))
+        story.append(Spacer(1, 12))
+        
+        # Hypotheses
+        story.append(Paragraph("2. Hypotheses", styles["SectionHeading"]))
+        for idx, h in enumerate(prd.get("hypotheses", [])):
+            story.append(Paragraph(f"<b>Hypothesis {idx+1}:</b> {pdf_sanitize(h.get('hypothesis', ''))}", styles["BodyText"]))
+            story.append(Paragraph(f"<b>Rationale:</b> {pdf_sanitize(h.get('rationale', ''))}", styles["BodyText"]))
+            story.append(Spacer(1, 8))
+        
+        # Variants
+        story.append(Paragraph("3. Variants", styles["SectionHeading"]))
+        for v in prd.get("variants", []):
+            story.append(Paragraph(f"<b>Control:</b> {pdf_sanitize(v.get('control', ''))}", styles["BodyText"]))
+            story.append(Paragraph(f"<b>Variation:</b> {pdf_sanitize(v.get('variation', ''))}", styles["BodyText"]))
+            story.append(Spacer(1, 8))
+        
+        # Metrics Table
+        story.append(Paragraph("4. Metrics", styles["SectionHeading"]))
+        metrics_data = [['Name', 'Formula', 'Importance']]
+        for m in prd.get("metrics", []):
+            metrics_data.append([
+                pdf_sanitize(m.get('name', '')),
+                pdf_sanitize(m.get('formula', '')),
+                pdf_sanitize(m.get('importance', ''))
+            ])
+        
+        if len(metrics_data) > 1:
+            metrics_table = Table(metrics_data, colWidths=[2*inch, 3*inch, 1.5*inch])
+            metrics_table.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f5f5f5')),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('WORDWRAP', (0,0), (-1,-1), True)
+            ]))
+            story.append(metrics_table)
+        else:
+            story.append(Paragraph("No metrics defined.", styles["BodyText"]))
+        
+        # Success Criteria
+        story.append(Paragraph("5. Success Criteria", styles["SectionHeading"]))
+        criteria = prd.get("success_criteria", {})
+        story.append(Paragraph(f"<b>Confidence Level:</b> {pdf_sanitize(criteria.get('confidence_level', ''))}%", styles["BodyText"]))
+        story.append(Paragraph(f"<b>Minimum Detectable Effect (MDE):</b> {pdf_sanitize(criteria.get('MDE', ''))}%", styles["BodyText"]))
+        story.append(Paragraph(f"<b>Statistical Rationale:</b> {pdf_sanitize(prd.get('statistical_rationale', ''))}", styles["BodyText"]))
+        
+        # Add calculator values if available
+        if st.session_state.get('calculated_sample_size_per_variant'):
+            story.append(Paragraph(f"<b>Sample Size per Variant:</b> {st.session_state.calculated_sample_size_per_variant:,}", styles["BodyText"]))
+        if st.session_state.get('calculated_total_sample_size'):
+            story.append(Paragraph(f"<b>Total Sample Size:</b> {st.session_state.calculated_total_sample_size:,}", styles["BodyText"]))
+        if st.session_state.get('calculated_duration_days'):
+            story.append(Paragraph(f"<b>Estimated Duration:</b> {round(st.session_state.calculated_duration_days, 1)} days", styles["BodyText"]))
+        
+        # Risks Table
+        story.append(Paragraph("6. Risks and Assumptions", styles["SectionHeading"]))
+        risks_data = [['Risk', 'Severity', 'Mitigation']]
+        for r in prd.get("risks_and_assumptions", []):
+            risks_data.append([
+                pdf_sanitize(r.get('risk', '')),
+                pdf_sanitize(r.get('severity', '')),
+                pdf_sanitize(r.get('mitigation', ''))
+            ])
+        
+        if len(risks_data) > 1:
+            risks_table = Table(risks_data, colWidths=[2.5*inch, 1*inch, 3*inch])
+            risks_table.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f5f5f5')),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('WORDWRAP', (0,0), (-1,-1), True)
+            ]))
+            story.append(risks_table)
+        else:
+            story.append(Paragraph("No risks defined.", styles["BodyText"]))
+        
+        # Next Steps
+        story.append(Paragraph("7. Next Steps", styles["SectionHeading"]))
+        for step in prd.get("next_steps", []):
+            story.append(Paragraph(f"• {pdf_sanitize(step)}", styles["BodyText"]))
+        
+        # Version Info
+        story.append(Spacer(1, 24))
+        story.append(Paragraph(
+            f"Generated by A/B Test Architect on {datetime.now().strftime('%Y-%m-%d %H:%M')} (v{st.session_state.prd_version})", 
+            ParagraphStyle(name="Footer", fontSize=9, alignment=TA_CENTER)
+        ))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer.getvalue()
+        
+    except Exception as e:
+        st.error(f"PDF generation failed: {str(e)}")
+        return None
+    finally:
+        buffer.close()
 
 def render_prd_plan(plan: Dict[str, Any]) -> None:
     """Render the full PRD plan with proper sanitization and error handling"""
@@ -549,149 +692,6 @@ def render_prd_plan(plan: Dict[str, Any]) -> None:
             st.rerun()
 
         
-    prd = sanitize_experiment_plan(prd)
-    buffer = BytesIO()
-    
-    try:
-        doc = SimpleDocTemplate(
-            buffer,
-            pagesize=letter,
-            rightMargin=50,
-            leftMargin=50,
-            topMargin=50,
-            bottomMargin=50
-        )
-        
-        styles = getSampleStyleSheet()
-        styles.add(ParagraphStyle(
-            name="PRDTitle",
-            fontSize=20,
-            leading=24,
-            spaceAfter=12,
-            alignment=TA_CENTER
-        ))
-        styles.add(ParagraphStyle(
-            name="SectionHeading",
-            fontSize=14,
-            leading=18,
-            spaceBefore=12,
-            spaceAfter=6,
-            fontName="Helvetica-Bold"
-        ))
-        styles.add(ParagraphStyle(
-            name="BodyText",
-            fontSize=11,
-            leading=14,
-            spaceAfter=6
-        ))
-        
-        story = []
-        
-        
-        
-        # Title
-        story.append(Paragraph(pdf_sanitize(title), styles["PRDTitle"]))
-        story.append(Spacer(1, 24))
-        
-        # Problem Statement
-        story.append(Paragraph("1. Problem Statement", styles["SectionHeading"]))
-        story.append(Paragraph(pdf_sanitize(prd.get("problem_statement", "")), styles["BodyText"]))
-        story.append(Spacer(1, 12))
-        
-        # Hypotheses
-        story.append(Paragraph("2. Hypotheses", styles["SectionHeading"]))
-        for idx, h in enumerate(prd.get("hypotheses", [])):
-            story.append(Paragraph(f"<b>Hypothesis {idx+1}:</b> {pdf_sanitize(h.get('hypothesis', ''))}", styles["BodyText"]))
-            story.append(Paragraph(f"<b>Rationale:</b> {pdf_sanitize(h.get('rationale', ''))}", styles["BodyText"]))
-            story.append(Spacer(1, 8))
-        
-        # Variants
-        story.append(Paragraph("3. Variants", styles["SectionHeading"]))
-        for v in prd.get("variants", []):
-            story.append(Paragraph(f"<b>Control:</b> {pdf_sanitize(v.get('control', ''))}", styles["BodyText"]))
-            story.append(Paragraph(f"<b>Variation:</b> {pdf_sanitize(v.get('variation', ''))}", styles["BodyText"]))
-            story.append(Spacer(1, 8))
-        
-        # Metrics Table
-        story.append(Paragraph("4. Metrics", styles["SectionHeading"]))
-        metrics_data = [['Name', 'Formula', 'Importance']]
-        for m in prd.get("metrics", []):
-            metrics_data.append([
-                pdf_sanitize(m.get('name', '')),
-                pdf_sanitize(m.get('formula', '')),
-                pdf_sanitize(m.get('importance', ''))
-            ])
-        
-        if len(metrics_data) > 1:
-            metrics_table = Table(metrics_data, colWidths=[2*inch, 3*inch, 1.5*inch])
-            metrics_table.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f5f5f5')),
-                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                ('WORDWRAP', (0,0), (-1,-1), True)
-            ]))
-            story.append(metrics_table)
-        else:
-            story.append(Paragraph("No metrics defined.", styles["BodyText"]))
-        
-        # Success Criteria
-        story.append(Paragraph("5. Success Criteria", styles["SectionHeading"]))
-        criteria = prd.get("success_criteria", {})
-        story.append(Paragraph(f"<b>Confidence Level:</b> {pdf_sanitize(criteria.get('confidence_level', ''))}%", styles["BodyText"]))
-        story.append(Paragraph(f"<b>Minimum Detectable Effect (MDE):</b> {pdf_sanitize(criteria.get('MDE', ''))}%", styles["BodyText"]))
-        story.append(Paragraph(f"<b>Statistical Rationale:</b> {pdf_sanitize(prd.get('statistical_rationale', ''))}", styles["BodyText"]))
-        
-        # Add calculator values if available
-        if st.session_state.get('calculated_sample_size_per_variant'):
-            story.append(Paragraph(f"<b>Sample Size per Variant:</b> {st.session_state.calculated_sample_size_per_variant:,}", styles["BodyText"]))
-        if st.session_state.get('calculated_total_sample_size'):
-            story.append(Paragraph(f"<b>Total Sample Size:</b> {st.session_state.calculated_total_sample_size:,}", styles["BodyText"]))
-        if st.session_state.get('calculated_duration_days'):
-            story.append(Paragraph(f"<b>Estimated Duration:</b> {round(st.session_state.calculated_duration_days, 1)} days", styles["BodyText"]))
-        
-        # Risks Table
-        story.append(Paragraph("6. Risks and Assumptions", styles["SectionHeading"]))
-        risks_data = [['Risk', 'Severity', 'Mitigation']]
-        for r in prd.get("risks_and_assumptions", []):
-            risks_data.append([
-                pdf_sanitize(r.get('risk', '')),
-                pdf_sanitize(r.get('severity', '')),
-                pdf_sanitize(r.get('mitigation', ''))
-            ])
-        
-        if len(risks_data) > 1:
-            risks_table = Table(risks_data, colWidths=[2.5*inch, 1*inch, 3*inch])
-            risks_table.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f5f5f5')),
-                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                ('WORDWRAP', (0,0), (-1,-1), True)
-            ]))
-            story.append(risks_table)
-        else:
-            story.append(Paragraph("No risks defined.", styles["BodyText"]))
-        
-        # Next Steps
-        story.append(Paragraph("7. Next Steps", styles["SectionHeading"]))
-        for step in prd.get("next_steps", []):
-            story.append(Paragraph(f"• {pdf_sanitize(step)}", styles["BodyText"]))
-        
-        # Version Info
-        story.append(Spacer(1, 24))
-        story.append(Paragraph(
-            f"Generated by A/B Test Architect on {datetime.now().strftime('%Y-%m-%d %H:%M')} (v{st.session_state.prd_version})", 
-            ParagraphStyle(name="Footer", fontSize=9, alignment=TA_CENTER)
-        ))
-        
-        doc.build(story)
-        buffer.seek(0)
-        return buffer.getvalue()
-        
-    except Exception as e:
-        st.error(f"PDF generation failed: {str(e)}")
-        return None
-    finally:
-        buffer.close()
         
 # --- Streamlit UI Setup ---
 st.set_page_config(
