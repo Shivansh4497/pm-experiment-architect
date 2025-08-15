@@ -412,27 +412,34 @@ def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -
         )
         
         styles = getSampleStyleSheet()
-        styles.add(ParagraphStyle(
-            name="PRDTitle",
-            fontSize=20,
-            leading=24,
-            spaceAfter=12,
-            alignment=TA_CENTER
-        ))
-        styles.add(ParagraphStyle(
-            name="SectionHeading",
-            fontSize=14,
-            leading=18,
-            spaceBefore=12,
-            spaceAfter=6,
-            fontName="Helvetica-Bold"
-        ))
-        styles.add(ParagraphStyle(
-            name="BodyText",
-            fontSize=11,
-            leading=14,
-            spaceAfter=6
-        ))
+        
+        # Safe style additions - only add if they don't exist
+        if 'PRDTitle' not in styles:
+            styles.add(ParagraphStyle(
+                name="PRDTitle",
+                fontSize=20,
+                leading=24,
+                spaceAfter=12,
+                alignment=TA_CENTER
+            ))
+        
+        if 'SectionHeading' not in styles:
+            styles.add(ParagraphStyle(
+                name="SectionHeading",
+                fontSize=14,
+                leading=18,
+                spaceBefore=12,
+                spaceAfter=6,
+                fontName="Helvetica-Bold"
+            ))
+        
+        if 'BodyText' not in styles:
+            styles.add(ParagraphStyle(
+                name="BodyText",
+                fontSize=11,
+                leading=14,
+                spaceAfter=6
+            ))
         
         story = []
         
