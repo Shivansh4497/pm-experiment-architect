@@ -385,6 +385,166 @@ def calculate_sample_size(baseline, mde, alpha, power, num_variants, metric_type
     except Exception as e:
         st.error(f"Sample size calculation error: {str(e)}")
         return None, None
+# Add this right after the helper functions section (before the Streamlit UI code)
+
+def render_prd_plan(plan: Dict[str, Any]) -> None:
+    """Render the full PRD plan with proper sanitization and error handling"""
+    plan = sanitize_experiment_plan(plan)
+    sanitized_metric_name = sanitize_text(st.session_state.get('exact_metric', ''))
+    
+    # Header
+    st.markdown(f"""
+    <div class='prd-card'>
+        <div class="prd-header">
+            <div class="logo-wrapper">A/B</div>
+            <div class="header-text">
+                <h1>Experiment PRD</h1>
+                <p>An AI-generated plan for {sanitized_metric_name}</p>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Problem Statement
+    st.markdown(f"""
+    <div class="prd-section">
+        <div class="prd-section-title"><h2>1. Problem Statement</h2></div>
+        <div class="prd-section-content">
+            <p class="problem-statement">{html_sanitize(plan.get("problem_statement", ""))}</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Hypotheses
+    hypotheses_html = ""
+    for h in plan.get("hypotheses", []):
+        hypotheses_html += f"""
+        <div class='section-list-item'>
+            <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
+            <p><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
+            <p><strong>Example:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
+            <p><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
+        </div>
+        """
+    
+    st.markdown(f"""
+    <div class="prd-section">
+        <div class="prd-section-title"><h2>2. Hypotheses</h2></div>
+        <div class="prd-section-content">
+            <div class="section-list">{hypotheses_html}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Variants
+    variants_html = ""
+    for i, v in enumerate(plan.get("variants", [])):
+        variants_html += f"""
+        <div class='section-list-item'>
+            <p><strong>Control {i+1}:</strong> {html_sanitize(v.get('control', ''))}</p>
+            <p><strong>Variation {i+1}:</strong> {html_sanitize(v.get('variation', ''))}</p>
+        </div>
+        """
+    
+    st.markdown(f"""
+    <div class="prd-section">
+        <div class="prd-section-title"><h2>3. Variants</h2></div>
+        <div class="prd-section-content">
+            <div class="section-list">{variants_html}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Metrics
+    metrics_html = ""
+    for m in plan.get("metrics", []):
+        metrics_html += f"""
+        <div class='section-list-item'>
+            <p><strong>Name:</strong> {html_sanitize(m.get('name', ''))}</p>
+            <p><strong>Formula:</strong> <code class='formula-code'>{html_sanitize(m.get('formula', ''))}</code></p>
+            <p><strong>Importance:</strong> <span class='importance'>{html_sanitize(m.get('importance', ''))}</span></p>
+        </div>
+        """
+    
+    st.markdown(f"""
+    <div class="prd-section">
+        <div class="prd-section-title"><h2>4. Metrics</h2></div>
+        <div class="prd-section-content">
+            <div class="section-list">{metrics_html}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Success Criteria
+    criteria = plan.get('success_criteria', {})
+    stats_html = f"""
+    <div class='section-list-item'>
+        <p><strong>Confidence Level:</strong> {html_sanitize(criteria.get('confidence_level', ''))}%</p>
+        <p><strong>Minimum Detectable Effect (MDE):</strong> {html_sanitize(criteria.get('MDE', ''))}%</p>
+        <p><strong>Statistical Rationale:</strong> {html_sanitize(plan.get('statistical_rationale', ''))}</p>
+    """
+    
+    if st.session_state.get('calculated_sample_size_per_variant'):
+        stats_html += f"<p><strong>Sample Size per Variant:</strong> {st.session_state.calculated_sample_size_per_variant:,}</p>"
+    if st.session_state.get('calculated_total_sample_size'):
+        stats_html += f"<p><strong>Total Sample Size:</strong> {st.session_state.calculated_total_sample_size:,}</p>"
+    if st.session_state.get('calculated_duration_days'):
+        stats_html += f"<p><strong>Estimated Duration:</strong> {round(st.session_state.calculated_duration_days, 1)} days</p>"
+    
+    stats_html += "</div>"
+    
+    st.markdown(f"""
+    <div class="prd-section">
+        <div class="prd-section-title"><h2>5. Success Criteria & Statistical Rationale</h2></div>
+        <div class="prd-section-content">
+            <div class="section-list">{stats_html}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Risks
+    risks_html = ""
+    for r in plan.get("risks_and_assumptions", []):
+        severity = str(r.get('severity', 'Medium')).title()
+        severity_class = severity.lower() if severity.lower() in ['high', 'medium', 'low'] else 'medium'
+        
+        risks_html += f"""
+        <div class='section-list-item'>
+            <p><strong>Risk:</strong> {html_sanitize(r.get('risk', ''))}</p>
+            <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(severity)}</span></p>
+            <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', ''))}</p>
+        </div>
+        """
+    
+    st.markdown(f"""
+    <div class="prd-section">
+        <div class="prd-section-title"><h2>6. Risks and Assumptions</h2></div>
+        <div class="prd-section-content">
+            <div class="section-list">{risks_html}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Next Steps
+    next_steps_html = ""
+    for step in plan.get("next_steps", []):
+        next_steps_html += f"""
+        <div class='section-list-item'>
+            <p>{html_sanitize(step)}</p>
+        </div>
+        """
+    
+    st.markdown(f"""
+    <div class="prd-section">
+        <div class="prd-section-title"><h2>7. Next Steps</h2></div>
+        <div class="prd-section-content">
+            <div class="section-list">{next_steps_html}</div>
+        </div>
+    </div>
+    <div class='prd-footer'>
+        Generated by A/B Test Architect on {datetime.now().strftime("%Y-%m-%d %H:%M")}
+    </div>
+    </div>  <!-- Close prd-card -->
+    """, unsafe_allow_html=True)
 
 # --- Streamlit UI Setup ---
 st.set_page_config(
@@ -1282,156 +1442,6 @@ if st.session_state.get("ai_parsed"):
                     st.session_state.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M")
                     st.success("Plan updated successfully!")
                     st.rerun()
-def render_prd_plan(plan: Dict[str, Any]) -> None:
-    """Render the full PRD plan with proper sanitization and error handling"""
-    plan = sanitize_experiment_plan(plan)
-    sanitized_metric_name = sanitize_text(st.session_state.get('exact_metric', ''))
-    
-    # Problem Statement
-    st.markdown(f"""
-    <div class="prd-section">
-        <div class="prd-section-title"><h2>1. Problem Statement</h2></div>
-        <div class="prd-section-content">
-            <p class="problem-statement">{html_sanitize(plan.get("problem_statement", ""))}</p>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Hypotheses
-    hypotheses_html = ""
-    for h in plan.get("hypotheses", []):
-        hypotheses_html += f"""
-        <div class='section-list-item'>
-            <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
-            <p><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
-            <p><strong>Example:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
-            <p><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
-        </div>
-        """
-    
-    st.markdown(f"""
-    <div class="prd-section">
-        <div class="prd-section-title"><h2>2. Hypotheses</h2></div>
-        <div class="prd-section-content">
-            <div class="section-list">{hypotheses_html}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Variants
-    variants_html = ""
-    for i, v in enumerate(plan.get("variants", [])):
-        variants_html += f"""
-        <div class='section-list-item'>
-            <p><strong>Control {i+1}:</strong> {html_sanitize(v.get('control', ''))}</p>
-            <p><strong>Variation {i+1}:</strong> {html_sanitize(v.get('variation', ''))}</p>
-        </div>
-        """
-    
-    st.markdown(f"""
-    <div class="prd-section">
-        <div class="prd-section-title"><h2>3. Variants</h2></div>
-        <div class="prd-section-content">
-            <div class="section-list">{variants_html}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Metrics
-    metrics_html = ""
-    for m in plan.get("metrics", []):
-        metrics_html += f"""
-        <div class='section-list-item'>
-            <p><strong>Name:</strong> {html_sanitize(m.get('name', ''))}</p>
-            <p><strong>Formula:</strong> <code class='formula-code'>{html_sanitize(m.get('formula', ''))}</code></p>
-            <p><strong>Importance:</strong> <span class='importance'>{html_sanitize(m.get('importance', ''))}</span></p>
-        </div>
-        """
-    
-    st.markdown(f"""
-    <div class="prd-section">
-        <div class="prd-section-title"><h2>4. Metrics</h2></div>
-        <div class="prd-section-content">
-            <div class="section-list">{metrics_html}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Success Criteria
-    criteria = plan.get('success_criteria', {})
-    stats_html = f"""
-    <div class='section-list-item'>
-        <p><strong>Confidence Level:</strong> {html_sanitize(criteria.get('confidence_level', ''))}%</p>
-        <p><strong>Minimum Detectable Effect (MDE):</strong> {html_sanitize(criteria.get('MDE', ''))}%</p>
-        <p><strong>Statistical Rationale:</strong> {html_sanitize(plan.get('statistical_rationale', ''))}</p>
-    """
-    
-    if st.session_state.get('calculated_sample_size_per_variant'):
-        stats_html += f"<p><strong>Sample Size per Variant:</strong> {st.session_state.calculated_sample_size_per_variant:,}</p>"
-    if st.session_state.get('calculated_total_sample_size'):
-        stats_html += f"<p><strong>Total Sample Size:</strong> {st.session_state.calculated_total_sample_size:,}</p>"
-    if st.session_state.get('calculated_duration_days'):
-        stats_html += f"<p><strong>Estimated Duration:</strong> {round(st.session_state.calculated_duration_days, 1)} days</p>"
-    
-    stats_html += "</div>"
-    
-    st.markdown(f"""
-    <div class="prd-section">
-        <div class="prd-section-title"><h2>5. Success Criteria & Statistical Rationale</h2></div>
-        <div class="prd-section-content">
-            <div class="section-list">{stats_html}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Risks
-    risks_html = ""
-    for r in plan.get("risks_and_assumptions", []):
-        severity = str(r.get('severity', 'Medium')).title()
-        severity_class = severity.lower() if severity.lower() in ['high', 'medium', 'low'] else 'medium'
-        
-        risks_html += f"""
-        <div class='section-list-item'>
-            <p><strong>Risk:</strong> {html_sanitize(r.get('risk', ''))}</p>
-            <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(severity)}</span></p>
-            <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', ''))}</p>
-        </div>
-        """
-    
-    st.markdown(f"""
-    <div class="prd-section">
-        <div class="prd-section-title"><h2>6. Risks and Assumptions</h2></div>
-        <div class="prd-section-content">
-            <div class="section-list">{risks_html}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Next Steps
-    next_steps_html = ""
-    for step in plan.get("next_steps", []):
-        next_steps_html += f"""
-        <div class='section-list-item'>
-            <p>{html_sanitize(step)}</p>
-        </div>
-        """
-    
-    st.markdown(f"""
-    <div class="prd-section">
-        <div class="prd-section-title"><h2>7. Next Steps</h2></div>
-        <div class="prd-section-content">
-            <div class="section-list">{next_steps_html}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Version History
-    with st.expander("Version History", expanded=False):
-        st.write(f"PRD v{st.session_state.prd_version} - Last updated: {st.session_state.last_updated}")
-        if st.button("Increment Version"):
-            st.session_state.prd_version += 1
-            st.session_state.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M")
-            st.rerun()
 
 def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -> Optional[bytes]:
     """Generate PDF bytes with proper formatting and error handling"""
