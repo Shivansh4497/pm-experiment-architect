@@ -870,8 +870,7 @@ with st.expander("🧠 Generate Experiment Plan", expanded=st.session_state.expa
                         parsed['success_criteria'] = {}
                     
                     try:
-                        parsed['success_criteria']['confidence_level'] = max(80, min(99, 
-                            float(parsed['success_criteria'].get('confidence_level', 95)))
+                        parsed['success_criteria']['confidence_level'] = max(80, min(99,float(parsed['success_criteria'].get('confidence_level', 95)))
                     except (ValueError, TypeError):
                         parsed['success_criteria']['confidence_level'] = 95
                     
