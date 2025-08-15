@@ -1106,11 +1106,14 @@ if st.session_state.get("ai_parsed"):
 
         variants_html = ""
         for i, v in enumerate(plan.get("variants", [])):
-            if not isinstance(v, dict): continue
+            if not isinstance(v, dict): 
+                continue
+            control = html_sanitize(v.get('control', 'Not specified'))
+            variation = html_sanitize(v.get('variation', 'Not specified'))
             variants_html += f"""
                 <div class='section-list-item'>
-                    <p><strong>Control {i+1}:</strong> {html_sanitize(v.get('control', 'N/A'))}</p>
-                    <p><strong>Variation {i+1}:</strong> {html_sanitize(v.get('variation', 'N/A'))}</p>
+                    <p><strong>Control {i+1}:</strong> {control}</p>
+                    <p><strong>Variation {i+1}:</strong> {variation}</p>
                 </div>
             """
 
@@ -1151,32 +1154,45 @@ if st.session_state.get("ai_parsed"):
 
         risks_html = ""
         for r in plan.get("risks_and_assumptions", []):
-            if not isinstance(r, dict): continue
-    
-            risk_text = r.get('risk', 'N/A')
-            severity_text = r.get('severity', 'Medium')
-            mitigation_text = r.get('mitigation', 'N/A')
-
-            severity_class = "medium"
-            if severity_text.lower() in ['high', 'medium', 'low']:
-                severity_class = severity_text.lower()
-    
-            risks_html += f"""
-                <div class='section-list-item'>
-                    <p><strong>Risk:</strong> {html_sanitize(risk_text)}</p>
-                    <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(severity_text)}</span></p>
-                    <p><strong>Mitigation:</strong> {html_sanitize(mitigation_text)}</p>
-                </div>
-            """
+            if not isinstance(r, dict):
+                continue
+                
+            try:
+                risk = html_sanitize(r.get('risk', 'Unspecified risk'))
+                severity = html_sanitize(r.get('severity', 'Medium'))
+                mitigation = html_sanitize(r.get('mitigation', 'No mitigation specified'))
+                
+                # Validate severity class
+                severity_class = "medium"
+                if severity.lower() in ['high', 'medium', 'low']:
+                    severity_class = severity.lower()
+                
+                risks_html += f"""
+                    <div class='section-list-item'>
+                        <p><strong>Risk:</strong> {risk}</p>
+                        <p><strong>Severity:</strong> <span class='severity {severity_class}'>{severity}</span></p>
+                        <p><strong>Mitigation:</strong> {mitigation}</p>
+                    </div>
+                """
+            except Exception as e:
+                print(f"Error rendering risk: {e}")
+                continue
         
         next_steps_html = ""
-        for step in plan.get("next_steps", []):
-            if not isinstance(step, str): continue
-            next_steps_html += f"""
-                <div class='section-list-item'>
-                    <p>{html_sanitize(step)}</p>
-                </div>
-            """
+        for i, step in enumerate(plan.get("next_steps", [])):
+            if not isinstance(step, str):
+                continue
+            try:
+                clean_step = html_sanitize(step.strip())
+                if clean_step:
+                    next_steps_html += f"""
+                        <div class='section-list-item'>
+                            <p>{clean_step}</p>
+                        </div>
+                    """
+            except Exception as e:
+                print(f"Error rendering next step: {e}")
+                continue
 
         plan_html = f"""
             <div class='prd-card'>
