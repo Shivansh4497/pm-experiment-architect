@@ -15,6 +15,7 @@ from datetime import datetime
 from io import BytesIO
 import ast
 import html
+from bs4 import BeautifulSoup
 
 # PDF Export Setup with better error handling
 REPORTLAB_AVAILABLE = False
@@ -148,18 +149,20 @@ def sanitize_experiment_plan(raw_plan: Union[Dict[str, Any], None]) -> Dict[str,
             "importance": str(metric.get("importance", "Primary")),
         }
 
-    # Sanitize risks
+        # Sanitize risks
     if not isinstance(sanitized_plan["risks_and_assumptions"], list):
         sanitized_plan["risks_and_assumptions"] = []
     
     for i, risk in enumerate(sanitized_plan["risks_and_assumptions"]):
         if not isinstance(risk, dict):
             sanitized_plan["risks_and_assumptions"][i] = {}
-        sanitized_plan["risks_and_assumptions"][i] = {
-            "risk": str(risk.get("risk", "")),
+        # Ensure consistent field names
+        risk_data = {
+            "risk": str(risk.get("risk", risk.get("risks", ""))),
             "severity": str(risk.get("severity", "Medium")).title(),
-            "mitigation": str(risk.get("mitigation", "")),
+            "mitigation": str(risk.get("mitigation", risk.get("mitigations", "")))
         }
+        sanitized_plan["risks_and_assumptions"][i] = risk_data
 
     # Sanitize next steps
     if not isinstance(sanitized_plan["next_steps"], list):
@@ -200,7 +203,29 @@ def html_sanitize(text: Any) -> str:
     if text is None: 
         return ""
     text = str(text)
-    return html.escape(text)
+    # First unescape any existing HTML
+    text = html.unescape(text)
+    # Then re-escape properly
+    text = html.escape(text)
+    # Fix common tag issues
+    text = text.replace("<postrong>", "<p><strong>").replace("</postrong>", "</strong></p>")
+    # Fix unclosed tags
+    text = re.sub(r"<p>(.*?)(?=<p>|$)", r"<p>\1</p>", text)
+    return text
+
+def safe_html_render(html_content: str) -> None:
+    from bs4 import BeautifulSoup
+    try:
+        # Validate HTML structure
+        soup = BeautifulSoup(html_content, 'html.parser')
+        # Fix any structural issues
+        for item in soup.find_all(class_='section-list-item'):
+            if not item.find('p'):
+                item.wrap(soup.new_tag('p'))
+        st.markdown(str(soup), unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Error rendering content: {str(e)}")
+        st.code(html_content)  # Show the problematic HTML
 
 def generate_problem_statement(plan: Dict, current: float, target: float, unit: str) -> str:
     plan = sanitize_experiment_plan(plan)
@@ -649,30 +674,36 @@ def render_prd_plan(plan: Dict[str, Any]) -> None:
     </div>
     """, unsafe_allow_html=True)
 
-    # Risks
-    risks_html = ""
-    for r in plan.get("risks_and_assumptions", []):
-        severity = str(r.get('severity', 'Medium')).title()
-        severity_class = severity.lower() if severity.lower() in ['high', 'medium', 'low'] else 'medium'
     
-        risks_html += f"""
-        <div class='section-list-item'>
-            <p><strong>Risk:</strong> {html_sanitize(r.get('risk', ''))}</p>
-            <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(severity)}</span></p>
-            <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', ''))}</p>
-        </div>
-        """
+    # Risks
+    risks_content = []
+    for r in plan.get("risks_and_assumptions", []):
+        # Handle both dictionary and string formats
+        if isinstance(r, str):
+            risks_content.append(f"<div class='section-list-item'><p>{html_sanitize(r)}</p></div>")
+        else:
+            severity = str(r.get('severity', 'Medium')).title()
+            severity_class = severity.lower() if severity.lower() in ['high', 'medium', 'low'] else 'medium'
+            risks_content.append(f"""
+            <div class='section-list-item'>
+                <p><strong>Risk:</strong> {html_sanitize(r.get('risk', r.get('risks', '')))}</p>
+                <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(severity)}</span></p>
+                <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', r.get('mitigations', '')))}</p>
+            </div>
+            """)
 
-    st.markdown(f"""
+    risks_html = "\n".join(risks_content)
+    
+    safe_html_render(f"""
     <div class="prd-section">
         <div class="prd-section-title"><h2>6. Risks and Assumptions</h2></div>
         <div class="prd-section-content">
             <div class="section-list">{risks_html}</div>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """)
 
-    # Next Steps
+     # Next Steps
     next_steps_html = ""
     for step in plan.get("next_steps", []):
         next_steps_html += f"""
@@ -681,14 +712,14 @@ def render_prd_plan(plan: Dict[str, Any]) -> None:
         </div>
         """
 
-    st.markdown(f"""
+    safe_html_render(f"""
     <div class="prd-section">
         <div class="prd-section-title"><h2>7. Next Steps</h2></div>
         <div class="prd-section-content">
             <div class="section-list">{next_steps_html}</div>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """)
 
     # Version History
     with st.expander("Version History", expanded=False):
