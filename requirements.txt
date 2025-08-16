@@ -7,4 +7,5 @@ flask>=2.0.0
 pandas
 python-dotenv
 streamlit-modal
+beautifulsoup4==4.12.0
 
