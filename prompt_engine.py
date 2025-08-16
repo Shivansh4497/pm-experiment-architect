@@ -203,6 +203,47 @@ def _build_hypothesis_prompt(hypothesis_text: str, context: Dict[str, Any]) -> s
     return prompt
 
 
+def generate_hypotheses(context: Dict[str, Any]) -> str:
+    """
+    Generate 3 alternative hypotheses given the context.
+    Returns a JSON string: {"hypotheses": [list of hypothesis strings]}.
+    """
+    prompt = f"""
+    You are an expert Product Manager.
+    Given this experiment context:
+
+    {json.dumps(context, indent=2)}
+
+    Generate 3 distinct, concise hypotheses in the format:
+    "If [change], then [outcome], because [rationale]."
+
+    Return ONLY valid JSON with this shape:
+    {{
+      "hypotheses": [
+        "hypothesis 1",
+        "hypothesis 2",
+        "hypothesis 3"
+      ]
+    }}
+    """
+
+    llm_resp = _call_llm(prompt, max_tokens=600, temperature=0.7)
+    if llm_resp:
+        parsed = extract_json(llm_resp)
+        if parsed and "hypotheses" in parsed:
+            return _safe_json_dumps(parsed)
+        else:
+            return llm_resp
+
+    # Fallback stub
+    return _safe_json_dumps({
+        "hypotheses": [
+            "If we simplify the signup flow, then completion rate will improve because friction is reduced.",
+            "If we personalize homepage content, then engagement will rise because relevance increases.",
+            "If we highlight discounts earlier in checkout, then conversions will improve because users feel higher urgency."
+        ]
+    })
+
 def _build_validation_prompt(plan: Dict[str, Any]) -> str:
     """
     Prompt for LLM to validate the PRD and give suggestions.
