@@ -51,9 +51,12 @@ except Exception:
 PROMPT_ENGINE_AVAILABLE = True
 try:
     from prompt_engine import (
-        generate_experiment_plan,
-        generate_hypothesis_details,
-        validate_experiment_plan,
+    generate_experiment_plan,
+    generate_hypothesis_details,
+    validate_experiment_plan,
+    generate_hypotheses,
+)
+
     )
 except Exception as e:
     PROMPT_ENGINE_AVAILABLE = False
