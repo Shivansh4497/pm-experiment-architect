@@ -416,241 +416,316 @@ def pdf_sanitize(text: Any) -> str:
                 return ""
             text = str(text)
             return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-def generate_pdf_bytes_from_prd_dict(prd: Dict, title: str = "Experiment PRD") -> Optional[bytes]:
-    """Generate PDF bytes with proper formatting and error handling"""
-    if not REPORTLAB_AVAILABLE:
-        st.warning("PDF export requires ReportLab which is not available")
-        return None
-
-    prd = sanitize_experiment_plan(prd)
-    buffer = BytesIO()
-    
-    try:
-        doc = SimpleDocTemplate(
-            buffer,
-            pagesize=letter,
-            rightMargin=50,
-            leftMargin=50,
-            topMargin=50,
-            bottomMargin=50
-        )
-        
-        styles = getSampleStyleSheet()
-        
-        # Safe style additions - only add if they don't exist
-        if 'PRDTitle' not in styles:
-            styles.add(ParagraphStyle(
-                name="PRDTitle",
-                fontSize=20,
-                leading=24,
-                spaceAfter=12,
-                alignment=TA_CENTER
-            ))
-        
-        if 'SectionHeading' not in styles:
-            styles.add(ParagraphStyle(
-                name="SectionHeading",
-                fontSize=14,
-                leading=18,
-                spaceBefore=12,
-                spaceAfter=6,
-                fontName="Helvetica-Bold"
-            ))
-        
-        if 'BodyText' not in styles:
-            styles.add(ParagraphStyle(
-                name="BodyText",
-                fontSize=11,
-                leading=14,
-                spaceAfter=6
-            ))
-        
-        story = []
-        
-        # Title
-        story.append(Paragraph(pdf_sanitize(title), styles["PRDTitle"]))
-        story.append(Spacer(1, 24))
-        
-        # Problem Statement
-        story.append(Paragraph("1. Problem Statement", styles["SectionHeading"]))
-        story.append(Paragraph(pdf_sanitize(prd.get("problem_statement", "")), styles["BodyText"]))
-        story.append(Spacer(1, 12))
-        
-        # Hypotheses
-        story.append(Paragraph("2. Hypotheses", styles["SectionHeading"]))
-        for idx, h in enumerate(prd.get("hypotheses", [])):
-            story.append(Paragraph(f"<b>Hypothesis {idx+1}:</b> {pdf_sanitize(h.get('hypothesis', ''))}", styles["BodyText"]))
-            story.append(Paragraph(f"<b>Rationale:</b> {pdf_sanitize(h.get('rationale', ''))}", styles["BodyText"]))
-            story.append(Spacer(1, 8))
-        
-        # Variants
-        story.append(Paragraph("3. Variants", styles["SectionHeading"]))
-        for v in prd.get("variants", []):
-            story.append(Paragraph(f"<b>Control:</b> {pdf_sanitize(v.get('control', ''))}", styles["BodyText"]))
-            story.append(Paragraph(f"<b>Variation:</b> {pdf_sanitize(v.get('variation', ''))}", styles["BodyText"]))
-            story.append(Spacer(1, 8))
-        
-        # Metrics Table
-        story.append(Paragraph("4. Metrics", styles["SectionHeading"]))
-        metrics_data = [['Name', 'Formula', 'Importance']]
-        for m in prd.get("metrics", []):
-            metrics_data.append([
-                pdf_sanitize(m.get('name', '')),
-                pdf_sanitize(m.get('formula', '')),
-                pdf_sanitize(m.get('importance', ''))
-            ])
-        
-        if len(metrics_data) > 1:
-            metrics_table = Table(metrics_data, colWidths=[2*inch, 3*inch, 1.5*inch])
-            metrics_table.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f5f5f5')),
-                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                ('WORDWRAP', (0,0), (-1,-1), True)
-            ]))
-            story.append(metrics_table)
-        else:
-            story.append(Paragraph("No metrics defined.", styles["BodyText"]))
-        
-        # Success Criteria
-        story.append(Paragraph("5. Success Criteria", styles["SectionHeading"]))
-        criteria = prd.get("success_criteria", {})
-        story.append(Paragraph(f"<b>Confidence Level:</b> {pdf_sanitize(criteria.get('confidence_level', ''))}%", styles["BodyText"]))
-        story.append(Paragraph(f"<b>Minimum Detectable Effect (MDE):</b> {pdf_sanitize(criteria.get('MDE', ''))}%", styles["BodyText"]))
-        story.append(Paragraph(f"<b>Statistical Rationale:</b> {pdf_sanitize(prd.get('statistical_rationale', ''))}", styles["BodyText"]))
-        
-        # Add calculator values if available
-        if st.session_state.get('calculated_sample_size_per_variant'):
-            story.append(Paragraph(f"<b>Sample Size per Variant:</b> {st.session_state.calculated_sample_size_per_variant:,}", styles["BodyText"]))
-        if st.session_state.get('calculated_total_sample_size'):
-            story.append(Paragraph(f"<b>Total Sample Size:</b> {st.session_state.calculated_total_sample_size:,}", styles["BodyText"]))
-        if st.session_state.get('calculated_duration_days'):
-            story.append(Paragraph(f"<b>Estimated Duration:</b> {round(st.session_state.calculated_duration_days, 1)} days", styles["BodyText"]))
-        
-        # Risks Table
-        story.append(Paragraph("6. Risks and Assumptions", styles["SectionHeading"]))
-        risks_data = [['Risk', 'Severity', 'Mitigation']]
-        for r in prd.get("risks_and_assumptions", []):
-            risks_data.append([
-                pdf_sanitize(r.get('risk', '')),
-                pdf_sanitize(r.get('severity', '')),
-                pdf_sanitize(r.get('mitigation', ''))
-            ])
-        
-        if len(risks_data) > 1:
-            risks_table = Table(risks_data, colWidths=[2.5*inch, 1*inch, 3*inch])
-            risks_table.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f5f5f5')),
-                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                ('WORDWRAP', (0,0), (-1,-1), True)
-            ]))
-            story.append(risks_table)
-        else:
-            story.append(Paragraph("No risks defined.", styles["BodyText"]))
-        
-        # Next Steps
-        story.append(Paragraph("7. Next Steps", styles["SectionHeading"]))
-        for step in prd.get("next_steps", []):
-            story.append(Paragraph(f"• {pdf_sanitize(step)}", styles["BodyText"]))
-        
-        # Version Info
-        story.append(Spacer(1, 24))
-        story.append(Paragraph(
-            f"Generated by A/B Test Architect on {datetime.now().strftime('%Y-%m-%d %H:%M')} (v{st.session_state.prd_version})", 
-            ParagraphStyle(name="Footer", fontSize=9, alignment=TA_CENTER)
-        ))
-        
-        doc.build(story)
-        buffer.seek(0)
-        return buffer.getvalue()
-        
-    except Exception as e:
-        st.error(f"PDF generation failed: {str(e)}")
-        return None
-    finally:
-        buffer.close()
-
 def render_prd_plan(plan: Dict[str, Any]) -> None:
-    """Render the full PRD plan with proper sanitization and error handling"""
+    """Render the full PRD plan with inline editing functionality"""
     plan = sanitize_experiment_plan(plan)
     sanitized_metric_name = sanitize_text(st.session_state.get('exact_metric', ''))
     
-    # Problem Statement
+    # Edit modal for sections
+    if st.session_state.get('editing_section'):
+        with st.form(key=f"edit_{st.session_state.editing_section}"):
+            section_data = plan.get(st.session_state.editing_section, "")
+            
+            if st.session_state.editing_section == "problem_statement":
+                edited_content = st.text_area(
+                    "Edit Problem Statement",
+                    value=section_data,
+                    height=200,
+                    key="edit_problem_statement"
+                )
+            elif st.session_state.editing_section == "statistical_rationale":
+                edited_content = st.text_area(
+                    "Edit Statistical Rationale",
+                    value=section_data,
+                    height=150,
+                    key="edit_stat_rationale"
+                )
+            elif st.session_state.editing_section == "next_steps":
+                edited_content = st.text_area(
+                    "Edit Next Steps (one per line)",
+                    value="\n".join(section_data),
+                    height=150,
+                    key="edit_next_steps"
+                )
+            
+            col1, col2 = st.columns([1,1])
+            with col1:
+                if st.form_submit_button("💾 Save Changes"):
+                    if st.session_state.editing_section == "next_steps":
+                        plan["next_steps"] = [step.strip() for step in edited_content.split('\n') if step.strip()]
+                    else:
+                        plan[st.session_state.editing_section] = edited_content
+                    st.session_state.ai_parsed = plan
+                    st.session_state.editing_section = None
+                    st.rerun()
+            with col2:
+                if st.form_submit_button("❌ Cancel"):
+                    st.session_state.editing_section = None
+                    st.rerun()
+
+    # Edit modal for items in lists
+    if st.session_state.get('editing_item') and st.session_state.get('editing_item_index') is not None:
+        item_type = st.session_state.editing_item
+        item_index = st.session_state.editing_item_index
+        item_data = plan.get(item_type, [])[item_index] if item_index < len(plan.get(item_type, [])) else {}
+        
+        with st.form(key=f"edit_{item_type}_{item_index}"):
+            if item_type == "hypotheses":
+                st.subheader("Edit Hypothesis")
+                edited_hypothesis = st.text_input(
+                    "Hypothesis",
+                    value=item_data.get("hypothesis", ""),
+                    key=f"edit_hypothesis_{item_index}"
+                )
+                edited_rationale = st.text_area(
+                    "Rationale",
+                    value=item_data.get("rationale", ""),
+                    height=100,
+                    key=f"edit_rationale_{item_index}"
+                )
+                edited_implementation = st.text_area(
+                    "Implementation Example",
+                    value=item_data.get("example_implementation", ""),
+                    height=100,
+                    key=f"edit_impl_{item_index}"
+                )
+                edited_basis = st.text_input(
+                    "Behavioral Basis",
+                    value=item_data.get("behavioral_basis", ""),
+                    key=f"edit_basis_{item_index}"
+                )
+                
+                edited_item = {
+                    "hypothesis": edited_hypothesis,
+                    "rationale": edited_rationale,
+                    "example_implementation": edited_implementation,
+                    "behavioral_basis": edited_basis
+                }
+                
+            elif item_type == "variants":
+                st.subheader("Edit Variant")
+                edited_control = st.text_input(
+                    "Control",
+                    value=item_data.get("control", ""),
+                    key=f"edit_control_{item_index}"
+                )
+                edited_variation = st.text_input(
+                    "Variation",
+                    value=item_data.get("variation", ""),
+                    key=f"edit_variation_{item_index}"
+                )
+                
+                edited_item = {
+                    "control": edited_control,
+                    "variation": edited_variation
+                }
+                
+            elif item_type == "metrics":
+                st.subheader("Edit Metric")
+                edited_name = st.text_input(
+                    "Name",
+                    value=item_data.get("name", ""),
+                    key=f"edit_metric_name_{item_index}"
+                )
+                edited_formula = st.text_input(
+                    "Formula",
+                    value=item_data.get("formula", ""),
+                    key=f"edit_formula_{item_index}"
+                )
+                importance_value = item_data.get("importance", "Primary")
+                if importance_value not in ["Primary", "Secondary", "Guardrail"]:
+                    importance_value = "Primary"
+                edited_importance = st.selectbox(
+                    "Importance",
+                    options=["Primary", "Secondary", "Guardrail"],
+                    index=["Primary", "Secondary", "Guardrail"].index(importance_value),
+                    key=f"edit_importance_{item_index}"
+                )
+                
+                edited_item = {
+                    "name": edited_name,
+                    "formula": edited_formula,
+                    "importance": edited_importance
+                }
+                
+            elif item_type == "risks_and_assumptions":
+                st.subheader("Edit Risk")
+                edited_risk = st.text_input(
+                    "Risk",
+                    value=item_data.get("risk", ""),
+                    key=f"edit_risk_{item_index}"
+                )
+                severity = item_data.get("severity", "Medium")
+                if severity not in ["High", "Medium", "Low"]:
+                    severity = "Medium"
+                edited_severity = st.selectbox(
+                    "Severity",
+                    options=["High", "Medium", "Low"],
+                    index=["High", "Medium", "Low"].index(severity),
+                    key=f"edit_severity_{item_index}"
+                )
+                edited_mitigation = st.text_area(
+                    "Mitigation",
+                    value=item_data.get("mitigation", ""),
+                    height=100,
+                    key=f"edit_mitigation_{item_index}"
+                )
+                
+                edited_item = {
+                    "risk": edited_risk,
+                    "severity": edited_severity,
+                    "mitigation": edited_mitigation
+                }
+            
+            col1, col2 = st.columns([1,1])
+            with col1:
+                if st.form_submit_button("💾 Save Changes"):
+                    if item_index < len(plan.get(item_type, [])):
+                        plan[item_type][item_index] = edited_item
+                    else:
+                        if item_type not in plan:
+                            plan[item_type] = []
+                        plan[item_type].append(edited_item)
+                    st.session_state.ai_parsed = plan
+                    st.session_state.editing_item = None
+                    st.session_state.editing_item_index = None
+                    st.rerun()
+            with col2:
+                if st.form_submit_button("❌ Cancel"):
+                    st.session_state.editing_item = None
+                    st.session_state.editing_item_index = None
+                    st.rerun()
+
+    # Problem Statement with edit button
     st.markdown(f"""
     <div class="prd-section">
-        <div class="prd-section-title"><h2>1. Problem Statement</h2></div>
+        <div class="prd-section-title" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>1. Problem Statement</h2>
+            <button class="edit-btn" onclick="window.parent.document.querySelector('button[data-testid=\"baseButton-secondary\"]').click()">✏️ Edit</button>
+        </div>
         <div class="prd-section-content">
             <p class="problem-statement">{html_sanitize(plan.get("problem_statement", ""))}</p>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Hypotheses
+    if st.button("Edit Problem Statement", key="edit_problem_btn", type="secondary"):
+        st.session_state.editing_section = "problem_statement"
+        st.rerun()
+
+    # Hypotheses with edit buttons
     hypotheses_html = ""
-    for h in plan.get("hypotheses", []):
+    for i, h in enumerate(plan.get("hypotheses", [])):
         hypotheses_html += f"""
         <div class='section-list-item'>
-            <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <p class='hypothesis-title'>{html_sanitize(h.get('hypothesis', ''))}</p>
+                <button class="edit-btn" onclick="window.parent.document.querySelector('button[data-testid=\"baseButton-secondary-{i}\"]').click()">✏️ Edit</button>
+            </div>
             <p><strong>Rationale:</strong> {html_sanitize(h.get('rationale', ''))}</p>
             <p><strong>Example:</strong> {html_sanitize(h.get('example_implementation', ''))}</p>
             <p><strong>Behavioral Basis:</strong> {html_sanitize(h.get('behavioral_basis', ''))}</p>
         </div>
         """
+        if st.button(f"Edit Hypothesis {i+1}", key=f"edit_hyp_btn_{i}", type="secondary"):
+            st.session_state.editing_item = "hypotheses"
+            st.session_state.editing_item_index = i
+            st.rerun()
     
     st.markdown(f"""
     <div class="prd-section">
-        <div class="prd-section-title"><h2>2. Hypotheses</h2></div>
+        <div class="prd-section-title" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>2. Hypotheses</h2>
+            <button class="edit-btn" onclick="window.parent.document.querySelector('button[data-testid=\"baseButton-secondary-add-hyp\"]').click()">➕ Add New</button>
+        </div>
         <div class="prd-section-content">
             <div class="section-list">{hypotheses_html}</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Variants
+    if st.button("➕ Add New Hypothesis", key="add_hyp_btn", type="secondary"):
+        st.session_state.editing_item = "hypotheses"
+        st.session_state.editing_item_index = len(plan.get("hypotheses", []))
+        st.rerun()
+    # Variants with edit buttons
     variants_html = ""
     for i, v in enumerate(plan.get("variants", [])):
         variants_html += f"""
         <div class='section-list-item'>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h4>Variant {i+1}</h4>
+                <button class="edit-btn" onclick="window.parent.document.querySelector('button[data-testid=\"baseButton-secondary-var-{i}\"]').click()">✏️ Edit</button>
+            </div>
             <p><strong>Control {i+1}:</strong> {html_sanitize(v.get('control', ''))}</p>
             <p><strong>Variation {i+1}:</strong> {html_sanitize(v.get('variation', ''))}</p>
         </div>
         """
+        if st.button(f"Edit Variant {i+1}", key=f"edit_var_btn_{i}", type="secondary"):
+            st.session_state.editing_item = "variants"
+            st.session_state.editing_item_index = i
+            st.rerun()
     
     st.markdown(f"""
     <div class="prd-section">
-        <div class="prd-section-title"><h2>3. Variants</h2></div>
+        <div class="prd-section-title" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>3. Variants</h2>
+            <button class="edit-btn" onclick="window.parent.document.querySelector('button[data-testid=\"baseButton-secondary-add-var\"]').click()">➕ Add New</button>
+        </div>
         <div class="prd-section-content">
             <div class="section-list">{variants_html}</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Metrics
+    if st.button("➕ Add New Variant", key="add_var_btn", type="secondary"):
+        st.session_state.editing_item = "variants"
+        st.session_state.editing_item_index = len(plan.get("variants", []))
+        st.rerun()
+
+    # Metrics with edit buttons
     metrics_html = ""
     for m in plan.get("metrics", []):
         metrics_html += f"""
         <div class='section-list-item'>
-            <p><strong>Name:</strong> {html_sanitize(m.get('name', ''))}</p>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h4>{html_sanitize(m.get('name', ''))}</h4>
+                <button class="edit-btn" onclick="window.parent.document.querySelector('button[data-testid=\"baseButton-secondary-met-{i}\"]').click()">✏️ Edit</button>
+            </div>
             <p><strong>Formula:</strong> <code class='formula-code'>{html_sanitize(m.get('formula', ''))}</code></p>
             <p><strong>Importance:</strong> <span class='importance'>{html_sanitize(m.get('importance', ''))}</span></p>
         </div>
         """
+        if st.button(f"Edit Metric {i+1}", key=f"edit_met_btn_{i}", type="secondary"):
+            st.session_state.editing_item = "metrics"
+            st.session_state.editing_item_index = i
+            st.rerun()
     
     st.markdown(f"""
     <div class="prd-section">
-        <div class="prd-section-title"><h2>4. Metrics</h2></div>
+        <div class="prd-section-title" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>4. Metrics</h2>
+            <button class="edit-btn" onclick="window.parent.document.querySelector('button[data-testid=\"baseButton-secondary-add-met\"]').click()">➕ Add New</button>
+        </div>
         <div class="prd-section-content">
             <div class="section-list">{metrics_html}</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Success Criteria
+    if st.button("➕ Add New Metric", key="add_met_btn", type="secondary"):
+        st.session_state.editing_item = "metrics"
+        st.session_state.editing_item_index = len(plan.get("metrics", []))
+        st.rerun()
+
+    # Success Criteria with edit button
     criteria = plan.get('success_criteria', {})
     stats_html = f"""
     <div class='section-list-item'>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h4>Success Criteria</h4>
+            <button class="edit-btn" onclick="window.parent.document.querySelector('button[data-testid=\"baseButton-secondary-edit-stats\"]').click()">✏️ Edit</button>
+        </div>
         <p><strong>Confidence Level:</strong> {html_sanitize(criteria.get('confidence_level', ''))}%</p>
         <p><strong>Minimum Detectable Effect (MDE):</strong> {html_sanitize(criteria.get('MDE', ''))}%</p>
         <p><strong>Statistical Rationale:</strong> {html_sanitize(plan.get('statistical_rationale', ''))}</p>
@@ -661,339 +736,97 @@ def render_prd_plan(plan: Dict[str, Any]) -> None:
     if st.session_state.get('calculated_total_sample_size'):
         stats_html += f"<p><strong>Total Sample Size:</strong> {st.session_state.calculated_total_sample_size:,}</p>"
     if st.session_state.get('calculated_duration_days'):
-        stats_html += f"<p><strong>Estimated Duration:</strong> {round(st.session_state.calculated_duration_days, 1)} days</p>"
+        stats_html += f"<p><strong>Estimated Duration:</strong> **{round(st.session_state.calculated_duration_days, 1)}** days (with {dau:,} DAU)</p>"
     
     stats_html += "</div>"
     
     st.markdown(f"""
     <div class="prd-section">
-        <div class="prd-section-title"><h2>5. Success Criteria & Statistical Rationale</h2></div>
+        <div class="prd-section-title">
+            <h2>5. Success Criteria & Statistical Rationale</h2>
+        </div>
         <div class="prd-section-content">
             <div class="section-list">{stats_html}</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    
-    # Risks
+    if st.button("Edit Success Criteria", key="edit_stats_btn", type="secondary"):
+        st.session_state.editing_section = "statistical_rationale"
+        st.rerun()
+
+    # Risks with edit buttons
     risks_content = []
-    for r in plan.get("risks_and_assumptions", []):
-        # Handle both dictionary and string formats
-        if isinstance(r, str):
-            risks_content.append(f"<div class='section-list-item'><p>{html_sanitize(r)}</p></div>")
-        else:
-            severity = str(r.get('severity', 'Medium')).title()
-            severity_class = severity.lower() if severity.lower() in ['high', 'medium', 'low'] else 'medium'
-            risks_content.append(f"""
-            <div class='section-list-item'>
-                <p><strong>Risk:</strong> {html_sanitize(r.get('risk', r.get('risks', '')))}</p>
-                <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(severity)}</span></p>
-                <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', r.get('mitigations', '')))}</p>
+    for i, r in enumerate(plan.get("risks_and_assumptions", [])):
+        severity = str(r.get('severity', 'Medium')).title()
+        severity_class = severity.lower() if severity.lower() in ['high', 'medium', 'low'] else 'medium'
+        risks_content.append(f"""
+        <div class='section-list-item'>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h4>Risk {i+1}</h4>
+                <button class="edit-btn" onclick="window.parent.document.querySelector('button[data-testid=\"baseButton-secondary-risk-{i}\"]').click()">✏️ Edit</button>
             </div>
-            """)
+            <p><strong>Risk:</strong> {html_sanitize(r.get('risk', r.get('risks', '')))}</p>
+            <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(severity)}</span></p>
+            <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', r.get('mitigations', ''))}</p>
+        </div>
+        """)
+        if st.button(f"Edit Risk {i+1}", key=f"edit_risk_btn_{i}", type="secondary"):
+            st.session_state.editing_item = "risks_and_assumptions"
+            st.session_state.editing_item_index = i
+            st.rerun()
 
     risks_html = "\n".join(risks_content)
     
     safe_html_render(f"""
     <div class="prd-section">
-        <div class="prd-section-title"><h2>6. Risks and Assumptions</h2></div>
+        <div class="prd-section-title" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>6. Risks and Assumptions</h2>
+            <button class="edit-btn" onclick="window.parent.document.querySelector('button[data-testid=\"baseButton-secondary-add-risk\"]').click()">➕ Add New</button>
+        </div>
         <div class="prd-section-content">
             <div class="section-list">{risks_html}</div>
         </div>
     </div>
     """)
 
-     # Next Steps
+    if st.button("➕ Add New Risk", key="add_risk_btn", type="secondary"):
+        st.session_state.editing_item = "risks_and_assumptions"
+        st.session_state.editing_item_index = len(plan.get("risks_and_assumptions", []))
+        st.rerun()
+
+    # Next Steps with edit button
     next_steps_html = ""
-    for step in plan.get("next_steps", []):
+    for i, step in enumerate(plan.get("next_steps", [])):
         next_steps_html += f"""
         <div class='section-list-item'>
-            <p>{html_sanitize(step)}</p>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <p>{html_sanitize(step)}</p>
+                <button class="edit-btn" onclick="window.parent.document.querySelector('button[data-testid=\"baseButton-secondary-step-{i}\"]').click()">✏️ Edit</button>
+            </div>
         </div>
         """
-
+        if st.button(f"Edit Step {i+1}", key=f"edit_step_btn_{i}", type="secondary"):
+            st.session_state.editing_item = "next_steps"
+            st.session_state.editing_item_index = i
+            st.rerun()
+    
     safe_html_render(f"""
     <div class="prd-section">
-        <div class="prd-section-title"><h2>7. Next Steps</h2></div>
+        <div class="prd-section-title" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>7. Next Steps</h2>
+            <button class="edit-btn" onclick="window.parent.document.querySelector('button[data-testid=\"baseButton-secondary-add-step\"]').click()">➕ Add New</button>
+        </div>
         <div class="prd-section-content">
             <div class="section-list">{next_steps_html}</div>
         </div>
     </div>
     """)
 
-    # Version History
-    with st.expander("Version History", expanded=False):
-        st.write(f"PRD v{st.session_state.prd_version} - Last updated: {st.session_state.last_updated}")
-        if st.button("Increment Version"):
-            st.session_state.prd_version += 1
-            st.session_state.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M")
-            st.rerun()
-
-        
-        
-# --- Streamlit UI Setup ---
-st.set_page_config(
-    page_title="A/B Test Architect", 
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Improved CSS with mobile responsiveness and better contrast
-st.markdown(
-    """
-    <style>
-    .blue-section {background-color: #f6f9ff; padding: 14px; border-radius: 10px; margin-bottom: 14px;}
-    .green-section {background-color: #f7fff7; padding: 14px; border-radius: 10px; margin-bottom: 14px;}
-    .section-title {font-size: 1.15rem; font-weight: 700; color: #0b63c6; margin-bottom: 6px;}
-    .small-muted { color: #7a7a7a; font-size: 13px; }
-    .prd-card {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        width: 100%;
-        max-width: 100%;
-        background: #ffffff;
-        border-radius: 16px;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        padding: 1.5rem;
-        border: 1px solid #e5e7eb;
-        margin: 0 auto;
-    }
-    .prd-header {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        margin-bottom: 1.5rem;
-        padding-bottom: 1rem;
-        border-bottom: 1px solid #e5e7eb;
-    }
-    .logo-wrapper {
-        background: #0b63c6;
-        color: white;
-        padding: 1rem 1.5rem;
-        border-radius: 12px;
-        font-weight: 800;
-        font-size: 2rem;
-        line-height: 1;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-        margin-bottom: 1rem;
-        transform: rotate(-3deg);
-    }
-    .header-text h1 {
-        margin: 0;
-        font-size: 1.75rem;
-        font-weight: 900;
-        color: #052a4a;
-        text-align: center;
-    }
-    .header-text p {
-        margin: 0.25rem 0 0;
-        font-size: 1rem;
-        color: #4b5563;
-        text-align: center;
-    }
-    .prd-section {
-        margin-bottom: 1.5rem;
-    }
-    .prd-section-title {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        margin-bottom: 0.75rem;
-        color: #0b63c6;
-    }
-    .prd-section-title h2 {
-        margin: 0;
-        font-size: 1.25rem;
-        font-weight: 700;
-    }
-    .prd-section-content {
-        background: #f3f8ff;
-        border-left: 4px solid #0b63c6;
-        padding: 1rem;
-        border-radius: 8px;
-        line-height: 1.6;
-        color: #1f2937;
-        margin-bottom: 1rem;
-        overflow-wrap: break-word;
-        word-break: break-word;
-    }
-    .problem-statement {
-        font-weight: 500;
-        font-style: italic;
-        color: #4b5563;
-    }
-    .section-list {
-        list-style: none;
-        padding-left: 0;
-        margin: 0;
-    }
-    .section-list .list-item {
-        padding: 0.75rem;
-        background: #fdfefe;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-        border: 1px solid #e5e7eb;
-        line-height: 1.5;
-        margin-bottom: 0.75rem;
-        overflow-wrap: break-word;
-        word-break: break-word;
-    }
-    .section-list .list-item:last-child {
-        margin-bottom: 0;
-    }
-    .section-list .list-item p {
-        margin: 0;
-        color: #4b5563;
-    }
-    .section-list .list-item p strong {
-        display: block;
-        margin-bottom: 0.25rem;
-        color: #052a4a;
-    }
-    .hypothesis-title {
-        font-size: 1rem;
-        font-weight: 600;
-        color: #052a4a;
-    }
-    .formula-code {
-        background-color: #eef2ff;
-        padding: 2px 4px;
-        border-radius: 4px;
-        font-family: 'Courier New', Courier, monospace;
-        font-size: 0.85em;
-        color: #3b5998;
-    }
-    .importance {
-        font-weight: 600;
-        color: #0b63c6;
-    }
-    .severity {
-        font-weight: 600;
-        padding: 2px 6px;
-        border-radius: 4px;
-    }
-    .severity.high { 
-        color: #dc2626;
-        background-color: #fee2e2;
-    }
-    .severity.medium { 
-        color: #d97706;
-        background-color: #ffedd5;
-    }
-    .severity.low { 
-        color: #16a34a;
-        background-color: #dcfce7;
-    }
-    .prd-footer {
-        margin-top: 1.5rem;
-        padding-top: 1rem;
-        border-top: 1px solid #e5e7eb;
-        text-align: center;
-        font-size: 0.8rem;
-        color: #6b7280;
-    }
-    .section-list-item {
-        overflow-wrap: break-word;
-        word-break: break-word;
-        hyphens: auto;
-    }
-    .section-list-item p {
-        white-space: normal;
-        margin-bottom: 0.5rem;
-    }
-    .section-list-item p:last-child {
-        margin-bottom: 0;
-    }
-
-    @media (max-width: 768px) {
-        .prd-card {
-            padding: 1rem;
-        }
-        .prd-header {
-            flex-direction: column;
-        }
-        .logo-wrapper {
-            margin-right: 0;
-            margin-bottom: 1rem;
-        }
-        .header-text h1 {
-            font-size: 1.5rem;
-            text-align: center;
-        }
-        .header-text p {
-            text-align: center;
-        }
-        .prd-section-content {
-            padding: 0.75rem;
-        }
-        .section-list .list-item {
-            padding: 0.5rem;
-        }
-    }
-
-    /* Button spacing fixes */
-    .stButton>button {
-        margin-bottom: 0.5rem;
-    }
-    /* Fix table rendering */
-    .section-list-item {
-        page-break-inside: avoid !important;
-    }
-    /* PDF-specific fixes */
-    @media print {
-        .prd-section {
-            page-break-after: avoid;
-        }
-        .section-list-item {
-            page-break-inside: avoid;
-        }
-    }
-    /* Edit form fixes */
-    .stTextArea textarea {
-        min-height: 150px !important;
-    }
-    </style>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
-    """,
-    unsafe_allow_html=True,
-)
-
-# --- Session State Initialization ---
-def init_session_state():
-    if "edit_modal_open" not in st.session_state:
-        st.session_state.edit_modal_open = False
-    if "stage" not in st.session_state:
-        st.session_state.stage = "input"
-    if "calculated_sample_size_per_variant" not in st.session_state:
-        st.session_state.calculated_sample_size_per_variant = None
-    if "calculated_total_sample_size" not in st.session_state:
-        st.session_state.calculated_total_sample_size = None
-    if "calculated_duration_days" not in st.session_state:
-        st.session_state.calculated_duration_days = None
-    if "temp_plan_edit" not in st.session_state:
-        st.session_state.temp_plan_edit = {}
-    if "ai_parsed" not in st.session_state:
-        st.session_state.ai_parsed = None
-    if "hypotheses_from_llm" not in st.session_state:
-        st.session_state.hypotheses_from_llm = []
-    if "calc_locked" not in st.session_state:
-        st.session_state.calc_locked = False
-    if "locked_stats" not in st.session_state:
-        st.session_state.locked_stats = {}
-    if "expander_states" not in st.session_state:
-        st.session_state.expander_states = {
-            "product_context": True,
-            "metric_objective": True,
-            "generate_plan": True,
-            "calculator": True,
-            "edit_plan": False
-        }
-    if "prd_version" not in st.session_state:
-        st.session_state.prd_version = 1
-    if "last_updated" not in st.session_state:
-        st.session_state.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-init_session_state()
-
+    if st.button("➕ Add New Step", key="add_step_btn", type="secondary"):
+        st.session_state.editing_item = "next_steps"
+        st.session_state.editing_item_index = len(plan.get("next_steps", []))
+        st.rerun()
 # --- Input Sections ---
 st.title("💡 A/B Test Architect — AI-assisted experiment PRD generator")
 st.markdown("Create experiment PRDs, hypotheses, stats, and sample-size guidance — faster and with guardrails.")
@@ -1348,7 +1181,7 @@ if st.session_state.get("ai_parsed"):
                 else:
                     st.markdown("**Estimated Duration:** Could not calculate (check DAU value)")
 
-        # Render the full PRD plan
+        # Render the full PRD plan with inline edit buttons
         render_prd_plan(plan)
 
         # Export buttons moved outside edit section
@@ -1380,297 +1213,12 @@ if st.session_state.get("ai_parsed"):
                 st.session_state.stage = "hypotheses"
                 st.rerun()
 
-        # Edit Plan Section
-        with st.expander("✏️ Edit Experiment Plan", expanded=st.session_state.expander_states["edit_plan"]):
-            edited_plan = sanitize_experiment_plan(st.session_state.ai_parsed.copy())
-            
-            with st.form(key='edit_form'):
-                st.subheader("1. Problem Statement")
-                edited_plan['problem_statement'] = st.text_area(
-                    "Problem Statement", 
-                    value=edited_plan.get('problem_statement', ''),
-                    height=150,
-                    key="edit_problem_statement"
-                )
-                
-                st.subheader("2. Hypotheses")
-                if 'hypotheses' not in edited_plan or not isinstance(edited_plan['hypotheses'], list): 
-                    edited_plan['hypotheses'] = []
-                
-                num_hypotheses = st.number_input(
-                    "Number of Hypotheses", 
-                    min_value=0, 
-                    value=len(edited_plan['hypotheses']), 
-                    key='num_hyp'
-                )
-                
-                if num_hypotheses > len(edited_plan['hypotheses']):
-                    edited_plan['hypotheses'].extend([
-                        {"hypothesis": "", "rationale": "", "example_implementation": "", "behavioral_basis": ""}
-                        for _ in range(num_hypotheses - len(edited_plan['hypotheses']))
-                    ])
-                elif num_hypotheses < len(edited_plan['hypotheses']):
-                    edited_plan['hypotheses'] = edited_plan['hypotheses'][:num_hypotheses]
-                    
-                for i, h in enumerate(edited_plan.get("hypotheses", [])):
-                    with st.expander(f"Hypothesis {i+1}", expanded=(i==0)):
-                        edited_plan['hypotheses'][i]['hypothesis'] = st.text_input(
-                            "Hypothesis", 
-                            value=h.get('hypothesis', ''), 
-                            key=f"hyp_{i}_text"
-                        )
-                        edited_plan['hypotheses'][i]['rationale'] = st.text_area(
-                            "Rationale", 
-                            value=h.get('rationale', ''), 
-                            height=100, 
-                            key=f"hyp_{i}_rationale"
-                        )
-                        edited_plan['hypotheses'][i]['example_implementation'] = st.text_area(
-                            "Implementation Example", 
-                            value=h.get('example_implementation', ''), 
-                            height=100, 
-                            key=f"hyp_{i}_impl"
-                        )
-                        edited_plan['hypotheses'][i]['behavioral_basis'] = st.text_input(
-                            "Behavioral Basis", 
-                            value=h.get('behavioral_basis', ''), 
-                            key=f"hyp_{i}_basis"
-                        )
-                
-                st.subheader("3. Variants")
-                if 'variants' not in edited_plan or not isinstance(edited_plan['variants'], list): 
-                    edited_plan['variants'] = []
-                
-                num_variants = st.number_input(
-                    "Number of Variants", 
-                    min_value=1, 
-                    value=len(edited_plan['variants']), 
-                    key='num_variants'
-                )
-                
-                if num_variants > len(edited_plan['variants']):
-                    edited_plan['variants'].extend([
-                        {"control": "", "variation": ""}
-                        for _ in range(num_variants - len(edited_plan['variants']))
-                    ])
-                elif num_variants < len(edited_plan['variants']):
-                    edited_plan['variants'] = edited_plan['variants'][:num_variants]
-                
-                for i, v in enumerate(edited_plan.get('variants', [])):
-                    with st.expander(f"Variant {i+1}", expanded=(i==0)):
-                        edited_plan['variants'][i]['control'] = st.text_input(
-                            "Control", 
-                            value=v.get('control', ''), 
-                            key=f"var_{i}_control"
-                        )
-                        edited_plan['variants'][i]['variation'] = st.text_input(
-                            "Variation", 
-                            value=v.get('variation', ''), 
-                            key=f"var_{i}_variation"
-                        )
-                
-                st.subheader("4. Metrics")
-                if 'metrics' not in edited_plan or not isinstance(edited_plan['metrics'], list): 
-                    edited_plan['metrics'] = []
-                
-                num_metrics = st.number_input(
-                    "Number of Metrics", 
-                    min_value=1, 
-                    value=len(edited_plan['metrics']), 
-                    key='num_metrics'
-                )
-                
-                if num_metrics > len(edited_plan['metrics']):
-                    edited_plan['metrics'].extend([
-                        {"name": "", "formula": "", "importance": "Primary"}
-                        for _ in range(num_metrics - len(edited_plan['metrics']))
-                    ])
-                elif num_metrics < len(edited_plan['metrics']):
-                    edited_plan['metrics'] = edited_plan['metrics'][:num_metrics]
-                
-                for i, m in enumerate(edited_plan.get("metrics", [])):
-                    with st.expander(f"Metric {i+1}", expanded=(i==0)):
-                        edited_plan['metrics'][i]['name'] = st.text_input(
-                            "Name", 
-                            value=m.get('name', ''), 
-                            key=f"met_{i}_name"
-                        )
-                        edited_plan['metrics'][i]['formula'] = st.text_input(
-                            "Formula", 
-                            value=m.get('formula', ''), 
-                            key=f"met_{i}_formula"
-                        )
-                        importance_value = m.get('importance', 'Primary')
-                        if importance_value not in ["Primary", "Secondary", "Guardrail"]:
-                            importance_value = "Primary"
-                        edited_plan['metrics'][i]['importance'] = st.selectbox(
-                            "Importance", 
-                            options=["Primary", "Secondary", "Guardrail"], 
-                            index=["Primary", "Secondary", "Guardrail"].index(importance_value), 
-                            key=f"met_{i}_imp"
-                        )
-                
-                st.subheader("5. Success Criteria")
-                if 'success_criteria' not in edited_plan or not isinstance(edited_plan['success_criteria'], dict): 
-                    edited_plan['success_criteria'] = {}
-                
-                try:
-                    conf_level = float(edited_plan['success_criteria'].get('confidence_level', 95))
-                    conf_level = max(80, min(99, conf_level))
-                except (ValueError, TypeError):
-                    conf_level = 95
-                
-                edited_plan['success_criteria']['confidence_level'] = st.number_input(
-                    "Confidence Level (%)", 
-                    min_value=80, 
-                    max_value=99, 
-                    value=int(conf_level),
-                    step=1,
-                    key="edit_conf_level"
-                )
-                
-                try:
-                    mde_value = float(edited_plan['success_criteria'].get('MDE', mde_default))
-                    mde_value = max(0.1, mde_value)
-                except (ValueError, TypeError):
-                    mde_value = max(0.1, mde_default)
-                
-                edited_plan['success_criteria']['MDE'] = st.number_input(
-                    "Minimum Detectable Effect (%)", 
-                    min_value=0.1, 
-                    max_value=100.0,
-                    value=float(mde_value),
-                    step=0.1,
-                    format="%.1f",
-                    key="edit_mde"
-                )
-                
-                edited_plan['statistical_rationale'] = st.text_area(
-                    "Statistical Rationale", 
-                    value=edited_plan.get('statistical_rationale', ''), 
-                    height=100,
-                    key="edit_stat_rationale"
-                )
-                
-                edited_plan['success_criteria']['benchmark'] = st.text_input(
-                    "Benchmark", 
-                    value=edited_plan['success_criteria'].get('benchmark', ''), 
-                    key="edit_benchmark"
-                )
-                
-                edited_plan['success_criteria']['monitoring'] = st.text_input(
-                    "Monitoring", 
-                    value=edited_plan['success_criteria'].get('monitoring', ''), 
-                    key="edit_monitoring"
-                )
-                
-                st.subheader("6. Risks and Assumptions")
-                if 'risks_and_assumptions' not in edited_plan or not isinstance(edited_plan['risks_and_assumptions'], list): 
-                    edited_plan['risks_and_assumptions'] = []
-                
-                num_risks = st.number_input(
-                    "Number of Risks", 
-                    min_value=0, 
-                    value=len(edited_plan['risks_and_assumptions']), 
-                    key='num_risks'
-                )
-                
-                if num_risks > len(edited_plan['risks_and_assumptions']):
-                    edited_plan['risks_and_assumptions'].extend([
-                        {"risk": "", "severity": "Medium", "mitigation": ""}
-                        for _ in range(num_risks - len(edited_plan['risks_and_assumptions']))
-                    ])
-                elif num_risks < len(edited_plan['risks_and_assumptions']):
-                    edited_plan['risks_and_assumptions'] = edited_plan['risks_and_assumptions'][:num_risks]
-                
-                for i, r in enumerate(edited_plan.get("risks_and_assumptions", [])):
-                    with st.expander(f"Risk {i+1}", expanded=(i==0)):
-                        edited_plan['risks_and_assumptions'][i]['risk'] = st.text_input(
-                            "Risk", 
-                            value=r.get('risk', ''), 
-                            key=f"risk_{i}_text"
-                        )
-                        severity = r.get('severity', 'Medium')
-                        if severity not in ["High", "Medium", "Low"]:
-                            severity = "Medium"
-                        edited_plan['risks_and_assumptions'][i]['severity'] = st.selectbox(
-                            "Severity", 
-                            options=["High", "Medium", "Low"], 
-                            index=["High", "Medium", "Low"].index(severity), 
-                            key=f"risk_{i}_severity"
-                        )
-                        edited_plan['risks_and_assumptions'][i]['mitigation'] = st.text_area(
-                            "Mitigation", 
-                            value=r.get('mitigation', ''), 
-                            height=100,
-                            key=f"risk_{i}_mitigation"
-                        )
-                
-                st.subheader("7. Next Steps")
-                if 'next_steps' not in edited_plan or not isinstance(edited_plan['next_steps'], list): 
-                    edited_plan['next_steps'] = []
-                
-                next_steps_text = "\n".join(edited_plan.get('next_steps', []))
-                new_next_steps = st.text_area(
-                    "Next Steps (one per line)", 
-                    value=next_steps_text, 
-                    height=150, 
-                    key="edit_next_steps"
-                )
-                edited_plan['next_steps'] = [
-                    step.strip() for step in new_next_steps.split('\n') if step.strip()
-                ]
-                
-                submitted = st.form_submit_button("💾 Save Changes")
-                if submitted:
-                    st.session_state.ai_parsed = sanitize_experiment_plan(edited_plan)
-                    st.session_state.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    st.success("Plan updated successfully!")
-                    st.rerun()
-
-
-# --- Final UI Polish ---
-if st.session_state.get("ai_parsed") and st.session_state.stage == "full_plan":
-    # Additional export buttons at bottom of page
-    st.markdown("---")
-    st.markdown("### Export Options")
-    col1, col2, col3 = st.columns([1, 1, 2])
-    
-    with col1:
-        if REPORTLAB_AVAILABLE:
-            pdf_bytes = generate_pdf_bytes_from_prd_dict(
-                st.session_state.ai_parsed, 
-                title=f"Experiment PRD: {sanitize_text(st.session_state.get('exact_metric', ''))}"
-            )
-            if pdf_bytes:
-                st.download_button(
-                    label="⬇️ Export to PDF (Full Report)",
-                    data=pdf_bytes,
-                    file_name=f"experiment_prd_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                    mime="application/pdf",
-                    help="Download complete professional PDF report"
-                )
-    
-    with col2:
-        st.download_button(
-            label="⬇️ Export to JSON (Raw Data)",
-            data=json.dumps(st.session_state.ai_parsed, indent=2),
-            file_name=f"experiment_prd_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-            mime="application/json",
-            help="Download raw JSON data for integration"
-        )
-    
-    with col3:
-        if st.button("🔄 Start New Experiment"):
-            st.session_state.clear()
-            st.rerun()
-
-    # Version history expander
-    with st.expander("📜 Version History", expanded=False):
-        st.write(f"Current version: v{st.session_state.prd_version}")
-        st.write(f"Last updated: {st.session_state.last_updated}")
-        if st.button("Create New Version"):
-            st.session_state.prd_version += 1
-            st.session_state.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M")
-            st.success(f"Created new version v{st.session_state.prd_version}")
-            st.rerun()
+        # Version history expander
+        with st.expander("📜 Version History", expanded=False):
+            st.write(f"Current version: v{st.session_state.prd_version}")
+            st.write(f"Last updated: {st.session_state.last_updated}")
+            if st.button("Create New Version"):
+                st.session_state.prd_version += 1
+                st.session_state.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M")
+                st.success(f"Created new version v{st.session_state.prd_version}")
+                st.rerun()
