@@ -55,7 +55,8 @@ try:
     generate_hypothesis_details,
     validate_experiment_plan,
     generate_hypotheses,
-    extract_json
+    extract_json,
+    sanitize_experiment_plan
 
     )
 except Exception as e:
