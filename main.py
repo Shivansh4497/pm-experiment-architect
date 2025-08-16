@@ -1,26 +1,20 @@
-# main.py — A/B Test Architect (full file, part 1/3)
+# main.py — A/B Test Architect (Complete, robust, single-file Streamlit app)
+# Part 1/5: imports, flags, models, sanitizers, and helpers
 
 import streamlit as st
 import json
 import os
 import re
-from typing import Any, Dict, Optional, Tuple, List, Union
-from pydantic import BaseModel
-from prompt_engine import (
-    generate_experiment_plan,
-    generate_hypothesis_details,
-    run_quality_check,
-)
-from statsmodels.stats.power import NormalIndPower, TTestIndPower
-from statsmodels.stats.proportion import proportion_effectsize
-import numpy as np
 import hashlib
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from io import BytesIO
-import html
 
-# Optional PDF export
+# Optional heavy deps — import defensively
 REPORTLAB_AVAILABLE = False
+DOCX_AVAILABLE = False
+STATSMODELS_AVAILABLE = False
+
 try:
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -29,311 +23,185 @@ try:
     from reportlab.lib.units import inch
     from reportlab.lib.enums import TA_CENTER
     REPORTLAB_AVAILABLE = True
-except Exception as e:
+except Exception:
     REPORTLAB_AVAILABLE = False
-    print(f"[warn] ReportLab import failed: {e}")
 
-# Optional DOCX export
-DOCX_AVAILABLE = False
 try:
     from docx import Document
     from docx.shared import Pt, Inches
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     DOCX_AVAILABLE = True
-except Exception as e:
+except Exception:
     DOCX_AVAILABLE = False
-    print(f"[warn] python-docx import failed: {e}")
 
+try:
+    from statsmodels.stats.power import NormalIndPower, TTestIndPower
+    from statsmodels.stats.proportion import proportion_effectsize
+    import numpy as np
+    STATSMODELS_AVAILABLE = True
+except Exception:
+    # Keep numpy available for non-stat calculations
+    try:
+        import numpy as np
+    except Exception:
+        np = None
+    STATSMODELS_AVAILABLE = False
 
-# =========================
-# Pydantic Models (extended)
-# =========================
-
-class Hypothesis(BaseModel):
-    hypothesis: str
-    rationale: str
-    example_implementation: str
-    behavioral_basis: str
-
-class Variant(BaseModel):
-    control: str
-    variation: str
-    notes: Optional[str] = ""
-
-class Metric(BaseModel):
-    name: str
-    formula: str
-    importance: str  # e.g., Primary / Secondary
-
-class Guardrail(BaseModel):
-    name: str
-    direction: Optional[str] = ""   # e.g., "must not decrease", "≤ threshold"
-    threshold: Optional[str] = ""   # free-form threshold text
-
-class Risk(BaseModel):
-    risk: str
-    severity: str
-    mitigation: str
-
-class SuccessCriteria(BaseModel):
-    confidence_level: float  # %
-    MDE: float               # %
-    benchmark: str
-    monitoring: str
-
-class SuccessLearningCriteria(BaseModel):
-    definition_of_success: str
-    stopping_rules: str
-    rollback_criteria: str
-
-class ExperimentDesign(BaseModel):
-    traffic_allocation: str              # e.g., "50/50", "10% holdout"
-    sample_size_per_variant: Optional[int] = None
-    total_sample_size: Optional[int] = None
-    test_duration_days: Optional[float] = None
-    dau_coverage_percent: Optional[float] = None
-
-class Metadata(BaseModel):
-    title: str
-    team: str
-    owner: str
-    experiment_id: str
-
-class ExperimentPlan(BaseModel):
-    metadata: Metadata
-    problem_statement: str
-    hypotheses: List[Hypothesis]
-    proposed_solution: str
-    variants: List[Variant]
-    metrics: List[Metric]
-    guardrail_metrics: List[Guardrail]
-    success_criteria: SuccessCriteria
-    experiment_design: ExperimentDesign
-    risks_and_assumptions: List[Risk]
-    success_learning_criteria: SuccessLearningCriteria
-    next_steps: List[str]
-    statistical_rationale: str
-
-
-# =========================
-# Helpers & Sanitizers
-# =========================
-
-def sanitize_text(s: Any) -> str:
-    if s is None:
-        return ""
-    return str(s).strip()
-
-def html_sanitize(s: Any) -> str:
-    return (
-        sanitize_text(s)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
+# Try to import prompt_engine functions (defensive: app should stay up if not configured)
+PROMPT_ENGINE_AVAILABLE = True
+try:
+    from prompt_engine import (
+        generate_experiment_plan,
+        generate_hypothesis_details,
+        validate_experiment_plan,
     )
+except Exception as e:
+    PROMPT_ENGINE_AVAILABLE = False
+    _prompt_import_error = e
 
-def _safe_float(x: Any, default: float = 0.0) -> float:
+# Pydantic for validation (optional but useful)
+try:
+    from pydantic import BaseModel, ValidationError
+    Pydantic_AVAILABLE = True
+except Exception:
+    Pydantic_AVAILABLE = False
+
+
+# -------------------------
+# Data models (Pydantic)
+# -------------------------
+if Pydantic_AVAILABLE:
+    class HypothesisModel(BaseModel):
+        hypothesis: str
+        rationale: str
+        example_implementation: str
+        behavioral_basis: str
+
+    class VariantModel(BaseModel):
+        control: str
+        variation: str
+        notes: Optional[str] = ""
+
+    class MetricModel(BaseModel):
+        name: str
+        formula: str
+        importance: str
+
+    class GuardrailModel(BaseModel):
+        name: str
+        direction: Optional[str] = ""
+        threshold: Optional[str] = ""
+
+    class RiskModel(BaseModel):
+        risk: str
+        severity: str
+        mitigation: str
+
+    class SuccessCriteriaModel(BaseModel):
+        confidence_level: float
+        MDE: float
+        benchmark: str
+        monitoring: str
+
+    class SuccessLearningModel(BaseModel):
+        definition_of_success: str
+        stopping_rules: str
+        rollback_criteria: str
+
+    class ExperimentDesignModel(BaseModel):
+        traffic_allocation: str
+        sample_size_per_variant: Optional[int] = None
+        total_sample_size: Optional[int] = None
+        test_duration_days: Optional[float] = None
+        dau_coverage_percent: Optional[float] = None
+
+    class MetadataModel(BaseModel):
+        title: str
+        team: str
+        owner: str
+        experiment_id: str
+
+    class ExperimentPlanModel(BaseModel):
+        metadata: MetadataModel
+        problem_statement: str
+        hypotheses: List[HypothesisModel]
+        proposed_solution: str
+        variants: List[VariantModel]
+        metrics: List[MetricModel]
+        guardrail_metrics: List[GuardrailModel]
+        success_criteria: SuccessCriteriaModel
+        experiment_design: ExperimentDesignModel
+        risks_and_assumptions: List[RiskModel]
+        success_learning_criteria: SuccessLearningModel
+        next_steps: List[str]
+        statistical_rationale: str
+
+
+# -------------------------
+# Utility helpers
+# -------------------------
+def sanitize_text(x: Any) -> str:
+    if x is None:
+        return ""
     try:
-        return float(x)
+        s = str(x)
     except Exception:
-        return default
+        return ""
+    s = s.replace("\r", " ").replace("\t", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
-def _parse_value_from_text(text: str, default_unit: str) -> Tuple[Optional[float], str]:
-    """
-    Parses numeric value and unit from a free-form string.
-    If unit not provided, falls back to default_unit.
-    """
-    text = sanitize_text(text)
-    if not text:
-        return None, default_unit
-    # Match numeric + optional unit, e.g., "55.0 %", "60 INR", "12.4"
-    m = re.match(r"^\s*([+-]?\d+(\.\d+)?)\s*([A-Za-z%$]*)\s*$", text)
-    if not m:
-        return None, default_unit
-    val = float(m.group(1))
-    unit = m.group(3) or default_unit
-    return val, unit
 
-def extract_json(raw: Union[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    if isinstance(raw, dict):
-        return raw
-    if not isinstance(raw, str):
-        return None
-    # Find first JSON object in string
-    json_match = re.search(r"\{.*\}", raw, re.S)
-    if not json_match:
-        return None
-    try:
-        return json.loads(json_match.group(0))
-    except Exception:
-        return None
+def ensure_list(x: Any) -> list:
+    return x if isinstance(x, list) else []
+
+
+def ensure_dict(x: Any) -> dict:
+    return x if isinstance(x, dict) else {}
+
 
 def generate_experiment_id(title: str, owner: str) -> str:
     seed = f"{title}|{owner}|{datetime.utcnow().isoformat()}"
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:12].upper()
 
-def ensure_list(x: Any) -> List:
-    return x if isinstance(x, list) else []
 
-def ensure_dict(x: Any) -> Dict[str, Any]:
-    return x if isinstance(x, dict) else {}
-
-def sanitize_experiment_plan(raw_plan: Union[Dict[str, Any], None]) -> Dict[str, Any]:
+def extract_json_from_text(raw: Any) -> Optional[Dict[str, Any]]:
     """
-    Transform raw/malformed experiment plan data into a robust structure aligned with ExperimentPlan.
-    Ensures all keys present and types are normalized.
+    Try to extract a JSON object from raw LLM output or a dict string.
+    Returns dict or None — never raises.
     """
-    if raw_plan is None:
-        raw_plan = {}
-
-    DEFAULT = {
-        "metadata": {
-            "title": "",
-            "team": "",
-            "owner": "",
-            "experiment_id": "",
-        },
-        "problem_statement": "",
-        "hypotheses": [],
-        "proposed_solution": "",
-        "variants": [],
-        "metrics": [],
-        "guardrail_metrics": [],
-        "success_criteria": {
-            "confidence_level": 95.0,
-            "MDE": 5.0,
-            "benchmark": "",
-            "monitoring": "",
-        },
-        "experiment_design": {
-            "traffic_allocation": "50/50",
-            "sample_size_per_variant": None,
-            "total_sample_size": None,
-            "test_duration_days": None,
-            "dau_coverage_percent": None,
-        },
-        "risks_and_assumptions": [],
-        "success_learning_criteria": {
-            "definition_of_success": "",
-            "stopping_rules": "",
-            "rollback_criteria": "",
-        },
-        "next_steps": [],
-        "statistical_rationale": "",
-    }
-
-    plan = {**DEFAULT, **ensure_dict(raw_plan)}
-    plan["metadata"] = {**DEFAULT["metadata"], **ensure_dict(plan.get("metadata", {}))}
-    plan["success_criteria"] = {**DEFAULT["success_criteria"], **ensure_dict(plan.get("success_criteria", {}))}
-    plan["experiment_design"] = {**DEFAULT["experiment_design"], **ensure_dict(plan.get("experiment_design", {}))}
-    plan["success_learning_criteria"] = {**DEFAULT["success_learning_criteria"], **ensure_dict(plan.get("success_learning_criteria", {}))}
-
-    # Normalize lists
-    plan["hypotheses"] = ensure_list(plan.get("hypotheses", []))
-    plan["variants"] = ensure_list(plan.get("variants", []))
-    plan["metrics"] = ensure_list(plan.get("metrics", []))
-    plan["guardrail_metrics"] = ensure_list(plan.get("guardrail_metrics", []))
-    plan["risks_and_assumptions"] = ensure_list(plan.get("risks_and_assumptions", []))
-    plan["next_steps"] = ensure_list(plan.get("next_steps", []))
-
-    # Normalize child objects
-    norm_hyps = []
-    for h in plan["hypotheses"]:
-        h = ensure_dict(h)
-        norm_hyps.append({
-            "hypothesis": sanitize_text(h.get("hypothesis", "")),
-            "rationale": sanitize_text(h.get("rationale", "")),
-            "example_implementation": sanitize_text(h.get("example_implementation", "")),
-            "behavioral_basis": sanitize_text(h.get("behavioral_basis", "")),
-        })
-    plan["hypotheses"] = norm_hyps
-
-    norm_vars = []
-    for v in plan["variants"]:
-        v = ensure_dict(v)
-        norm_vars.append({
-            "control": sanitize_text(v.get("control", "")),
-            "variation": sanitize_text(v.get("variation", "")),
-            "notes": sanitize_text(v.get("notes", "")),
-        })
-    plan["variants"] = norm_vars
-
-    norm_metrics = []
-    for m in plan["metrics"]:
-        m = ensure_dict(m)
-        norm_metrics.append({
-            "name": sanitize_text(m.get("name", "")),
-            "formula": sanitize_text(m.get("formula", "")),
-            "importance": sanitize_text(m.get("importance", "")),
-        })
-    plan["metrics"] = norm_metrics
-
-    norm_guardrails = []
-    for g in plan["guardrail_metrics"]:
-        g = ensure_dict(g)
-        norm_guardrails.append({
-            "name": sanitize_text(g.get("name", "")),
-            "direction": sanitize_text(g.get("direction", "")),
-            "threshold": sanitize_text(g.get("threshold", "")),
-        })
-    plan["guardrail_metrics"] = norm_guardrails
-
-    norm_risks = []
-    for r in plan["risks_and_assumptions"]:
-        r = ensure_dict(r)
-        sev = sanitize_text(r.get("severity", "Medium"))
-        if sev.title() not in ["High", "Medium", "Low"]:
-            sev = "Medium"
-        norm_risks.append({
-            "risk": sanitize_text(r.get("risk", "")) or sanitize_text(r.get("risks", "")),
-            "severity": sev.title(),
-            "mitigation": sanitize_text(r.get("mitigation", "")) or sanitize_text(r.get("mitigations", "")),
-        })
-    plan["risks_and_assumptions"] = norm_risks
-
-    # Coerce types for success criteria & design
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    text = str(raw)
+    # First try direct parse
     try:
-        plan["success_criteria"]["confidence_level"] = float(plan["success_criteria"].get("confidence_level", 95.0))
+        return json.loads(text)
     except Exception:
-        plan["success_criteria"]["confidence_level"] = 95.0
-    try:
-        plan["success_criteria"]["MDE"] = max(0.1, float(plan["success_criteria"].get("MDE", 5.0)))
-    except Exception:
-        plan["success_criteria"]["MDE"] = 5.0
+        pass
+    # Try to extract first {...} block
+    m = re.search(r"\{[\s\S]*\}", text)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:
+            # Last resort: replace single quotes with double quotes carefully
+            t = m.group(0)
+            t2 = re.sub(r"(?<=[:\[\{,\s])'([^']*?)'(?=[,\]\}\s])", r'"\1"', t)
+            try:
+                return json.loads(t2)
+            except Exception:
+                return None
+    return None
+# main.py — Part 2/5: statistics, sample-size, exporters (PDF/DOCX), sanitizers, and validation helpers
 
-    # Experiment Design
-    ed = plan["experiment_design"]
-    try:
-        if ed.get("sample_size_per_variant") is not None:
-            ed["sample_size_per_variant"] = int(float(ed.get("sample_size_per_variant")))
-    except Exception:
-        ed["sample_size_per_variant"] = None
-    try:
-        if ed.get("total_sample_size") is not None:
-            ed["total_sample_size"] = int(float(ed.get("total_sample_size")))
-    except Exception:
-        ed["total_sample_size"] = None
-    try:
-        if ed.get("test_duration_days") is not None:
-            ed["test_duration_days"] = float(ed.get("test_duration_days"))
-    except Exception:
-        ed["test_duration_days"] = None
-    try:
-        if ed.get("dau_coverage_percent") is not None:
-            ed["dau_coverage_percent"] = float(ed.get("dau_coverage_percent"))
-    except Exception:
-        ed["dau_coverage_percent"] = None
-
-    return plan
-
-
-# =========================
-# Stats & Export Utilities
-# =========================
-
+# -------------------------
+# Statistics / sample size
+# -------------------------
 def calculate_sample_size(
-    baseline: float,
-    mde: float,
+    baseline: Optional[float],
+    mde_pct: Optional[float],
     alpha: float,
     power: float,
     num_variants: int,
@@ -341,777 +209,908 @@ def calculate_sample_size(
     std_dev: Optional[float] = None,
 ) -> Tuple[Optional[int], Optional[int]]:
     """
-    Returns (sample_per_variant, total_sample).
-    baseline, mde expressed as percentage for conversion rate; for numeric metric baseline is absolute and std_dev is required.
+    Return tuple (sample_per_variant, total_sample).
+    - baseline: for conversion rate (as percent, e.g., 25.0 for 25%) or numeric baseline for numeric metric.
+    - mde_pct: MDE as percent (e.g., 5 for 5%).
+    - alpha: significance level (e.g., 0.05)
+    - power: e.g., 0.8
+    - metric_type: "Conversion Rate" or "Numeric Value"
+    - std_dev: required for numeric metrics (same units as baseline)
     """
+    # Defensive: ensure stats libs exist
+    if not STATSMODELS_AVAILABLE:
+        return None, None
+
     try:
-        mde_relative = float(mde) / 100.0
+        if baseline is None or mde_pct is None:
+            return None, None
+
         if metric_type == "Conversion Rate":
-            baseline_prop = float(baseline) / 100.0
-            if baseline_prop <= 0:
+            # convert percents to proportions
+            p1 = float(baseline) / 100.0
+            if p1 <= 0 or p1 >= 1:
                 return None, None
-            expected_prop = min(baseline_prop * (1 + mde_relative), 0.999)
-            effect_size = proportion_effectsize(baseline_prop, expected_prop)
-            if effect_size == 0:
+            mde_rel = float(mde_pct) / 100.0
+            p2 = min(max(p1 * (1 + mde_rel), 1e-6), 0.999999)
+            effect_size = proportion_effectsize(p1, p2)
+            if not np.isfinite(effect_size) or effect_size == 0:
                 return None, None
             analysis = NormalIndPower()
-            sample_size_per_variant = analysis.solve_power(
-                effect_size=effect_size,
-                alpha=alpha,
-                power=power,
-                alternative="two-sided",
-            )
+            per_variant = analysis.solve_power(effect_size=effect_size, alpha=alpha, power=power, alternative="two-sided")
         elif metric_type == "Numeric Value":
             if std_dev is None or std_dev <= 0:
                 return None, None
-            mde_absolute = float(baseline) * mde_relative
-            effect_size = mde_absolute / float(std_dev)
-            if effect_size == 0:
+            mde_rel = float(mde_pct) / 100.0
+            mde_abs = float(baseline) * mde_rel
+            if mde_abs == 0:
                 return None, None
+            effect_size = mde_abs / float(std_dev)
             analysis = TTestIndPower()
-            sample_size_per_variant = analysis.solve_power(
-                effect_size=effect_size,
-                alpha=alpha,
-                power=power,
-                alternative="two-sided",
-            )
+            per_variant = analysis.solve_power(effect_size=effect_size, alpha=alpha, power=power, alternative="two-sided")
         else:
             return None, None
 
-        if (
-            sample_size_per_variant is None
-            or sample_size_per_variant <= 0
-            or not np.isfinite(sample_size_per_variant)
-        ):
+        if per_variant is None or not np.isfinite(per_variant) or per_variant <= 0:
             return None, None
 
-        total = sample_size_per_variant * num_variants
-        return int(np.ceil(sample_size_per_variant)), int(np.ceil(total))
-    except Exception as e:
-        st.error(f"Sample size calculation error: {str(e)}")
+        per_variant_int = int(np.ceil(per_variant))
+        total = int(np.ceil(per_variant_int * int(num_variants)))
+        return per_variant_int, total
+    except Exception:
         return None, None
 
 
-def pdf_sanitize(text: Any) -> str:
-    if text is None:
-        return ""
-    text = str(text)
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def generate_pdf_bytes_from_prd_dict(prd: Dict[str, Any], title: str = "Experiment PRD") -> Optional[bytes]:
+# -------------------------
+# PDF export
+# -------------------------
+def generate_pdf_bytes_from_plan(plan: Dict[str, Any]) -> Optional[bytes]:
+    """
+    Create a PDF from a sanitized plan. Returns bytes or None.
+    Requires ReportLab.
+    """
     if not REPORTLAB_AVAILABLE:
-        st.warning("PDF export requires ReportLab, which is not available.")
         return None
-
-    prd = sanitize_experiment_plan(prd)
-    buffer = BytesIO()
+    plan = sanitize_plan(plan)
 
     try:
-        doc = SimpleDocTemplate(
-            buffer, pagesize=letter, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50
-        )
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
         styles = getSampleStyleSheet()
-
+        # Add custom styles if absent
         if "PRDTitle" not in styles:
-            styles.add(
-                ParagraphStyle(
-                    name="PRDTitle",
-                    fontSize=20,
-                    leading=24,
-                    spaceAfter=12,
-                    alignment=TA_CENTER,
-                )
-            )
+            styles.add(ParagraphStyle(name="PRDTitle", fontSize=18, leading=22, spaceAfter=12, alignment=TA_CENTER))
         if "SectionHeading" not in styles:
-            styles.add(
-                ParagraphStyle(
-                    name="SectionHeading",
-                    fontSize=14,
-                    leading=18,
-                    spaceBefore=12,
-                    spaceAfter=6,
-                    fontName="Helvetica-Bold",
-                )
-            )
+            styles.add(ParagraphStyle(name="SectionHeading", fontSize=13, leading=16, spaceBefore=10, spaceAfter=6))
         if "BodyText" not in styles:
-            styles.add(ParagraphStyle(name="BodyText", fontSize=11, leading=14, spaceAfter=6))
+            styles.add(ParagraphStyle(name="BodyText", fontSize=10, leading=14, spaceAfter=6))
 
         story = []
-        story.append(Paragraph(pdf_sanitize(title), styles["PRDTitle"]))
-        story.append(Spacer(1, 24))
+        md = plan.get("metadata", {})
+        title = md.get("title") or "Experiment PRD"
+        story.append(Paragraph(title, styles["PRDTitle"]))
+        story.append(Spacer(1, 8))
 
-        # 1. Metadata
-        md = prd.get("metadata", {})
-        meta_lines = [
-            f"<b>Title:</b> {pdf_sanitize(md.get('title',''))}",
-            f"<b>Team:</b> {pdf_sanitize(md.get('team',''))}",
-            f"<b>Owner:</b> {pdf_sanitize(md.get('owner',''))}",
-            f"<b>Experiment ID:</b> {pdf_sanitize(md.get('experiment_id',''))}",
-        ]
-        story.append(Paragraph("1. Experiment Title & Metadata", styles["SectionHeading"]))
-        for ln in meta_lines:
-            story.append(Paragraph(ln, styles["BodyText"]))
-        story.append(Spacer(1, 12))
+        # Metadata
+        story.append(Paragraph("Experiment Metadata", styles["SectionHeading"]))
+        story.append(Paragraph(f"Team: {md.get('team','')}", styles["BodyText"]))
+        story.append(Paragraph(f"Owner: {md.get('owner','')}", styles["BodyText"]))
+        story.append(Paragraph(f"Experiment ID: {md.get('experiment_id','')}", styles["BodyText"]))
+        story.append(Spacer(1, 6))
 
-        # 2. Problem Statement
-        story.append(Paragraph("2. Problem Statement", styles["SectionHeading"]))
-        story.append(Paragraph(pdf_sanitize(prd.get("problem_statement", "")), styles["BodyText"]))
-        story.append(Spacer(1, 12))
+        # Problem statement
+        story.append(Paragraph("Problem Statement", styles["SectionHeading"]))
+        story.append(Paragraph(pdf_safe(plan.get("problem_statement","")), styles["BodyText"]))
+        story.append(Spacer(1, 6))
 
-        # 3. Hypothesis (selected one or list)
-        story.append(Paragraph("3. Hypothesis", styles["SectionHeading"]))
-        for idx, h in enumerate(prd.get("hypotheses", []), start=1):
-            story.append(Paragraph(f"<b>Hypothesis {idx}:</b> {pdf_sanitize(h.get('hypothesis',''))}", styles["BodyText"]))
-            story.append(Paragraph(f"<b>Rationale:</b> {pdf_sanitize(h.get('rationale',''))}", styles["BodyText"]))
-            story.append(Paragraph(f"<b>Example:</b> {pdf_sanitize(h.get('example_implementation',''))}", styles["BodyText"]))
-            story.append(Paragraph(f"<b>Behavioral Basis:</b> {pdf_sanitize(h.get('behavioral_basis',''))}", styles["BodyText"]))
-            story.append(Spacer(1, 8))
-        story.append(Spacer(1, 12))
+        # Proposed solution
+        story.append(Paragraph("Proposed Solution", styles["SectionHeading"]))
+        story.append(Paragraph(pdf_safe(plan.get("proposed_solution","")), styles["BodyText"]))
+        story.append(Spacer(1, 6))
 
-        # 4. Proposed Solution & Variants
-        story.append(Paragraph("4. Proposed Solution & Variants", styles["SectionHeading"]))
-        story.append(Paragraph(f"<b>Solution:</b> {pdf_sanitize(prd.get('proposed_solution',''))}", styles["BodyText"]))
-        for v in prd.get("variants", []):
-            story.append(Paragraph(f"<b>Control:</b> {pdf_sanitize(v.get('control',''))}", styles["BodyText"]))
-            story.append(Paragraph(f"<b>Variation:</b> {pdf_sanitize(v.get('variation',''))}", styles["BodyText"]))
+        # Hypotheses
+        story.append(Paragraph("Hypotheses", styles["SectionHeading"]))
+        for i, h in enumerate(plan.get("hypotheses", []), start=1):
+            story.append(Paragraph(f"Hypothesis {i}: {pdf_safe(h.get('hypothesis',''))}", styles["BodyText"]))
+            story.append(Paragraph(f"Rationale: {pdf_safe(h.get('rationale',''))}", styles["BodyText"]))
+            story.append(Paragraph(f"Example: {pdf_safe(h.get('example_implementation',''))}", styles["BodyText"]))
+            story.append(Paragraph(f"Behavioral Basis: {pdf_safe(h.get('behavioral_basis',''))}", styles["BodyText"]))
+            story.append(Spacer(1, 4))
+
+        # Variants
+        story.append(Paragraph("Variants", styles["SectionHeading"]))
+        for v in plan.get("variants", []):
+            story.append(Paragraph(f"Control: {pdf_safe(v.get('control',''))}", styles["BodyText"]))
+            story.append(Paragraph(f"Variation: {pdf_safe(v.get('variation',''))}", styles["BodyText"]))
             if v.get("notes"):
-                story.append(Paragraph(f"<b>Notes:</b> {pdf_sanitize(v.get('notes',''))}", styles["BodyText"]))
-            story.append(Spacer(1, 6))
-        story.append(Spacer(1, 12))
+                story.append(Paragraph(f"Notes: {pdf_safe(v.get('notes',''))}", styles["BodyText"]))
+            story.append(Spacer(1, 4))
 
-        # 5. Success Metrics & Guardrails
-        story.append(Paragraph("5. Success Metrics & Guardrails", styles["SectionHeading"]))
-        metrics_data = [["Name", "Formula", "Importance"]]
-        for m in prd.get("metrics", []):
-            metrics_data.append([pdf_sanitize(m.get("name","")), pdf_sanitize(m.get("formula","")), pdf_sanitize(m.get("importance",""))])
-        if len(metrics_data) > 1:
-            table = Table(metrics_data, colWidths=[2.2*inch, 3.0*inch, 1.3*inch])
-            table.setStyle(TableStyle([
-                ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#EEF2FF")),
-                ("TEXTCOLOR", (0,0), (-1,0), colors.HexColor("#052a4a")),
-                ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-                ("ALIGN", (0,0), (-1,0), "CENTER"),
-                ("GRID", (0,0), (-1,-1), 0.25, colors.gray),
-                ("VALIGN", (0,0), (-1,-1), "TOP"),
-            ]))
-            story.append(table)
-            story.append(Spacer(1, 8))
+        # Metrics + Guardrails
+        story.append(Paragraph("Metrics", styles["SectionHeading"]))
+        metrics = plan.get("metrics", [])
+        if metrics:
+            data = [["Name", "Formula", "Importance"]]
+            for m in metrics:
+                data.append([pdf_safe(m.get("name","")), pdf_safe(m.get("formula","")), pdf_safe(m.get("importance",""))])
+            tbl = Table(data, colWidths=[2.2*inch, 3.0*inch, 1.2*inch])
+            tbl.setStyle(TableStyle([("GRID", (0,0), (-1,-1), 0.25, colors.gray)]))
+            story.append(tbl)
+        story.append(Spacer(1, 6))
 
-        guard_data = [["Guardrail Metric", "Direction", "Threshold"]]
-        for g in prd.get("guardrail_metrics", []):
-            guard_data.append([pdf_sanitize(g.get("name","")), pdf_sanitize(g.get("direction","")), pdf_sanitize(g.get("threshold",""))])
-        if len(guard_data) > 1:
-            gtable = Table(guard_data, colWidths=[2.5*inch, 2.2*inch, 1.8*inch])
-            gtable.setStyle(TableStyle([
-                ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#FEE2E2")),
-                ("TEXTCOLOR", (0,0), (-1,0), colors.HexColor("#7f1d1d")),
-                ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-                ("ALIGN", (0,0), (-1,0), "CENTER"),
-                ("GRID", (0,0), (-1,-1), 0.25, colors.gray),
-                ("VALIGN", (0,0), (-1,-1), "TOP"),
-            ]))
-            story.append(gtable)
-            story.append(Spacer(1, 12))
+        story.append(Paragraph("Guardrail Metrics", styles["SectionHeading"]))
+        guards = plan.get("guardrail_metrics", [])
+        for g in guards:
+            story.append(Paragraph(f"{pdf_safe(g.get('name',''))} — {pdf_safe(g.get('direction',''))} {pdf_safe(g.get('threshold',''))}", styles["BodyText"]))
+        story.append(Spacer(1, 6))
 
-        # 6. Experiment Design & Rollout Plan
-        story.append(Paragraph("6. Experiment Design & Rollout Plan", styles["SectionHeading"]))
-        ed = prd.get("experiment_design", {})
-        ed_lines = [
-            f"<b>Traffic Allocation:</b> {pdf_sanitize(ed.get('traffic_allocation','50/50'))}",
-            f"<b>Sample Size / Variant:</b> {pdf_sanitize(ed.get('sample_size_per_variant',''))}",
-            f"<b>Total Sample Size:</b> {pdf_sanitize(ed.get('total_sample_size',''))}",
-            f"<b>Test Duration (days):</b> {pdf_sanitize(ed.get('test_duration_days',''))}",
-            f"<b>DAU Coverage (%):</b> {pdf_sanitize(ed.get('dau_coverage_percent',''))}",
-        ]
-        for ln in ed_lines:
-            story.append(Paragraph(ln, styles["BodyText"]))
-        story.append(Spacer(1, 12))
+        # Experiment design
+        story.append(Paragraph("Experiment Design & Rollout", styles["SectionHeading"]))
+        ed = plan.get("experiment_design", {})
+        story.append(Paragraph(f"Traffic Allocation: {pdf_safe(ed.get('traffic_allocation',''))}", styles["BodyText"]))
+        story.append(Paragraph(f"Sample Size per Variant: {pdf_safe(ed.get('sample_size_per_variant',''))}", styles["BodyText"]))
+        story.append(Paragraph(f"Total Sample Size: {pdf_safe(ed.get('total_sample_size',''))}", styles["BodyText"]))
+        story.append(Paragraph(f"Estimated Duration (days): {pdf_safe(ed.get('test_duration_days',''))}", styles["BodyText"]))
+        story.append(Spacer(1, 6))
 
-        # 7. Risks & Mitigation
-        story.append(Paragraph("7. Risks & Mitigation", styles["SectionHeading"]))
-        for r in prd.get("risks_and_assumptions", []):
-            story.append(Paragraph(f"<b>Risk:</b> {pdf_sanitize(r.get('risk',''))}", styles["BodyText"]))
-            story.append(Paragraph(f"<b>Severity:</b> {pdf_sanitize(r.get('severity',''))}", styles["BodyText"]))
-            story.append(Paragraph(f"<b>Mitigation:</b> {pdf_sanitize(r.get('mitigation',''))}", styles["BodyText"]))
-            story.append(Spacer(1, 6))
-        story.append(Spacer(1, 12))
+        # Risks
+        story.append(Paragraph("Risks & Mitigations", styles["SectionHeading"]))
+        for r in plan.get("risks_and_assumptions", []):
+            story.append(Paragraph(f"Risk: {pdf_safe(r.get('risk',''))}", styles["BodyText"]))
+            story.append(Paragraph(f"Severity: {pdf_safe(r.get('severity',''))}", styles["BodyText"]))
+            story.append(Paragraph(f"Mitigation: {pdf_safe(r.get('mitigation',''))}", styles["BodyText"]))
+            story.append(Spacer(1, 4))
 
-        # 8. Success & Learning Criteria
-        story.append(Paragraph("8. Success & Learning Criteria", styles["SectionHeading"]))
-        sl = prd.get("success_learning_criteria", {})
-        story.append(Paragraph(f"<b>Definition of Success:</b> {pdf_sanitize(sl.get('definition_of_success',''))}", styles["BodyText"]))
-        story.append(Paragraph(f"<b>Stopping Rules:</b> {pdf_sanitize(sl.get('stopping_rules',''))}", styles["BodyText"]))
-        story.append(Paragraph(f"<b>Rollback Criteria:</b> {pdf_sanitize(sl.get('rollback_criteria',''))}", styles["BodyText"]))
-        story.append(Spacer(1, 12))
+        # Success & learning
+        story.append(Paragraph("Success & Learning Criteria", styles["SectionHeading"]))
+        sl = plan.get("success_learning_criteria", {})
+        story.append(Paragraph(f"Definition of Success: {pdf_safe(sl.get('definition_of_success',''))}", styles["BodyText"]))
+        story.append(Paragraph(f"Stopping Rules: {pdf_safe(sl.get('stopping_rules',''))}", styles["BodyText"]))
+        story.append(Paragraph(f"Rollback Criteria: {pdf_safe(sl.get('rollback_criteria',''))}", styles["BodyText"]))
+        story.append(Spacer(1, 6))
 
-        # Success Criteria & Rationale
-        story.append(Paragraph("9. Statistical Criteria & Rationale", styles["SectionHeading"]))
-        sc = prd.get("success_criteria", {})
-        story.append(Paragraph(f"<b>Confidence Level:</b> {pdf_sanitize(sc.get('confidence_level',''))}%", styles["BodyText"]))
-        story.append(Paragraph(f"<b>MDE:</b> {pdf_sanitize(sc.get('MDE',''))}%", styles["BodyText"]))
-        story.append(Paragraph(f"<b>Benchmark:</b> {pdf_sanitize(sc.get('benchmark',''))}", styles["BodyText"]))
-        story.append(Paragraph(f"<b>Monitoring:</b> {pdf_sanitize(sc.get('monitoring',''))}", styles["BodyText"]))
-        story.append(Paragraph(f"<b>Rationale:</b> {pdf_sanitize(prd.get('statistical_rationale',''))}", styles["BodyText"]))
-        story.append(Spacer(1, 12))
-
-        # 10. Next Steps
-        story.append(Paragraph("10. Next Steps", styles["SectionHeading"]))
-        for s in prd.get("next_steps", []):
-            story.append(Paragraph(f"• {pdf_sanitize(s)}", styles["BodyText"]))
+        # Statistical rationale
+        story.append(Paragraph("Statistical Rationale & Success Criteria", styles["SectionHeading"]))
+        sc = plan.get("success_criteria", {})
+        story.append(Paragraph(f"Confidence Level: {pdf_safe(sc.get('confidence_level',''))}%", styles["BodyText"]))
+        story.append(Paragraph(f"MDE: {pdf_safe(sc.get('MDE',''))}%", styles["BodyText"]))
+        story.append(Paragraph(f"Benchmark: {pdf_safe(sc.get('benchmark',''))}", styles["BodyText"]))
+        story.append(Paragraph(f"Monitoring: {pdf_safe(sc.get('monitoring',''))}", styles["BodyText"]))
+        story.append(Paragraph(pdf_safe(plan.get("statistical_rationale","")), styles["BodyText"]))
 
         doc.build(story)
         buffer.seek(0)
         return buffer.read()
-    except Exception as e:
-        st.error(f"PDF generation failed: {str(e)}")
+    except Exception:
         return None
 
 
-def generate_docx_bytes_from_prd_dict(prd: Dict[str, Any], title: str = "Experiment PRD") -> Optional[bytes]:
-    if not DOCX_AVAILABLE:
-        st.warning("DOCX export requires python-docx, which is not available.")
-        return None
-
-    prd = sanitize_experiment_plan(prd)
-    bio = BytesIO()
+def pdf_safe(x: Any) -> str:
+    if x is None:
+        return ""
     try:
+        s = str(x)
+    except Exception:
+        return ""
+    # Minimal escaping for reportlab flowables
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+# -------------------------
+# DOCX export
+# -------------------------
+def generate_docx_bytes_from_plan(plan: Dict[str, Any]) -> Optional[bytes]:
+    """
+    Generate a DOCX document from the plan. Returns bytes or None.
+    Requires python-docx.
+    """
+    if not DOCX_AVAILABLE:
+        return None
+    plan = sanitize_plan(plan)
+    try:
+        bio = BytesIO()
         doc = Document()
+        md = plan.get("metadata", {})
+        doc.add_heading(md.get("title", "Experiment PRD"), level=0)
 
-        # Title
-        h = doc.add_heading(title, level=0)
-        h.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        def add_h(txt):
+            doc.add_heading(txt, level=1)
 
-        def add_heading(txt, level=1):
-            doc.add_heading(txt, level=level)
-
-        def add_par(txt):
+        def add_p(txt):
             p = doc.add_paragraph(txt)
             p_format = p.paragraph_format
             p_format.space_after = Pt(6)
 
-        # 1. Metadata
-        add_heading("1. Experiment Title & Metadata", 1)
-        md = prd.get("metadata", {})
-        add_par(f"Title: {md.get('title','')}")
-        add_par(f"Team: {md.get('team','')}")
-        add_par(f"Owner: {md.get('owner','')}")
-        add_par(f"Experiment ID: {md.get('experiment_id','')}")
-        # 2. Problem
-        add_heading("2. Problem Statement", 1)
-        add_par(prd.get("problem_statement", ""))
+        add_h("Experiment Metadata")
+        add_p(f"Team: {md.get('team','')}")
+        add_p(f"Owner: {md.get('owner','')}")
+        add_p(f"Experiment ID: {md.get('experiment_id','')}")
 
-        # 3. Hypothesis
-        add_heading("3. Hypothesis", 1)
-        for i, h in enumerate(prd.get("hypotheses", []), start=1):
-            add_par(f"Hypothesis {i}: {h.get('hypothesis','')}")
-            add_par(f"Rationale: {h.get('rationale','')}")
-            add_par(f"Example: {h.get('example_implementation','')}")
-            add_par(f"Behavioral Basis: {h.get('behavioral_basis','')}")
+        add_h("Problem Statement")
+        add_p(plan.get("problem_statement",""))
 
-        # 4. Proposed Solution & Variants
-        add_heading("4. Proposed Solution & Variants", 1)
-        add_par(f"Solution: {prd.get('proposed_solution','')}")
-        for v in prd.get("variants", []):
-            add_par(f"Control: {v.get('control','')}")
-            add_par(f"Variation: {v.get('variation','')}")
+        add_h("Proposed Solution")
+        add_p(plan.get("proposed_solution",""))
+
+        add_h("Hypotheses")
+        for i, h in enumerate(plan.get("hypotheses", []), start=1):
+            add_p(f"Hypothesis {i}: {h.get('hypothesis','')}")
+            add_p(f"Rationale: {h.get('rationale','')}")
+            add_p(f"Example: {h.get('example_implementation','')}")
+            add_p(f"Behavioral Basis: {h.get('behavioral_basis','')}")
+
+        add_h("Variants")
+        for v in plan.get("variants", []):
+            add_p(f"Control: {v.get('control','')}")
+            add_p(f"Variation: {v.get('variation','')}")
             if v.get("notes"):
-                add_par(f"Notes: {v.get('notes','')}")
+                add_p(f"Notes: {v.get('notes','')}")
 
-        # 5. Success Metrics & Guardrails
-        add_heading("5. Success Metrics & Guardrails", 1)
-        if prd.get("metrics"):
-            t = doc.add_table(rows=1, cols=3)
-            hdr = t.rows[0].cells
+        add_h("Metrics")
+        if plan.get("metrics"):
+            table = doc.add_table(rows=1, cols=3)
+            hdr = table.rows[0].cells
             hdr[0].text = "Name"
             hdr[1].text = "Formula"
             hdr[2].text = "Importance"
-            for m in prd["metrics"]:
-                row = t.add_row().cells
+            for m in plan["metrics"]:
+                row = table.add_row().cells
                 row[0].text = m.get("name","")
                 row[1].text = m.get("formula","")
                 row[2].text = m.get("importance","")
-        if prd.get("guardrail_metrics"):
-            doc.add_paragraph("")  # spacing
-            t2 = doc.add_table(rows=1, cols=3)
-            hdr2 = t2.rows[0].cells
-            hdr2[0].text = "Guardrail Metric"
-            hdr2[1].text = "Direction"
-            hdr2[2].text = "Threshold"
-            for g in prd["guardrail_metrics"]:
-                row = t2.add_row().cells
-                row[0].text = g.get("name","")
-                row[1].text = g.get("direction","")
-                row[2].text = g.get("threshold","")
 
-        # 6. Experiment Design & Rollout Plan
-        add_heading("6. Experiment Design & Rollout Plan", 1)
-        ed = prd.get("experiment_design", {})
-        add_par(f"Traffic Allocation: {ed.get('traffic_allocation','')}")
-        add_par(f"Sample Size / Variant: {ed.get('sample_size_per_variant','')}")
-        add_par(f"Total Sample Size: {ed.get('total_sample_size','')}")
-        add_par(f"Test Duration (days): {ed.get('test_duration_days','')}")
-        add_par(f"DAU Coverage (%): {ed.get('dau_coverage_percent','')}")
+        add_h("Guardrail Metrics")
+        for g in plan.get("guardrail_metrics", []):
+            add_p(f"{g.get('name','')} — {g.get('direction','')} {g.get('threshold','')}")
 
-        # 7. Risks & Mitigation
-        add_heading("7. Risks & Mitigation", 1)
-        for r in prd.get("risks_and_assumptions", []):
-            add_par(f"Risk: {r.get('risk','')}")
-            add_par(f"Severity: {r.get('severity','')}")
-            add_par(f"Mitigation: {r.get('mitigation','')}")
+        add_h("Experiment Design & Rollout")
+        ed = plan.get("experiment_design", {})
+        add_p(f"Traffic Allocation: {ed.get('traffic_allocation','')}")
+        add_p(f"Sample Size / Variant: {ed.get('sample_size_per_variant','')}")
+        add_p(f"Total Sample Size: {ed.get('total_sample_size','')}")
+        add_p(f"Estimated Duration (days): {ed.get('test_duration_days','')}")
 
-        # 8. Success & Learning Criteria
-        add_heading("8. Success & Learning Criteria", 1)
-        sl = prd.get("success_learning_criteria", {})
-        add_par(f"Definition of Success: {sl.get('definition_of_success','')}")
-        add_par(f"Stopping Rules: {sl.get('stopping_rules','')}")
-        add_par(f"Rollback Criteria: {sl.get('rollback_criteria','')}")
+        add_h("Risks & Mitigation")
+        for r in plan.get("risks_and_assumptions", []):
+            add_p(f"Risk: {r.get('risk','')}")
+            add_p(f"Severity: {r.get('severity','')}")
+            add_p(f"Mitigation: {r.get('mitigation','')}")
 
-        # 9. Statistical Criteria & Rationale
-        add_heading("9. Statistical Criteria & Rationale", 1)
-        sc = prd.get("success_criteria", {})
-        add_par(f"Confidence Level: {sc.get('confidence_level','')}%")
-        add_par(f"MDE: {sc.get('MDE','')}%")
-        add_par(f"Benchmark: {sc.get('benchmark','')}")
-        add_par(f"Monitoring: {sc.get('monitoring','')}")
-        add_par(f"Rationale: {prd.get('statistical_rationale','')}")
+        add_h("Success & Learning Criteria")
+        sl = plan.get("success_learning_criteria", {})
+        add_p(f"Definition of Success: {sl.get('definition_of_success','')}")
+        add_p(f"Stopping Rules: {sl.get('stopping_rules','')}")
+        add_p(f"Rollback Criteria: {sl.get('rollback_criteria','')}")
 
-        # 10. Next Steps
-        add_heading("10. Next Steps", 1)
-        for s in prd.get("next_steps", []):
-            add_par(f"• {s}")
+        add_h("Statistical Rationale & Success Criteria")
+        sc = plan.get("success_criteria", {})
+        add_p(f"Confidence Level: {sc.get('confidence_level','')}%")
+        add_p(f"MDE: {sc.get('MDE','')}%")
+        add_p(f"Benchmark: {sc.get('benchmark','')}")
+        add_p(f"Monitoring: {sc.get('monitoring','')}")
+        add_p(plan.get("statistical_rationale",""))
 
         doc.save(bio)
         bio.seek(0)
         return bio.read()
-    except Exception as e:
-        st.error(f"DOCX generation failed: {str(e)}")
+    except Exception:
         return None
-# main.py — A/B Test Architect (full file, part 2/3)
-
-# =========================
-# Streamlit App — Layout & State
-# =========================
-
-st.set_page_config(
-    page_title="A/B Test Architect",
-    page_icon="🧪",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-# Initialize session state
-ss = st.session_state
-for key, default in {
-    "context": {},
-    "goal": "",
-    "raw_plan_json": None,
-    "plan": None,
-    "hypothesis_options": [],
-    "selected_hypothesis_index": None,
-    "custom_hypothesis": "",
-    "quality_result": None,
-    "export_filename_base": "experiment_prd",
-}.items():
-    if key not in ss:
-        ss[key] = default
 
 
-# =========================
-# Sidebar — User Inputs (Step 1)
-# =========================
+# -------------------------
+# Sanitization / normalization
+# -------------------------
+def sanitize_plan(raw_plan: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Normalize incoming plan into the app's canonical schema (dict).
+    Returns a safe, fully populated dict that exporters and UI expect.
+    """
+    if raw_plan is None:
+        raw_plan = {}
+    p = ensure_dict(raw_plan)
 
-with st.sidebar:
-    st.markdown("### 👤 User Inputs")
-    st.caption("Provide the context to generate hypotheses and the PRD.")
-
-    # High-level business goal
-    goal = st.text_input(
-        "High-Level Business Goal",
-        value=ss.get("goal", ""),
-        placeholder="e.g., Improve user engagement on the homepage",
-    )
-
-    product_type = st.selectbox(
-        "Product Type",
-        options=["Mobile App", "E-commerce Website", "SaaS Dashboard", "Web App", "Other"],
-        index=0 if not ss["context"].get("type") else
-               ["Mobile App", "E-commerce Website", "SaaS Dashboard", "Web App", "Other"].index(
-                   ss["context"].get("type", "Mobile App")
-               ),
-    )
-
-    persona = st.text_input(
-        "Target User Persona",
-        value=ss["context"].get("user_persona", ""),
-        placeholder="e.g., First-time visitor",
-    )
-
-    metric_to_impact = st.selectbox(
-        "Key Metric to Impact",
-        options=["Click-through Rate", "Purchase Conversion Rate", "Time on Page", "Average Session Time", "Retention", "Other"],
-        index=0,
-    )
-
-    current_value = st.text_input(
-        "Current Value",
-        value=ss["context"].get("current_value", ""),
-        placeholder='e.g., "25% CTR" or "5.2 minutes"',
-    )
-    target_value = st.text_input(
-        "Target Value",
-        value=ss["context"].get("target_value", ""),
-        placeholder='e.g., "28% CTR" or "6.0 minutes"',
-    )
-
-    # Advanced metric details for stats
-    metric_type = st.selectbox(
-        "Metric Type (for Sample Size)",
-        options=["Conversion Rate", "Numeric Value"],
-        help="Choose how your key metric behaves statistically.",
-        index=0 if ss["context"].get("metric_type", "Conversion Rate") == "Conversion Rate" else 1,
-    )
-
-    std_dev = st.text_input(
-        "Std Dev (if Numeric Value)",
-        value=str(ss["context"].get("std_dev", "")),
-        placeholder="Required only for Numeric Value",
-    )
-
-    dau_coverage = st.slider(
-        "Experiment DAU Coverage (%)",
-        min_value=1,
-        max_value=100,
-        value=int(ss["context"].get("dau_coverage_percent", 50) or 50),
-        step=1,
-    )
-
-    # Owner & team for metadata
-    st.markdown("---")
-    owner = st.text_input("Experiment Owner", value=ss["context"].get("owner", ""))
-    team = st.text_input("Product Team", value=ss["context"].get("team", ""))
-
-    st.markdown("---")
-    st.caption("Quality & Stats")
-    confidence = st.slider("Confidence Level (%)", 80, 99, int(ss.get("plan", {}).get("success_criteria", {}).get("confidence_level", 95) or 95))
-    mde = st.slider("MDE — Minimum Detectable Effect (%)", 1, 50, int(ss.get("plan", {}).get("success_criteria", {}).get("MDE", 5) or 5))
-    power = st.slider("Statistical Power (%)", 60, 99, 80)
-
-    # Persist context in session
-    ss["goal"] = goal
-    ss["context"] = {
-        "type": product_type,
-        "user_persona": persona,
-        "exact_metric": metric_to_impact,
-        "metric_type": metric_type,
-        "current_value": current_value,
-        "target_value": target_value,
-        "metric_unit": "%",
-        "users": "N/A",
-        "notes": "",
-        "std_dev": float(std_dev) if std_dev.strip() else None,
-        "dau_coverage_percent": dau_coverage,
-        "team": team,
-        "owner": owner,
-        "confidence_level": confidence,
-        "MDE": mde,
-        "power": power,
-        "strategic_goal": goal,
+    # Metadata
+    meta = ensure_dict(p.get("metadata", {}))
+    metadata = {
+        "title": sanitize_text(meta.get("title", "")),
+        "team": sanitize_text(meta.get("team", "")),
+        "owner": sanitize_text(meta.get("owner", "")),
+        "experiment_id": sanitize_text(meta.get("experiment_id", "")),
     }
+    if not metadata["experiment_id"]:
+        metadata["experiment_id"] = generate_experiment_id(metadata["title"] or "Untitled", metadata["owner"] or "unknown")
 
-st.title("🧪 A/B Test Architect")
-st.caption("From idea → standardized, export-ready PRD. Fast. Consistent. Credible.")
-
-
-# =========================
-# Hypotheses (Step 2)
-# =========================
-
-st.subheader("Step 2: Generate and Select a Hypothesis")
-
-col_h1, col_h2, col_h3 = st.columns([1, 1, 1])
-with col_h1:
-    if st.button("⚡ Generate Hypotheses", use_container_width=True):
-        if not ss["goal"] or not ss["context"].get("type"):
-            st.error("Please fill the sidebar: Business Goal and Product Type at minimum.")
-        else:
-            # Build three quick hypothesis options by calling `generate_hypothesis_details` with seeds
-            seeds = [
-                f"If we redesign the primary call-to-action on the {ss['context']['type']} to improve visibility, then {metric_to_impact} will increase because users notice it faster.",
-                f"If we reduce friction in the key user flow for the {ss['context']['type']}, then {metric_to_impact} will improve because fewer users drop off.",
-                f"If we add contextual hints or nudges for the {persona}, then {metric_to_impact} will increase because they understand the next best action.",
-            ]
-            options = []
-            for s in seeds:
-                try:
-                    detail_json = generate_hypothesis_details(s, ss["context"])
-                    obj = extract_json(detail_json) or {}
-                    options.append(obj)
-                except Exception as e:
-                    options.append({
-                        "hypothesis": s,
-                        "rationale": f"Generation failed, fallback used. Error: {str(e)}",
-                        "example_implementation": "N/A",
-                        "behavioral_basis": "N/A",
-                    })
-            ss["hypothesis_options"] = options
-            ss["selected_hypothesis_index"] = None
-            ss["custom_hypothesis"] = ""
-
-with col_h2:
-    if st.button("📝 Write Custom Hypothesis", use_container_width=True):
-        ss["custom_hypothesis"] = ss.get("custom_hypothesis", "") or "If we [change], then [outcome], because [reason]."
-with col_h3:
-    clear_h = st.button("🗑️ Clear Hypotheses", use_container_width=True)
-    if clear_h:
-        ss["hypothesis_options"] = []
-        ss["selected_hypothesis_index"] = None
-        ss["custom_hypothesis"] = ""
-
-# Display hypothesis options
-if ss["hypothesis_options"]:
-    st.markdown("#### AI-Generated Options")
-    cols = st.columns(3)
-    for i, hyp in enumerate(ss["hypothesis_options"]):
-        with cols[i % 3]:
-            with st.container(border=True):
-                st.markdown(f"**Hypothesis {i+1}**")
-                st.write(hyp.get("hypothesis", ""))
-                st.caption(f"Behavioral Basis: {hyp.get('behavioral_basis','')}")
-                if st.button(f"Select Hypothesis {i+1}", key=f"select_h_{i}", use_container_width=True):
-                    ss["selected_hypothesis_index"] = i
-
-# Custom hypothesis editor
-if ss["custom_hypothesis"]:
-    st.markdown("#### Custom Hypothesis")
-    ss["custom_hypothesis"] = st.text_area(
-        "Edit your custom hypothesis",
-        value=ss["custom_hypothesis"],
-        height=100,
-    )
-    if st.button("Expand Custom Hypothesis", type="primary"):
-        expanded = generate_hypothesis_details(ss["custom_hypothesis"], ss["context"])
-        expanded_obj = extract_json(expanded) or {
-            "hypothesis": ss["custom_hypothesis"],
-            "rationale": "",
-            "example_implementation": "",
-            "behavioral_basis": ""
-        }
-        # Put it into the options list as the first item
-        ss["hypothesis_options"] = [expanded_obj] + ss["hypothesis_options"]
-        ss["selected_hypothesis_index"] = 0
-
-# Selection summary
-if ss["selected_hypothesis_index"] is not None:
-    st.success(f"Selected: Hypothesis {ss['selected_hypothesis_index'] + 1}")
-
-
-# =========================
-# PRD Generation (Step 3)
-# =========================
-
-st.subheader("Step 3: Generate the Full PRD")
-
-col_g1, col_g2 = st.columns([1, 1])
-with col_g1:
-    default_title = ss["context"].get("strategic_goal", "Untitled Experiment")
-    prd_title = st.text_input("Experiment Title", value=default_title)
-with col_g2:
-    ss["export_filename_base"] = st.text_input(
-        "Export Filename (base)",
-        value=ss["export_filename_base"],
-        help="Used for JSON/PDF/DOCX downloads.",
-    )
-
-def _selected_hypothesis_obj() -> Optional[Dict[str, Any]]:
-    if ss["selected_hypothesis_index"] is None:
-        return None
-    if ss["selected_hypothesis_index"] < 0 or ss["selected_hypothesis_index"] >= len(ss["hypothesis_options"]):
-        return None
-    return ss["hypothesis_options"][ss["selected_hypothesis_index"]]
-
-if st.button("🧩 Generate PRD", type="primary", use_container_width=True):
-    if not ss["goal"]:
-        st.error("Please provide a High-Level Business Goal in the sidebar.")
-    else:
-        # Prepare context for model
-        context = dict(ss["context"])
-        context["strategic_goal"] = ss["goal"]
-        context["metric_to_improve"] = ss["context"].get("exact_metric")
-        # Generate
-        raw_json = generate_experiment_plan(ss["goal"], context)
-        obj = extract_json(raw_json) or {}
-
-        # Insert selected hypothesis at top if exists
-        sel = _selected_hypothesis_obj()
-        if sel:
-            obj_hyps = ensure_list(obj.get("hypotheses", []))
-            obj["hypotheses"] = [sel] + obj_hyps
-
-        # Enrich with metadata defaults
-        md = obj.get("metadata", {}) or {}
-        md["title"] = prd_title or md.get("title") or default_title
-        md["team"] = ss["context"].get("team", "")
-        md["owner"] = ss["context"].get("owner", "")
-        md["experiment_id"] = md.get("experiment_id") or generate_experiment_id(md["title"], md["owner"])
-        obj["metadata"] = md
-
-        # Guardrail list default if missing
-        if "guardrail_metrics" not in obj:
-            obj["guardrail_metrics"] = []
-
-        # Experiment design defaults
-        ed = obj.get("experiment_design", {}) or {}
-        ed.setdefault("traffic_allocation", "50/50")
-        ed.setdefault("dau_coverage_percent", ss["context"].get("dau_coverage_percent", 50))
-        obj["experiment_design"] = ed
-
-        # Persist
-        ss["raw_plan_json"] = obj
-        ss["plan"] = sanitize_experiment_plan(obj)
-        ss["quality_result"] = None
-
-        st.success("PRD generated. Scroll down to review and edit.")
-# main.py — A/B Test Architect (full file, part 3/3)
-
-# =========================
-# Step 4: Review & Edit PRD
-# =========================
-
-if ss["plan"]:
-    st.subheader("Step 4: Review & Edit")
-
-    plan = ss["plan"]
-
-    # Experiment Metadata
-    with st.expander("🆔 Experiment Metadata", expanded=True):
-        plan["metadata"]["title"] = st.text_input("Title", value=plan["metadata"].get("title", ""))
-        plan["metadata"]["owner"] = st.text_input("Owner", value=plan["metadata"].get("owner", ""))
-        plan["metadata"]["team"] = st.text_input("Team", value=plan["metadata"].get("team", ""))
-        plan["metadata"]["experiment_id"] = st.text_input("Experiment ID", value=plan["metadata"].get("experiment_id", ""))
-
-    # Problem Statement
-    with st.expander("❓ Problem Statement", expanded=True):
-        plan["problem_statement"] = st.text_area("Problem Statement", value=plan.get("problem_statement", ""), height=120)
+    # Problem statement & proposed solution
+    problem_statement = sanitize_text(p.get("problem_statement", ""))
+    proposed_solution = sanitize_text(p.get("proposed_solution", ""))
 
     # Hypotheses
-    with st.expander("💡 Hypotheses", expanded=True):
-        new_hypotheses = []
-        for i, h in enumerate(plan.get("hypotheses", [])):
-            st.markdown(f"**Hypothesis {i+1}**")
-            hyp = {}
-            hyp["hypothesis"] = st.text_area(f"Hypothesis {i+1}", value=h.get("hypothesis", ""), key=f"h_hyp_{i}")
-            hyp["rationale"] = st.text_area(f"Rationale {i+1}", value=h.get("rationale", ""), key=f"h_rat_{i}")
-            hyp["example_implementation"] = st.text_area(f"Example Implementation {i+1}", value=h.get("example_implementation", ""), key=f"h_impl_{i}")
-            hyp["behavioral_basis"] = st.text_input(f"Behavioral Basis {i+1}", value=h.get("behavioral_basis", ""), key=f"h_beh_{i}")
-            new_hypotheses.append(hyp)
-        plan["hypotheses"] = new_hypotheses
+    hyps_raw = ensure_list(p.get("hypotheses", []))
+    hypotheses = []
+    for h in hyps_raw:
+        d = ensure_dict(h)
+        hypotheses.append({
+            "hypothesis": sanitize_text(d.get("hypothesis", "")),
+            "rationale": sanitize_text(d.get("rationale", "")),
+            "example_implementation": sanitize_text(d.get("example_implementation", "")),
+            "behavioral_basis": sanitize_text(d.get("behavioral_basis", "")),
+        })
 
-    # Proposed Solution & Variants
-    with st.expander("🧪 Proposed Solution & Variants", expanded=True):
-        plan["variants"]["control"] = st.text_area("Control", value=plan["variants"].get("control", ""), height=80)
-        plan["variants"]["treatment"] = st.text_area("Variation", value=plan["variants"].get("treatment", ""), height=80)
+    # Variants
+    vars_raw = ensure_list(p.get("variants", []))
+    variants = []
+    if vars_raw:
+        for v in vars_raw:
+            d = ensure_dict(v)
+            variants.append({
+                "control": sanitize_text(d.get("control", "")),
+                "variation": sanitize_text(d.get("variation", "")),
+                "notes": sanitize_text(d.get("notes", "")),
+            })
+    else:
+        # default placeholders
+        variants = [{"control": "", "variation": "", "notes": ""}]
 
-    # Success Metrics & Guardrails
-    with st.expander("📊 Success Metrics & Guardrails", expanded=True):
-        plan["metrics"]["primary"] = st.text_input("Primary Metric", value=plan["metrics"].get("primary", ""))
-        plan["metrics"]["secondary"] = st.text_area("Secondary Metrics (comma-separated)", value=", ".join(plan["metrics"].get("secondary", [])))
-        plan["guardrail_metrics"] = st.text_area("Guardrail Metrics (comma-separated)", value=", ".join(plan.get("guardrail_metrics", [])))
+    # Metrics
+    metrics_raw = ensure_list(p.get("metrics", []))
+    metrics = []
+    if metrics_raw:
+        for m in metrics_raw:
+            md = ensure_dict(m)
+            metrics.append({
+                "name": sanitize_text(md.get("name", "")),
+                "formula": sanitize_text(md.get("formula", "")),
+                "importance": sanitize_text(md.get("importance", "Primary")),
+            })
+    else:
+        metrics = []
 
-    # Experiment Design
-    with st.expander("🧭 Experiment Design & Rollout Plan", expanded=True):
-        plan["experiment_design"]["sample_size_required"] = st.number_input(
-            "Sample Size Required",
-            value=plan["experiment_design"].get("sample_size_required", 0),
-            step=100,
+    # Guardrails
+    guards_raw = ensure_list(p.get("guardrail_metrics", []))
+    guardrail_metrics = []
+    for g in guards_raw:
+        gd = ensure_dict(g)
+        guardrail_metrics.append({
+            "name": sanitize_text(gd.get("name", "")),
+            "direction": sanitize_text(gd.get("direction", "")),
+            "threshold": sanitize_text(gd.get("threshold", "")),
+        })
+
+    # Success criteria
+    sc_raw = ensure_dict(p.get("success_criteria", {}))
+    try:
+        confidence_level = float(sc_raw.get("confidence_level", 95.0))
+    except Exception:
+        confidence_level = 95.0
+    try:
+        MDE = float(sc_raw.get("MDE", 5.0))
+        MDE = max(0.1, MDE)
+    except Exception:
+        MDE = 5.0
+    success_criteria = {
+        "confidence_level": confidence_level,
+        "MDE": MDE,
+        "benchmark": sanitize_text(sc_raw.get("benchmark", "")),
+        "monitoring": sanitize_text(sc_raw.get("monitoring", "")),
+    }
+
+    # Experiment design
+    ed_raw = ensure_dict(p.get("experiment_design", {}))
+    ed = {
+        "traffic_allocation": sanitize_text(ed_raw.get("traffic_allocation", "50/50")),
+        "sample_size_per_variant": try_int(ed_raw.get("sample_size_per_variant")),
+        "total_sample_size": try_int(ed_raw.get("total_sample_size")),
+        "test_duration_days": try_float(ed_raw.get("test_duration_days")),
+        "dau_coverage_percent": try_float(ed_raw.get("dau_coverage_percent")),
+    }
+
+    # Risks
+    risks_raw = ensure_list(p.get("risks_and_assumptions", []))
+    risks = []
+    for r in risks_raw:
+        rd = ensure_dict(r)
+        sev = sanitize_text(rd.get("severity", "Medium")).title()
+        if sev not in ["High", "Medium", "Low"]:
+            sev = "Medium"
+        risks.append({
+            "risk": sanitize_text(rd.get("risk", rd.get("risks", ""))),
+            "severity": sev,
+            "mitigation": sanitize_text(rd.get("mitigation", rd.get("mitigations", ""))),
+        })
+
+    # Success & learning
+    sl_raw = ensure_dict(p.get("success_learning_criteria", {}))
+    success_learning = {
+        "definition_of_success": sanitize_text(sl_raw.get("definition_of_success", "")),
+        "stopping_rules": sanitize_text(sl_raw.get("stopping_rules", "")),
+        "rollback_criteria": sanitize_text(sl_raw.get("rollback_criteria", "")),
+    }
+
+    # Next steps & statistical rationale
+    next_steps = [sanitize_text(x) for x in ensure_list(p.get("next_steps", []))]
+    statistical_rationale = sanitize_text(p.get("statistical_rationale", ""))
+
+    canonical = {
+        "metadata": metadata,
+        "problem_statement": problem_statement,
+        "proposed_solution": proposed_solution,
+        "hypotheses": hypotheses,
+        "variants": variants,
+        "metrics": metrics,
+        "guardrail_metrics": guardrail_metrics,
+        "success_criteria": success_criteria,
+        "experiment_design": ed,
+        "risks_and_assumptions": risks,
+        "success_learning_criteria": success_learning,
+        "next_steps": next_steps,
+        "statistical_rationale": statistical_rationale,
+    }
+
+    # If sample sizes absent but inputs present, attempt to compute basic sample size
+    try_auto_compute_sample_size(canonical)
+
+    return canonical
+
+
+# -------------------------
+# small helpers for coercion
+# -------------------------
+def try_int(x: Any) -> Optional[int]:
+    try:
+        if x is None or x == "":
+            return None
+        return int(float(x))
+    except Exception:
+        return None
+
+
+def try_float(x: Any) -> Optional[float]:
+    try:
+        if x is None or x == "":
+            return None
+        return float(x)
+    except Exception:
+        return None
+
+
+def try_auto_compute_sample_size(plan: Dict[str, Any]) -> None:
+    """
+    If plan lacks sample sizes but has enough inputs (baseline, MDE, metric type), compute and fill experiment_design fields.
+    """
+    ed = plan.get("experiment_design", {})
+    sc = plan.get("success_criteria", {})
+    # Only compute if stats libs present and values needed exist
+    if STATSMODELS_AVAILABLE:
+        # baseline attempt: try infer from problem_statement or metrics — best effort
+        baseline = None
+        # check if a metric has a formula like "25%" or first metric name has a number — best-effort parse
+        for m in plan.get("metrics", []):
+            # look for numeric in metric name or formula
+            nm = m.get("name","")
+            fm = m.get("formula","")
+            for text in [nm, fm]:
+                found = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*%?", text)
+                if found:
+                    baseline = float(found.group(1))
+                    break
+            if baseline is not None:
+                break
+
+        mde = sc.get("MDE", 5.0)
+        conf = sc.get("confidence_level", 95.0)
+        power = sc.get("power", 80.0) if sc.get("power") else 80.0
+
+        metric_type = "Conversion Rate"
+        # check indicators in plan
+        if any("rate" in (m.get("name","").lower()) or "%" in (m.get("formula","")) for m in plan.get("metrics", [])):
+            metric_type = "Conversion Rate"
+        else:
+            # fallback: if statistical_rationale mentions "mean" or "std", assume numeric
+            if "mean" in plan.get("statistical_rationale","").lower() or "standard deviation" in plan.get("statistical_rationale","").lower():
+                metric_type = "Numeric Value"
+
+        if ed.get("sample_size_per_variant") is None and baseline is not None:
+            per_var, total = calculate_sample_size(
+                baseline=baseline,
+                mde_pct=mde,
+                alpha=1 - (conf / 100.0),
+                power=(power / 100.0),
+                num_variants=max(2, len(plan.get("variants", [])) or 2),
+                metric_type=metric_type,
+                std_dev=None,
+            )
+            if per_var:
+                ed["sample_size_per_variant"] = per_var
+                ed["total_sample_size"] = total
+
+    plan["experiment_design"] = ed
+
+
+# -------------------------
+# Validation (Local + LLM-assisted)
+# -------------------------
+def local_validate_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Perform a quick local validation and return a dict with keys:
+    - is_valid: bool
+    - issues: list[str]
+    - suggestions: list[str]
+    """
+    issues = []
+    suggestions = []
+    p = sanitize_plan(plan)
+
+    # Basic checks
+    if not p.get("metadata", {}).get("title"):
+        issues.append("Missing experiment title.")
+        suggestions.append("Add a concise experiment title in metadata.")
+    if not p.get("problem_statement"):
+        issues.append("Problem statement is empty.")
+        suggestions.append("Clarify the metric-driven problem the experiment addresses.")
+    if not p.get("hypotheses"):
+        issues.append("No hypotheses found.")
+        suggestions.append("Create at least one clear hypothesis in the 'If X then Y because Z' format.")
+    if not p.get("metrics"):
+        issues.append("No metrics defined.")
+        suggestions.append("Define a primary metric and at least one secondary or guardrail metric.")
+    sc = p.get("success_criteria", {})
+    if sc.get("MDE", None) is None:
+        issues.append("MDE not provided.")
+        suggestions.append("Provide an MDE (minimum detectable effect) to compute sample sizes.")
+    # sample size checks
+    ed = p.get("experiment_design", {})
+    if ed.get("sample_size_per_variant") is None:
+        suggestions.append("Sample size per variant could not be computed automatically; provide inputs or check metric formatting.")
+    # return result
+    return {"is_valid": len(issues) == 0, "issues": issues, "suggestions": suggestions}
+
+
+def validate_plan_with_llm(plan: Dict[str, Any]) -> str:
+    """
+    If prompt_engine is available, call its validate_experiment_plan; otherwise return a synthesized local validation message.
+    """
+    if PROMPT_ENGINE_AVAILABLE:
+        try:
+            return validate_experiment_plan(plan)
+        except Exception:
+            # fallback to local message
+            local = local_validate_plan(plan)
+            return json.dumps(local, indent=2)
+    else:
+        # provide local validation summary
+        local = local_validate_plan(plan)
+        return json.dumps(local, indent=2)
+# main.py — Part 3/5: Streamlit UI (layout, inputs, Step 1–2 UI)
+
+# -------------------------
+# Streamlit App
+# -------------------------
+
+def main():
+    st.set_page_config(page_title="Experiment PRD Architect", layout="wide")
+    st.title("🧪 Experiment PRD Architect")
+    st.write(
+        "Generate standardized, detailed A/B test PRDs with AI assistance. "
+        "This tool streamlines the process from idea to finalized document."
+    )
+
+    # -------------------------
+    # Sidebar: User Inputs
+    # -------------------------
+    st.sidebar.header("Step 1: Provide Experiment Context")
+    high_level_goal = st.sidebar.text_input("High-Level Business Goal", "")
+    product_type = st.sidebar.selectbox(
+        "Product Type",
+        ["", "Mobile App", "E-commerce Website", "SaaS Dashboard", "Other"]
+    )
+    if product_type == "Other":
+        product_type = st.sidebar.text_input("Specify Product Type", "")
+
+    target_user = st.sidebar.text_input("Target User Persona", "")
+    key_metric = st.sidebar.text_input("Key Metric to Impact", "")
+
+    current_val = st.sidebar.text_input("Current Value (e.g., 25% CTR or 5.2 minutes)", "")
+    target_val = st.sidebar.text_input("Target Value (e.g., 28% CTR or 6.0 minutes)", "")
+
+    exp_owner = st.sidebar.text_input("Your Name (Experiment Owner)", "")
+    exp_team = st.sidebar.text_input("Team/Org", "")
+
+    # Sidebar advanced experiment design inputs
+    with st.sidebar.expander("Advanced Experiment Design Inputs", expanded=False):
+        confidence_level = st.slider("Confidence Level (%)", 80, 99, 95)
+        power = st.slider("Statistical Power (%)", 50, 99, 80)
+        mde = st.number_input("Minimum Detectable Effect (MDE %)", value=5.0, step=0.1)
+        dau_coverage = st.number_input("Experiment DAU Coverage (%)", value=50.0, step=1.0)
+
+    # Shared experiment context
+    experiment_context = {
+        "high_level_goal": high_level_goal,
+        "product_type": product_type,
+        "target_user": target_user,
+        "key_metric": key_metric,
+        "current_value": current_val,
+        "target_value": target_val,
+        "metadata": {"owner": exp_owner, "team": exp_team},
+        "success_criteria": {
+            "confidence_level": confidence_level,
+            "power": power,
+            "MDE": mde,
+        },
+        "experiment_design": {"dau_coverage_percent": dau_coverage},
+    }
+
+    # -------------------------
+    # Step 2: Generate Hypotheses
+    # -------------------------
+    st.header("Step 2: Generate & Select a Hypothesis")
+    if st.button("Generate Hypotheses", use_container_width=True):
+        with st.spinner("Generating hypotheses..."):
+            if PROMPT_ENGINE_AVAILABLE:
+                try:
+                    hyps = generate_hypotheses(experiment_context)
+                except Exception as e:
+                    st.error(f"Error generating hypotheses: {e}")
+                    hyps = []
+            else:
+                hyps = []
+        if not hyps:
+            st.warning("No hypotheses generated. Please refine your inputs.")
+        else:
+            st.session_state["generated_hypotheses"] = hyps
+
+    if "generated_hypotheses" in st.session_state:
+        st.subheader("Choose or Edit a Hypothesis")
+        hyps = st.session_state["generated_hypotheses"]
+        options = [h.get("hypothesis", f"Hypothesis {i+1}") for i, h in enumerate(hyps)]
+        selected_idx = st.radio("Select Hypothesis", list(range(len(options))), format_func=lambda i: options[i])
+        chosen_hypothesis = hyps[selected_idx]
+        st.session_state["chosen_hypothesis"] = chosen_hypothesis
+
+        st.text_area(
+            "Edit Hypothesis",
+            value=chosen_hypothesis.get("hypothesis", ""),
+            key="edited_hypothesis",
+            height=100,
         )
-        plan["experiment_design"]["duration"] = st.text_input("Duration", value=plan["experiment_design"].get("duration", ""))
-        plan["experiment_design"]["traffic_allocation"] = st.text_input("Traffic Allocation", value=plan["experiment_design"].get("traffic_allocation", "50/50"))
-        plan["experiment_design"]["dau_coverage_percent"] = st.slider(
-            "DAU Coverage (%)",
-            1, 100,
-            value=int(plan["experiment_design"].get("dau_coverage_percent", 50)),
-        )
 
-    # Risks & Mitigation
-    with st.expander("⚠️ Risks & Mitigation", expanded=True):
-        risks_str = ""
-        for r in plan.get("risks", []):
-            risks_str += f"- {r}\n"
-        plan["risks"] = st.text_area("Risks & Mitigation (Markdown list)", value=risks_str, height=120).splitlines()
-
-    # Success & Learning Criteria
-    with st.expander("🎯 Success & Learning Criteria", expanded=True):
-        plan.setdefault("success_learning_criteria", {})
-        plan["success_learning_criteria"]["definition_of_success"] = st.text_area(
-            "Definition of Success",
-            value=plan["success_learning_criteria"].get("definition_of_success", ""),
+        st.text_area(
+            "Rationale",
+            value=chosen_hypothesis.get("rationale", ""),
+            key="edited_rationale",
             height=80,
         )
-        plan["success_learning_criteria"]["stopping_rules"] = st.text_area(
-            "Stopping Rules",
-            value=plan["success_learning_criteria"].get("stopping_rules", ""),
+        st.text_area(
+            "Example Implementation",
+            value=chosen_hypothesis.get("example_implementation", ""),
+            key="edited_example",
             height=80,
         )
-        plan["success_learning_criteria"]["rollback_criteria"] = st.text_area(
-            "Rollback Criteria",
-            value=plan["success_learning_criteria"].get("rollback_criteria", ""),
+        st.text_area(
+            "Behavioral Basis",
+            value=chosen_hypothesis.get("behavioral_basis", ""),
+            key="edited_behavioral",
             height=80,
         )
+# main.py — Part 4/5: Step 3–4 UI (Generate PRD, Review & Edit)
 
-    ss["plan"] = plan
+    # -------------------------
+    # Step 3: Generate PRD
+    # -------------------------
+    st.header("Step 3: Generate Full PRD")
+    if st.button("Generate PRD", use_container_width=True):
+        with st.spinner("Generating PRD..."):
+            if PROMPT_ENGINE_AVAILABLE:
+                try:
+                    edited_hypothesis = {
+                        "hypothesis": st.session_state.get("edited_hypothesis", ""),
+                        "rationale": st.session_state.get("edited_rationale", ""),
+                        "example_implementation": st.session_state.get("edited_example", ""),
+                        "behavioral_basis": st.session_state.get("edited_behavioral", ""),
+                    }
+                    exp_id = generate_experiment_id(high_level_goal, exp_owner)
+                    context_with_hyp = {**experiment_context, "chosen_hypothesis": edited_hypothesis}
+                    raw = generate_experiment_plan(context_with_hyp)
+                    plan = extract_json_from_text(raw)
+                    if not plan:
+                        st.error("Could not parse generated PRD JSON.")
+                        plan = {}
+                    plan.setdefault("metadata", {})
+                    plan["metadata"].update({
+                        "title": sanitize_text(high_level_goal),
+                        "team": sanitize_text(exp_team),
+                        "owner": sanitize_text(exp_owner),
+                        "experiment_id": exp_id,
+                    })
+                    st.session_state["experiment_plan"] = sanitize_experiment_plan(plan)
+                except Exception as e:
+                    st.error(f"Error generating PRD: {e}")
+            else:
+                st.error("Prompt engine not available. Cannot generate PRD.")
 
+    # -------------------------
+    # Step 4: Review & Edit
+    # -------------------------
+    st.header("Step 4: Review & Edit PRD")
+    if "experiment_plan" in st.session_state:
+        plan = st.session_state["experiment_plan"]
 
-# =========================
-# Step 5: AI Quality Check
-# =========================
+        st.subheader("Metadata")
+        plan["metadata"]["title"] = st.text_input("Experiment Title", plan["metadata"].get("title", ""))
+        plan["metadata"]["team"] = st.text_input("Team", plan["metadata"].get("team", ""))
+        plan["metadata"]["owner"] = st.text_input("Owner", plan["metadata"].get("owner", ""))
+        st.write(f"Experiment ID: `{plan['metadata'].get('experiment_id','')}`")
 
-if ss["plan"]:
-    st.subheader("Step 5: AI Quality Check & Final Suggestions")
+        st.subheader("Problem Statement")
+        plan["problem_statement"] = st.text_area("Problem Statement", plan.get("problem_statement", ""), height=120)
 
-    if st.button("🔍 Run AI Quality Check", type="secondary", use_container_width=True):
-        quality = validate_experiment_plan(ss["plan"])
-        ss["quality_result"] = quality
+        st.subheader("Hypothesis")
+        if plan.get("hypotheses"):
+            hyp = plan["hypotheses"][0]
+            hyp["hypothesis"] = st.text_area("Hypothesis", hyp.get("hypothesis", ""), height=80)
+            hyp["rationale"] = st.text_area("Rationale", hyp.get("rationale", ""), height=80)
+            hyp["example_implementation"] = st.text_area("Example Implementation", hyp.get("example_implementation", ""), height=80)
+            hyp["behavioral_basis"] = st.text_area("Behavioral Basis", hyp.get("behavioral_basis", ""), height=80)
 
-    if ss.get("quality_result"):
-        st.markdown("#### Quality Suggestions")
-        st.info(ss["quality_result"])
+        st.subheader("Proposed Solution")
+        plan["proposed_solution"] = st.text_area("Proposed Solution", plan.get("proposed_solution", ""), height=100)
 
+        st.subheader("Variants")
+        new_variants = []
+        for i, var in enumerate(plan.get("variants", [])):
+            st.markdown(f"**Variant {i+1}**")
+            control = st.text_area(f"Control {i+1}", var.get("control",""), key=f"variant_control_{i}")
+            variation = st.text_area(f"Variation {i+1}", var.get("variation",""), key=f"variant_variation_{i}")
+            notes = st.text_area(f"Notes {i+1}", var.get("notes",""), key=f"variant_notes_{i}")
+            new_variants.append({"control": control, "variation": variation, "notes": notes})
+        plan["variants"] = new_variants
 
-# =========================
-# Step 6: Finalize & Export
-# =========================
+        st.subheader("Metrics")
+        new_metrics = []
+        for i, m in enumerate(plan.get("metrics", [])):
+            name = st.text_input(f"Metric {i+1} Name", m.get("name",""), key=f"metric_name_{i}")
+            formula = st.text_input(f"Metric {i+1} Formula", m.get("formula",""), key=f"metric_formula_{i}")
+            importance = st.selectbox(
+                f"Metric {i+1} Importance",
+                ["Primary","Secondary","Diagnostic"],
+                index=0 if m.get("importance","Primary")=="Primary" else (1 if m.get("importance")=="Secondary" else 2),
+                key=f"metric_importance_{i}"
+            )
+            new_metrics.append({"name": name, "formula": formula, "importance": importance})
+        plan["metrics"] = new_metrics
 
-if ss["plan"]:
-    st.subheader("Step 6: Finalize & Export")
+        st.subheader("Guardrail Metrics")
+        new_guardrails = []
+        for i, g in enumerate(plan.get("guardrail_metrics", [])):
+            name = st.text_input(f"Guardrail {i+1} Name", g.get("name",""), key=f"guard_name_{i}")
+            direction = st.text_input(f"Guardrail {i+1} Direction", g.get("direction",""), key=f"guard_dir_{i}")
+            threshold = st.text_input(f"Guardrail {i+1} Threshold", g.get("threshold",""), key=f"guard_thresh_{i}")
+            new_guardrails.append({"name": name, "direction": direction, "threshold": threshold})
+        plan["guardrail_metrics"] = new_guardrails
 
-    col1, col2, col3 = st.columns(3)
+        st.subheader("Risks & Assumptions")
+        new_risks = []
+        for i, r in enumerate(plan.get("risks_and_assumptions", [])):
+            risk = st.text_input(f"Risk {i+1}", r.get("risk",""), key=f"risk_risk_{i}")
+            severity = st.selectbox(
+                f"Risk {i+1} Severity",
+                ["High","Medium","Low"],
+                index=0 if r.get("severity","High")=="High" else (1 if r.get("severity")=="Medium" else 2),
+                key=f"risk_severity_{i}"
+            )
+            mitigation = st.text_input(f"Risk {i+1} Mitigation", r.get("mitigation",""), key=f"risk_mit_{i}")
+            new_risks.append({"risk": risk, "severity": severity, "mitigation": mitigation})
+        plan["risks_and_assumptions"] = new_risks
+# main.py — Part 5/5: Step 5–6 UI (Quality Check, Export) + Entrypoint
 
-    with col1:
-        st.download_button(
-            "⬇️ Export JSON",
-            data=json.dumps(ss["plan"], indent=2),
-            file_name=f"{ss['export_filename_base']}.json",
-            mime="application/json",
-            use_container_width=True,
+        st.subheader("Success Criteria")
+        sc = plan.get("success_criteria", {})
+        sc["confidence_level"] = st.number_input(
+            "Confidence Level (%)", value=float(sc.get("confidence_level", 95)), step=1.0
+        )
+        sc["MDE"] = st.number_input(
+            "Minimum Detectable Effect (%)", value=float(sc.get("MDE", 5.0)), step=0.1
+        )
+        sc["benchmark"] = st.text_input("Benchmark", sc.get("benchmark", ""))
+        sc["monitoring"] = st.text_input("Monitoring", sc.get("monitoring", ""))
+        plan["success_criteria"] = sc
+
+        st.subheader("Experiment Design")
+        ed = plan.get("experiment_design", {})
+        ed["traffic_allocation"] = st.text_input("Traffic Allocation", ed.get("traffic_allocation","50/50"))
+        ed["sample_size_per_variant"] = st.number_input(
+            "Sample Size per Variant", value=int(ed.get("sample_size_per_variant", 0)), step=1
+        )
+        ed["total_sample_size"] = st.number_input(
+            "Total Sample Size", value=int(ed.get("total_sample_size", 0)), step=1
+        )
+        ed["test_duration_days"] = st.number_input(
+            "Test Duration (days)", value=float(ed.get("test_duration_days", 14)), step=0.5
+        )
+        ed["dau_coverage_percent"] = st.number_input(
+            "DAU Coverage (%)", value=float(ed.get("dau_coverage_percent", 50)), step=1.0
+        )
+        plan["experiment_design"] = ed
+
+        st.subheader("Success & Learning Criteria")
+        slc = plan.get("success_learning_criteria", {})
+        slc["definition_of_success"] = st.text_area(
+            "Definition of Success", slc.get("definition_of_success",""), height=80
+        )
+        slc["stopping_rules"] = st.text_area(
+            "Stopping Rules", slc.get("stopping_rules",""), height=80
+        )
+        slc["rollback_criteria"] = st.text_area(
+            "Rollback Criteria", slc.get("rollback_criteria",""), height=80
+        )
+        plan["success_learning_criteria"] = slc
+
+        st.subheader("Next Steps")
+        steps = ensure_list(plan.get("next_steps"))
+        new_steps = []
+        for i, step in enumerate(steps):
+            new_steps.append(st.text_input(f"Next Step {i+1}", step, key=f"next_step_{i}"))
+        new_step_add = st.text_input("Add Another Step", "")
+        if new_step_add:
+            new_steps.append(new_step_add)
+        plan["next_steps"] = new_steps
+
+        st.subheader("Statistical Rationale")
+        plan["statistical_rationale"] = st.text_area(
+            "Statistical Rationale", plan.get("statistical_rationale",""), height=100
         )
 
-    with col2:
-        pdf_bytes = generate_pdf_bytes_from_prd_dict(ss["plan"])
-        st.download_button(
-            "⬇️ Export PDF",
-            data=pdf_bytes,
-            file_name=f"{ss['export_filename_base']}.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
+        # Save updates
+        st.session_state["experiment_plan"] = plan
 
-    with col3:
-        docx_bytes = generate_docx_bytes_from_prd_dict(ss["plan"])
-        st.download_button(
-            "⬇️ Export DOCX",
-            data=docx_bytes,
-            file_name=f"{ss['export_filename_base']}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            use_container_width=True,
-        )
+    # -------------------------
+    # Step 5: AI Quality Check
+    # -------------------------
+    st.header("Step 5: AI Quality Check & Suggestions")
+    if "experiment_plan" in st.session_state:
+        if st.button("Get AI Feedback", use_container_width=True):
+            with st.spinner("Evaluating PRD quality..."):
+                if PROMPT_ENGINE_AVAILABLE:
+                    try:
+                        feedback = validate_experiment_plan(st.session_state["experiment_plan"])
+                        st.markdown("### Feedback Suggestions")
+                        st.write(feedback)
+                    except Exception as e:
+                        st.error(f"Error during validation: {e}")
+                else:
+                    st.warning("Prompt engine not available.")
+
+    # -------------------------
+    # Step 6: Finalize & Export
+    # -------------------------
+    st.header("Step 6: Finalize & Export")
+    if "experiment_plan" in st.session_state:
+        plan = st.session_state["experiment_plan"]
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("Export to JSON", use_container_width=True):
+                data = json.dumps(plan, indent=2).encode("utf-8")
+                st.download_button(
+                    "Download JSON", data, file_name="experiment_prd.json", mime="application/json"
+                )
+        with col2:
+            if REPORTLAB_AVAILABLE and st.button("Export to PDF", use_container_width=True):
+                pdf_bytes = generate_pdf_bytes_from_prd_dict(plan)
+                st.download_button(
+                    "Download PDF", pdf_bytes, file_name="experiment_prd.pdf", mime="application/pdf"
+                )
+            elif not REPORTLAB_AVAILABLE:
+                st.caption("📄 PDF export unavailable (ReportLab not installed).")
+        with col3:
+            if DOCX_AVAILABLE and st.button("Export to DOCX", use_container_width=True):
+                docx_bytes = generate_docx_bytes_from_prd_dict(plan)
+                st.download_button(
+                    "Download DOCX", docx_bytes, file_name="experiment_prd.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
+            elif not DOCX_AVAILABLE:
+                st.caption("📄 DOCX export unavailable (python-docx not installed).")
+
+# -------------------------
+# Entrypoint
+# -------------------------
+if __name__ == "__main__":
+    main()
