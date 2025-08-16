@@ -205,12 +205,19 @@ def _build_hypothesis_prompt(hypothesis_text: str, context: Dict[str, Any]) -> s
 
 def generate_hypotheses(context: Dict[str, Any]) -> str:
     """
-    Generate 3 alternative hypotheses given the context.
-    Returns a JSON string: {"hypotheses": [list of hypothesis strings]}.
+    Generate 3 alternative hypotheses given the user input context.
+    Returns a JSON string with this shape:
+    {
+      "hypotheses": [
+        {"hypothesis": "..."},
+        {"hypothesis": "..."},
+        {"hypothesis": "..."}
+      ]
+    }
     """
     prompt = f"""
     You are an expert Product Manager.
-    Given this experiment context:
+    Based on this experiment context:
 
     {json.dumps(context, indent=2)}
 
@@ -220,9 +227,9 @@ def generate_hypotheses(context: Dict[str, Any]) -> str:
     Return ONLY valid JSON with this shape:
     {{
       "hypotheses": [
-        "hypothesis 1",
-        "hypothesis 2",
-        "hypothesis 3"
+        {{"hypothesis": "Hypothesis 1"}},
+        {{"hypothesis": "Hypothesis 2"}},
+        {{"hypothesis": "Hypothesis 3"}}
       ]
     }}
     """
@@ -231,18 +238,26 @@ def generate_hypotheses(context: Dict[str, Any]) -> str:
     if llm_resp:
         parsed = extract_json(llm_resp)
         if parsed and "hypotheses" in parsed:
-            return _safe_json_dumps(parsed)
+            # Ensure each hypothesis is a dict
+            fixed = []
+            for h in parsed["hypotheses"]:
+                if isinstance(h, str):
+                    fixed.append({"hypothesis": h})
+                elif isinstance(h, dict) and "hypothesis" in h:
+                    fixed.append(h)
+            return _safe_json_dumps({"hypotheses": fixed})
         else:
             return llm_resp
 
     # Fallback stub
     return _safe_json_dumps({
         "hypotheses": [
-            "If we simplify the signup flow, then completion rate will improve because friction is reduced.",
-            "If we personalize homepage content, then engagement will rise because relevance increases.",
-            "If we highlight discounts earlier in checkout, then conversions will improve because users feel higher urgency."
+            {"hypothesis": "If we simplify the signup flow, then completion rate will improve because friction is reduced."},
+            {"hypothesis": "If we personalize homepage content, then engagement will rise because relevance increases."},
+            {"hypothesis": "If we highlight discounts earlier in checkout, then conversions will improve because users feel higher urgency."}
         ]
     })
+
 
 def _build_validation_prompt(plan: Dict[str, Any]) -> str:
     """
