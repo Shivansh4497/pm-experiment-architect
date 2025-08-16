@@ -86,6 +86,20 @@ _CANONICAL_SCHEMA = {
 # -------------------------
 # JSON extraction helper
 # -------------------------
+def sanitize_experiment_plan(plan: dict) -> dict:
+    """Ensure experiment plan dict is safe for UI and export."""
+    if not isinstance(plan, dict):
+        return {}
+
+    safe = {}
+    for k, v in plan.items():
+        if isinstance(v, dict):
+            safe[k] = sanitize_experiment_plan(v)
+        elif isinstance(v, list):
+            safe[k] = [sanitize_experiment_plan(i) if isinstance(i, dict) else str(i) for i in v]
+        else:
+            safe[k] = str(v) if v is not None else ""
+    return safe
 def extract_json(text: Any) -> Optional[Dict[str, Any]]:
     """
     Robust JSON extractor:
