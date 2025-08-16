@@ -69,6 +69,50 @@ class ExperimentPlan(BaseModel):
     statistical_rationale: str
 
 # --- Robust Data Sanitizer ---
+
+# --- Session State Initialization ---
+def init_session_state():
+    if "edit_modal_open" not in st.session_state:
+        st.session_state.edit_modal_open = False
+    if "stage" not in st.session_state:
+        st.session_state.stage = "input"
+    if "calculated_sample_size_per_variant" not in st.session_state:
+        st.session_state.calculated_sample_size_per_variant = None
+    if "calculated_total_sample_size" not in st.session_state:
+        st.session_state.calculated_total_sample_size = None
+    if "calculated_duration_days" not in st.session_state:
+        st.session_state.calculated_duration_days = None
+    if "temp_plan_edit" not in st.session_state:
+        st.session_state.temp_plan_edit = {}
+    if "ai_parsed" not in st.session_state:
+        st.session_state.ai_parsed = None
+    if "hypotheses_from_llm" not in st.session_state:
+        st.session_state.hypotheses_from_llm = []
+    if "calc_locked" not in st.session_state:
+        st.session_state.calc_locked = False
+    if "locked_stats" not in st.session_state:
+        st.session_state.locked_stats = {}
+    if "expander_states" not in st.session_state:
+        st.session_state.expander_states = {
+            "product_context": True,
+            "metric_objective": True,
+            "generate_plan": True,
+            "calculator": True,
+            "edit_plan": False
+        }
+    if "prd_version" not in st.session_state:
+        st.session_state.prd_version = 1
+    if "last_updated" not in st.session_state:
+        st.session_state.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if "editing_section" not in st.session_state:
+        st.session_state.editing_section = None
+    if "editing_item_index" not in st.session_state:
+        st.session_state.editing_item_index = None
+    if "editing_item" not in st.session_state:
+        st.session_state.editing_item = None
+
+# Initialize session state
+init_session_state()
 def sanitize_experiment_plan(raw_plan: Union[Dict[str, Any], None]) -> Dict[str, Any]:
     """Transform raw/malformed experiment plan data into a robust structure."""
     if raw_plan is None:
