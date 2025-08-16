@@ -526,5 +526,6 @@ __all__ = [
     "generate_experiment_plan",
     "generate_hypothesis_details",
     "validate_experiment_plan",
+    "generate_hypotheses",   # <-- add this line
     "extract_json",
 ]
