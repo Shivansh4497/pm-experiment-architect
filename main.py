@@ -768,7 +768,7 @@ def render_prd_plan(plan: Dict[str, Any]) -> None:
             </div>
             <p><strong>Risk:</strong> {html_sanitize(r.get('risk', r.get('risks', '')))}</p>
             <p><strong>Severity:</strong> <span class='severity {severity_class}'>{html_sanitize(severity)}</span></p>
-            <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', r.get('mitigations', ''))}</p>
+            <p><strong>Mitigation:</strong> {html_sanitize(r.get('mitigation', r.get('mitigations', '')))}</p>
         </div>
         """)
         if st.button(f"Edit Risk {i+1}", key=f"edit_risk_btn_{i}", type="secondary"):
