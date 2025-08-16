@@ -843,29 +843,49 @@ def main():
     # -------------------------
     # Step 2: Generate Hypotheses
     # -------------------------
-    st.header("Step 2: Generate & Select a Hypothesis")
+    st.header("Step 2: Generate and Select a Hypothesis")
+
     if st.button("Generate Hypotheses", use_container_width=True):
         with st.spinner("Generating hypotheses..."):
-            if PROMPT_ENGINE_AVAILABLE:
-                try:
-                    hyps = generate_hypotheses(experiment_context)
-                except Exception as e:
-                    st.error(f"Error generating hypotheses: {e}")
-                    hyps = []
-            else:
-                hyps = []
-        if not hyps:
-            st.warning("No hypotheses generated. Please refine your inputs.")
-        else:
-            st.session_state["generated_hypotheses"] = hyps
+            try:
+                context = {
+                    "business_goal": st.session_state.get("business_goal", ""),
+                    "product_type": st.session_state.get("product_type", ""),
+                    "user_persona": st.session_state.get("user_persona", ""),
+                    "key_metric": st.session_state.get("key_metric", ""),
+                    "current_value": st.session_state.get("current_value", ""),
+                    "target_value": st.session_state.get("target_value", "")
+                }
 
-    if "generated_hypotheses" in st.session_state:
-        st.subheader("Choose or Edit a Hypothesis")
-        hyps = st.session_state["generated_hypotheses"]
-        options = [h.get("hypothesis", f"Hypothesis {i+1}") for i, h in enumerate(hyps)]
-        selected_idx = st.radio("Select Hypothesis", list(range(len(options))), format_func=lambda i: options[i])
-        chosen_hypothesis = hyps[selected_idx]
-        st.session_state["chosen_hypothesis"] = chosen_hypothesis
+                raw_hyps = generate_hypotheses(context)
+                parsed = extract_json(raw_hyps)
+
+                hyps = []
+                if parsed and "hypotheses" in parsed:
+                    hyps = parsed["hypotheses"]
+
+                if not hyps:
+                    st.warning("No hypotheses generated. Please refine your inputs.")
+                else:
+                # Normalize: always treat as dicts with 'hypothesis'
+                    options = [
+                        h["hypothesis"] if isinstance(h, dict) else str(h)
+                        for h in hyps
+                    ]
+                    st.session_state["hypotheses"] = options
+                    st.session_state["selected_hypothesis"] = options[0]
+
+            except Exception as e:
+                st.error(f"Error generating hypotheses: {e}")
+
+    if "hypotheses" in st.session_state:
+        st.subheader("Select a Hypothesis")
+        st.session_state["selected_hypothesis"] = st.radio(
+            "Choose one hypothesis:",
+            st.session_state["hypotheses"],
+            index=0,
+            key="hypothesis_selection"
+        )
 
         st.text_area(
             "Edit Hypothesis",
