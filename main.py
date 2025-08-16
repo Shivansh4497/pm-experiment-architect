@@ -846,6 +846,11 @@ def main():
     # -------------------------
     st.header("Step 2: Generate and Select a Hypothesis")
 
+    # -------------------------
+    # Step 2: Generate and Select a Hypothesis
+    # -------------------------
+    st.header("Step 2: Generate and Select a Hypothesis")
+
     if st.button("Generate Hypotheses", use_container_width=True):
         with st.spinner("Generating hypotheses..."):
             try:
@@ -857,7 +862,7 @@ def main():
                     "current_value": st.session_state.get("current_value", ""),
                     "target_value": st.session_state.get("target_value", "")
                 }
-
+    
                 raw_hyps = generate_hypotheses(context)
                 parsed = extract_json(raw_hyps)
 
@@ -868,51 +873,73 @@ def main():
                 if not hyps:
                     st.warning("No hypotheses generated. Please refine your inputs.")
                 else:
-                # Normalize: always treat as dicts with 'hypothesis'
-                    options = [
-                        h["hypothesis"] if isinstance(h, dict) else str(h)
-                        for h in hyps
-                    ]
-                    st.session_state["hypotheses"] = options
-                    st.session_state["selected_hypothesis"] = options[0]
+                    # Save raw hypotheses into session state for later normalization
+                    st.session_state["hypotheses"] = hyps
 
             except Exception as e:
                 st.error(f"Error generating hypotheses: {e}")
 
-    if "hypotheses" in st.session_state:
-        st.subheader("Select a Hypothesis")
-        st.session_state["selected_hypothesis"] = st.radio(
-            "Choose one hypothesis:",
-            st.session_state["hypotheses"],
-            index=0,
-            key="hypothesis_selection"
+    # ---------- Choose or Edit a Hypothesis ----------
+    if "hypotheses" in st.session_state and st.session_state["hypotheses"]:
+        st.subheader("Choose or Edit a Hypothesis")
+
+        # Normalize hypotheses into dicts with consistent keys
+        raw_hyps = st.session_state["hypotheses"]
+        normalized_hyps = []
+        for h in raw_hyps:
+            if isinstance(h, dict):
+                normalized_hyps.append({
+                    "hypothesis": str(h.get("hypothesis", "")),
+                    "rationale": str(h.get("rationale", "")),
+                    "example_implementation": str(h.get("example_implementation", "")),
+                    "behavioral_basis": str(h.get("behavioral_basis", "")),
+                })
+            else:
+                normalized_hyps.append({
+                    "hypothesis": str(h),
+                    "rationale": "",
+                    "example_implementation": "",
+                    "behavioral_basis": "",
+                })
+
+        # Persist normalized list
+        st.session_state["hypotheses_normalized"] = normalized_hyps
+
+        # Radio selection
+        labels = [h["hypothesis"] or f"Hypothesis {i+1}" for i, h in enumerate(normalized_hyps)]
+        default_index = int(st.session_state.get("hypothesis_selection_idx", 0))
+        if default_index < 0 or default_index >= len(labels):
+            default_index = 0
+
+        sel_index = st.radio(
+            "Select hypothesis",
+            list(range(len(labels))),
+            index=default_index,
+            format_func=lambda i: labels[i],
+            key="hypothesis_selection_idx"
         )
 
-        st.text_area(
-            "Edit Hypothesis",
-            value=chosen_hypothesis.get("hypothesis", ""),
-            key="edited_hypothesis",
-            height=100,
-        )
+        chosen = normalized_hyps[sel_index]
+        st.session_state["chosen_hypothesis"] = chosen
 
-        st.text_area(
-            "Rationale",
-            value=chosen_hypothesis.get("rationale", ""),
-            key="edited_rationale",
-            height=80,
-        )
-        st.text_area(
-            "Example Implementation",
-            value=chosen_hypothesis.get("example_implementation", ""),
-            key="edited_example",
-            height=80,
-        )
-        st.text_area(
-            "Behavioral Basis",
-            value=chosen_hypothesis.get("behavioral_basis", ""),
-            key="edited_behavioral",
-            height=80,
-        )
+    # Editable fields
+        st.markdown("#### Edit selected hypothesis (optional)")
+        edited_hyp = st.text_area("Hypothesis", value=chosen.get("hypothesis", ""), key="edited_hypothesis", height=100)
+        edited_rationale = st.text_area("Rationale", value=chosen.get("rationale", ""), key="edited_rationale", height=80)
+        edited_example = st.text_area("Example Implementation", value=chosen.get("example_implementation", ""), key="edited_example", height=80)
+        edited_behavioral = st.text_input("Behavioral Basis", value=chosen.get("behavioral_basis", ""), key="edited_behavioral")
+
+    # Save edits back into session state
+        st.session_state["chosen_hypothesis"] = {
+            "hypothesis": sanitize_text(st.session_state.get("edited_hypothesis", edited_hyp)),
+            "rationale": sanitize_text(st.session_state.get("edited_rationale", edited_rationale)),
+            "example_implementation": sanitize_text(st.session_state.get("edited_example", edited_example)),
+            "behavioral_basis": sanitize_text(st.session_state.get("edited_behavioral", edited_behavioral)),
+        }
+
+    else:
+        st.info("No hypotheses available. Click 'Generate Hypotheses' first or add one manually.")
+
 # main.py — Part 4/5: Step 3–4 UI (Generate PRD, Review & Edit)
 
     # -------------------------
