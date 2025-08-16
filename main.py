@@ -54,7 +54,8 @@ try:
     generate_experiment_plan,
     generate_hypothesis_details,
     validate_experiment_plan,
-    generate_hypotheses
+    generate_hypotheses,
+    extract_json
 
     )
 except Exception as e:
