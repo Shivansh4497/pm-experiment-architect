@@ -6,6 +6,7 @@ import re
 from typing import Dict, Any, List, Optional
 from io import BytesIO
 from groq import Groq
+import streamlit as st
 
 
 # ============ LLM Client Setup ============
