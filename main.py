@@ -45,7 +45,8 @@ try:
         generate_hypotheses as _generate_hypotheses,
         expand_hypothesis_with_details as _generate_hypothesis_details,
         generate_experiment_plan as _generate_experiment_plan,
-        generate_tips as _generate_dynamic_tips
+        generate_tips as _generate_dynamic_tips,
+        _client,
     )
     PROMPT_ENGINE_AVAILABLE = True
 except ImportError as e:
@@ -668,7 +669,7 @@ def main():
         
         # Action button to generate hypotheses
         if st.button("Generate Hypotheses", use_container_width=True):
-            if PROMPT_ENGINE_AVAILABLE and _generate_hypotheses and _get_llm_client():  # Add _client check
+            if PROMPT_ENGINE_AVAILABLE and _generate_hypotheses and _client:  # Add _client check
                 with st.spinner("Generating hypotheses..."):
                     try:
                         generated_hypotheses = _generate_hypotheses(ctx)
