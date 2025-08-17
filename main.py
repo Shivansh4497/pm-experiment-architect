@@ -46,7 +46,8 @@ try:
         generate_hypotheses as _generate_hypotheses,
         expand_hypothesis_with_details as _generate_hypothesis_details,
         generate_experiment_plan as _generate_experiment_plan,
-        generate_tips as _generate_dynamic_tips
+        generate_tips as _generate_dynamic_tips,
+        validate_experiment_plan as _validate_experiment_plan  # This is missing
     )
     PROMPT_ENGINE_AVAILABLE = True
 except ImportError as e:
