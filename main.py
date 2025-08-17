@@ -630,54 +630,54 @@ def generate_tips(context: Dict[str, Any], current_step: str) -> List[str]:
 # main.py — Part 3/4 (Fixed)
 
             # Proposed Solution & Variants
-        with st.expander("🛠️ Proposed Solution & Variants", expanded=False):
-            st.session_state["final_prd"]["proposed_solution"] = st.text_area(
+    with st.expander("🛠️ Proposed Solution & Variants", expanded=False):
+        st.session_state["final_prd"]["proposed_solution"] = st.text_area(
                 "Proposed Solution", 
                     value=st.session_state["final_prd"].get("proposed_solution", ""), 
                     height=120, 
                     key="edit_solution"
-                )
+        )
                 
-            variants = ensure_list(st.session_state["final_prd"].get("variants", []))
-            if not variants:
-                variants = [{"control": "", "variation": "", "notes": ""}]
+        variants = ensure_list(st.session_state["final_prd"].get("variants", []))
+        if not variants:
+            variants = [{"control": "", "variation": "", "notes": ""}]
                 
-            v0 = variants[0]
-            v0["control"] = st.text_area(
+        v0 = variants[0]
+        v0["control"] = st.text_area(
                     "Control", 
                     value=v0.get("control",""), 
                     height=80, 
                     key="edit_vctrl"
-                )
-            v0["variation"] = st.text_area(
+        )
+        v0["variation"] = st.text_area(
                     "Variation", 
                     value=v0.get("variation",""), 
                     height=80, 
                     key="edit_vvar"
-                )
-            v0["notes"] = st.text_input(
+        )
+        v0["notes"] = st.text_input(
                     "Notes", 
                     value=v0.get("notes",""), 
                     key="edit_vnotes"
-                )
-            st.session_state["final_prd"]["variants"] = [v0]
+        )
+        st.session_state["final_prd"]["variants"] = [v0]
                 
-            if st.button("♻️ Regenerate Solution & Variants", key="regen_variants"):
-                with st.spinner("Regenerating variants..."):
-                    try:
-                        ctx = st.session_state.get("sidebar_context", {})
-                        hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
-                        if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
-                            raw_new = _generate_experiment_plan(ctx, hyp)
-                            parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
-                            new_plan = sanitize_plan(parsed_new)
-                            st.session_state["final_prd"]["proposed_solution"] = new_plan.get("proposed_solution", "")
-                            st.session_state["final_prd"]["variants"] = new_plan.get("variants", [])
-                            st.success("Solution & variants regenerated.")
-                        else:
-                            st.warning("LLM not available.")
-                    except Exception as e:
-                        st.error(f"Failed to regenerate variants: {str(e)}")
+        if st.button("♻️ Regenerate Solution & Variants", key="regen_variants"):
+            with st.spinner("Regenerating variants..."):
+                try:
+                    ctx = st.session_state.get("sidebar_context", {})
+                    hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
+                    if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
+                        raw_new = _generate_experiment_plan(ctx, hyp)
+                        parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
+                        new_plan = sanitize_plan(parsed_new)
+                        st.session_state["final_prd"]["proposed_solution"] = new_plan.get("proposed_solution", "")
+                        st.session_state["final_prd"]["variants"] = new_plan.get("variants", [])
+                        st.success("Solution & variants regenerated.")
+                    else:
+                        st.warning("LLM not available.")
+                except Exception as e:
+                    st.error(f"Failed to regenerate variants: {str(e)}")
 
             # Metrics
             with st.expander("📊 Metrics & Guardrails", expanded=False):
