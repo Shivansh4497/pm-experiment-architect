@@ -5,6 +5,8 @@ import json
 import re
 from typing import Dict, Any, List, Optional
 from io import BytesIO
+from groq import Groq
+
 
 # ============ LLM Client Setup ============
 try:
