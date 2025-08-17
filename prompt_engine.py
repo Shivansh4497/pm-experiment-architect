@@ -359,6 +359,87 @@ def _safe_json_dumps(obj: Any) -> str:
             return "{}"
 
 
+def _build_prd_prompt(context: dict, hypothesis: dict) -> str:
+    """
+    Strongly personalized PRD generator.
+    Forces LLM to use ALL provided user inputs and selected hypothesis
+    to generate a detailed, professional-grade PRD.
+    """
+    business_goal = context.get("business_goal", "")
+    product_type = context.get("product_type", "")
+    user_persona = context.get("user_persona", "")
+    key_metric = context.get("key_metric", "")
+    current_value = context.get("current_value", "")
+    target_value = context.get("target_value", "")
+    hypothesis_text = hypothesis.get("hypothesis", "")
+    rationale = hypothesis.get("rationale", "")
+    example = hypothesis.get("example_implementation", "")
+    basis = hypothesis.get("behavioral_basis", "")
+
+    return f"""
+You are an expert Product Manager writing an A/B test Product Requirements Document (PRD).
+
+The user has provided the following inputs:
+- Business Goal: {business_goal}
+- Product Type: {product_type}
+- Target User Persona: {user_persona}
+- Key Metric: {key_metric}
+- Current Value: {current_value}
+- Target Value: {target_value}
+- Selected Hypothesis: {hypothesis_text}
+- Rationale: {rationale}
+- Example Implementation: {example}
+- Behavioral Basis: {basis}
+
+TASK:
+Write a complete, structured PRD for this experiment. The PRD must be deeply personalized to these inputs. 
+Do not generate generic templates — all sections should directly connect to the provided context.
+
+PRD STRUCTURE (JSON ONLY):
+{{
+  "Experiment Title & Metadata": {{
+    "title": "Short, specific title tied to {business_goal} in {product_type}",
+    "owner": "Auto-fill as 'PM User'",
+    "team": "Product Growth / Experimentation",
+    "id": "Generate a unique experiment ID"
+  }},
+  "Problem Statement": "Detailed problem/opportunity statement that explains why improving {key_metric} for {user_persona} matters. Must reference {current_value} and {target_value}.",
+  "Hypothesis": "{hypothesis_text}",
+  "Proposed Solution & Variants": {{
+    "control": "Describe the current {product_type} experience baseline",
+    "variant": "Describe the new variation being tested, explicitly tied to the hypothesis"
+  }},
+  "Success Metrics & Guardrails": {{
+    "primary_metric": "{key_metric}",
+    "secondary_metrics": [
+      "At least 2 other metrics relevant to {business_goal} and {product_type}"
+    ],
+    "guardrail_metrics": [
+      "Metrics that ensure no harm to retention, performance, or user trust"
+    ]
+  }},
+  "Experiment Design & Rollout Plan": {{
+    "sample_size_per_variant": "Estimate with rationale, tied to {current_value} → {target_value}",
+    "total_sample_size": "Total across all variants",
+    "confidence_level": "Default 95%",
+    "statistical_power": "Default 80%",
+    "mde": "Estimate based on {current_value} → {target_value}",
+    "dau_coverage": "Suggested rollout percentage with justification"
+  }},
+  "Risks & Mitigation": [
+    "List at least 3 experiment-specific risks and their mitigations"
+  ],
+  "Success & Learning Criteria": "Define what success looks like, including required statistical confidence, and how learnings will apply even if the hypothesis is disproved"
+}}
+
+CONSTRAINTS:
+- All content must reference the actual inputs. 
+- Do not return placeholders like 'TBD'.
+- Keep the tone professional and PRD-ready.
+- Return only valid JSON.
+"""
+
+
 def _call_llm(prompt: str, max_tokens: int = 1500, temperature: float = 0.2) -> Optional[str]:
     """
     Generic LLM invocation wrapper.
