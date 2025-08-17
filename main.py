@@ -627,6 +627,9 @@ def generate_tips(context: Dict[str, Any], current_step: str) -> List[str]:
 # main.py — Part 3/4 (Fixed)
 
             # Proposed Solution & Variants
+# main.py — Part 3/4 (Fixed)
+
+            # Proposed Solution & Variants
             with st.expander("🛠️ Proposed Solution & Variants", expanded=False):
                 st.session_state["final_prd"]["proposed_solution"] = st.text_area(
                     "Proposed Solution", 
