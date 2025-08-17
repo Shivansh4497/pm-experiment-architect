@@ -722,15 +722,19 @@ def main():
                 with st.spinner("Generating hypotheses..."):
                     try:
                         generated_hypotheses = _generate_hypotheses(ctx)
-                        if generated_hypotheses and "error" not in generated_hypotheses[0]:
+                        # --- MODIFIED: More robust error checking ---
+                        if generated_hypotheses and isinstance(generated_hypotheses, list) and generated_hypotheses[0] and not generated_hypotheses[0].get("error"):
                             st.session_state["hypotheses"] = generated_hypotheses
                             st.success("Hypotheses generated!")
                         else:
-                            st.error("Failed to generate hypotheses - check your API key and inputs")
+                            error_msg = "Failed to generate hypotheses. The AI returned an invalid format."
+                            if generated_hypotheses and generated_hypotheses[0].get("rationale"):
+                                error_msg = generated_hypotheses[0].get("rationale") # Show detailed error from engine
+                            st.error(error_msg)
                     except Exception as e:
-                        st.error(f"Hypothesis generation failed: {str(e)}")
+                        st.error(f"An unexpected error occurred: {str(e)}")
             else:
-                st.error("LLM service unavailable - check Groq API configuration")
+                st.error("LLM service unavailable - check API configuration")
 
     # Main content area
     if not st.session_state.get("hypotheses"):
