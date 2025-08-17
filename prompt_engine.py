@@ -14,9 +14,13 @@ try:
     from groq import Groq
     GROQ_AVAILABLE = True
     try:
-        _client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-        if not _client:
-            print("🔴 Groq client failed: No API key found")
+        # Safely get API key from secrets
+        api_key = st.secrets.get("GROQ_API_KEY")
+        if api_key:
+            _client = Groq(api_key=api_key)
+        else:
+            _client = None
+            print("🔴 Groq client failed: No API key found in st.secrets")
     except Exception as e:
         print(f"🔴 Groq client failed: {str(e)}")
         _client = None
@@ -31,16 +35,19 @@ DEFAULT_TEMPERATURE = 0.7
 
 # ============ Enhanced Prompt Templates ============
 PROMPTS = {
-    "hypotheses": """You are an expert Product Manager specializing in behavioral psychology. Generate 3 A/B test hypotheses in JSON format with these exact keys:
+    # --- MODIFIED: This prompt now asks for the exact keys main.py needs ---
+    "hypotheses": """You are an expert Product Manager specializing in behavioral psychology. Generate 3 distinct A/B test hypotheses based on the provided business context.
 
+Return your response as a single, valid JSON object with a single key "hypotheses" which contains a list of 3 hypothesis objects. Each object must have these exact keys: "hypothesis", "rationale", "example_implementation", "behavioral_basis".
+
+Example of the required JSON structure:
 {
   "hypotheses": [
     {
-      "variable": "specific_element_to_change",
-      "prediction": "metric_impact",
-      "rationale": "scientific_basis", 
-      "implementation": "technical_steps",
-      "behavioral_basis": "theory(reference)"
+      "hypothesis": "If we change the primary call-to-action button from 'Sign Up' to 'Start Your Free Trial', then we will increase user registration rates because it reduces commitment friction.",
+      "rationale": "The phrase 'Start Your Free Trial' is more benefit-oriented and less committal than 'Sign Up'. This aligns with the principle of reducing cognitive load for new users.",
+      "example_implementation": "Change the text on the main CTA button on the landing page from 'Sign Up' to 'Start Your Free Trial'. No other design changes are needed for this test.",
+      "behavioral_basis": "Loss Aversion (Users are more motivated to avoid losing a 'free' opportunity) and Framing Effect."
     }
   ]
 }
@@ -52,9 +59,10 @@ Business Context:
 - Metric: {key_metric} (Current: {current_value} → Target: {target_value})
 
 IMPORTANT:
-1. Return ONLY valid JSON
-2. Include ALL 3 hypotheses
-3. Each hypothesis must have all 5 required fields""",
+1.  Return ONLY the valid JSON object. Do not include any other text, greetings, or explanations before or after the JSON.
+2.  Ensure all 3 hypotheses are included in the list.
+3.  Each hypothesis object must contain all 4 required string fields.
+""",
 
     "prd": """You are a greatest product manager in the world. Generate a complete A/B Test PRD in structured JSON matching this exact structure:
 {
@@ -191,20 +199,20 @@ def extract_json_from_text(text: str) -> dict:
 # ============ Enhanced LLM Calling ============
 def safe_call_llm(prompt: str, model: str = DEFAULT_MODEL, temperature: float = DEFAULT_TEMPERATURE) -> str:
     if not GROQ_AVAILABLE or _client is None:
-        return json.dumps({"error": "LLM service not configured"})
+        return json.dumps({"error": "LLM service not configured or API key is missing."})
     
     try:
         completion = _client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model=model,
             temperature=temperature,
-            response_format={"type": "json_object"}  # <-- This enforces JSON response
+            response_format={"type": "json_object"}
         )
         if not completion.choices:
             return json.dumps({"error": "Empty response from LLM"})
         return completion.choices[0].message.content
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return json.dumps({"error": f"API call failed: {str(e)}"})
 
 # ============ Fixed Hypothesis Generation ============
 def generate_hypotheses(context: dict) -> List[Dict[str, str]]:
@@ -215,13 +223,7 @@ def generate_hypotheses(context: dict) -> List[Dict[str, str]]:
     # Validate required fields
     required_fields = ['business_goal', 'product_type', 'key_metric']
     if any(field not in context for field in required_fields):
-        return [{
-            "error": "Missing required fields",
-            "hypothesis": "Please provide business_goal, product_type and key_metric",
-            "rationale": "",
-            "example_implementation": "",
-            "behavioral_basis": ""
-        }]
+        return [{"error": "Missing required fields", "rationale": "Please provide business_goal, product_type and key_metric"}]
     
     prompt = PROMPTS["hypotheses"].format(
         business_goal=context.get("business_goal", ""),
@@ -234,42 +236,36 @@ def generate_hypotheses(context: dict) -> List[Dict[str, str]]:
     
     try:
         raw = safe_call_llm(prompt, temperature=0.7)
-        st.write(f"Debug - Raw LLM Response: {raw}")  # For debugging
-        
         parsed = extract_json_from_text(raw)
-        st.write(f"Debug - Parsed JSON: {parsed}")  # For debugging
 
         if not parsed:
-            raise ValueError("Empty or invalid JSON response")
-            
-        # Transform response to expected format
-        hypotheses = []
-        items = parsed.get("hypotheses", [])
+            raise ValueError("LLM returned an empty or invalid JSON response.")
+
+        # --- MODIFIED: Main logic to handle new, correct format ---
+        if "hypotheses" in parsed and isinstance(parsed["hypotheses"], list):
+            # Check if the items have the correct keys
+            if all("hypothesis" in item for item in parsed["hypotheses"]):
+                return parsed["hypotheses"]
         
-        for item in items[:3]:  # Only take first 3
-            if not isinstance(item, dict):
-                continue
-                
-            hypotheses.append({
-                "hypothesis": f"If we change {item.get('variable', '[variable]')}, then {item.get('prediction', '[metric impact]')}",
-                "rationale": item.get("rationale", ""),
-                "example_implementation": item.get("implementation", ""),
-                "behavioral_basis": item.get("behavioral_basis", "")
-            })
-        
-        if not hypotheses:
-            raise ValueError("No valid hypotheses generated")
-            
-        return hypotheses
+        # --- MODIFIED: Fallback logic for backward compatibility ---
+        # If the main logic fails, check if the response used the old keys
+        if "hypotheses" in parsed and isinstance(parsed["hypotheses"], list):
+            transformed_hypotheses = []
+            for item in parsed["hypotheses"]:
+                if isinstance(item, dict) and "variable" in item:
+                    transformed_hypotheses.append({
+                        "hypothesis": f"If we change {item.get('variable', '[variable]')}, then {item.get('prediction', '[metric impact]')}",
+                        "rationale": item.get("rationale", ""),
+                        "example_implementation": item.get("implementation", ""),
+                        "behavioral_basis": item.get("behavioral_basis", "")
+                    })
+            if len(transformed_hypotheses) > 0:
+                return transformed_hypotheses
+
+        raise ValueError("JSON response does not contain a valid 'hypotheses' list.")
         
     except Exception as e:
-        st.error(f"Detailed error: {str(e)}")
-        return [{
-            "hypothesis": "Hypothesis generation failed",
-            "rationale": f"Error: {str(e)}",
-            "example_implementation": "Please check your inputs and try again",
-            "behavioral_basis": "N/A"
-        }]
+        return [{"error": "Hypothesis generation failed", "rationale": f"Error: {str(e)}"}]
 
 def generate_hypothesis_details(hypothesis: str, context: dict) -> dict:
     """Wrapper for backward compatibility"""
