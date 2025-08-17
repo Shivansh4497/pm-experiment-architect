@@ -11,6 +11,13 @@ from typing import Any, Dict, List, Optional
 
 import streamlit as st
 
+# --- NEW: Import scipy for statistical calculations and add availability check ---
+try:
+    import scipy.stats as stats
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+
 # Try optional libs for exports
 PDF_AVAILABLE = False
 DOCX_AVAILABLE = False
@@ -22,7 +29,7 @@ try:
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
-    st.warning("PDF export disabled (reportlab not installed)")
+    # Warning is now handled contextually when the user tries to export
 
 try:
     from docx import Document
@@ -30,7 +37,7 @@ try:
     DOCX_AVAILABLE = True
 except ImportError:
     DOCX_AVAILABLE = False
-    st.warning("DOCX export disabled (python-docx not installed)")
+    # Warning is now handled contextually when the user tries to export
 
 # Import prompt engine functions (best-effort)
 PROMPT_ENGINE_AVAILABLE = False
@@ -50,8 +57,8 @@ try:
     )
     PROMPT_ENGINE_AVAILABLE = True
 except ImportError as e:
-    st.warning(f"Prompt engine not fully available: {str(e)}")
-    # Fallback implementations would go here if needed
+    # This will only show a warning if the file is expected but fails, not if it's missing.
+    pass
 
 # -------------------------
 # Styling and UI helpers
@@ -104,6 +111,14 @@ def inject_global_css():
         padding: 0.5rem 0.9rem;
         border-radius: 999px;
         margin-right: 6px;
+    }
+    
+    /* --- NEW: Style for calculator results --- */
+    .stAlert[data-baseweb="alert"] > div:first-child {
+         background-color: #e0f2fe !important;
+         border-left: 5px solid #0ea5e9 !important;
+         color: #0c4a6e !important;
+         border-radius: 8px;
     }
     </style>
     """
@@ -194,6 +209,36 @@ def generate_experiment_id(prefix: str = "EXP") -> str:
     """Generate random experiment ID with prefix."""
     rand = "".join(random.choices(string.ascii_uppercase + string.digits, k=5))
     return f"{prefix}-{rand}"
+
+# --- NEW: Statistical Calculator Function ---
+def calculate_sample_size(baseline_rate, mde, alpha=0.05, power=0.8):
+    """
+    Calculate the required sample size per variant for a two-tailed test.
+    Returns None if inputs are invalid.
+    """
+    if not SCIPY_AVAILABLE:
+        return None
+    if not (0 < baseline_rate < 1 and mde > 0):
+        return None
+
+    z_alpha = stats.norm.ppf(1 - alpha / 2)
+    z_beta = stats.norm.ppf(power)
+
+    p1 = baseline_rate
+    p2 = baseline_rate * (1 + mde)
+
+    if p2 >= 1:
+        return None
+
+    p_avg = (p1 + p2) / 2
+    
+    numerator = (z_alpha * math.sqrt(2 * p_avg * (1 - p_avg))) + (z_beta * math.sqrt(p1 * (1 - p1) + p2 * (1 - p2)))
+    denominator = p2 - p1
+    
+    if denominator == 0:
+        return None
+
+    return math.ceil((numerator / denominator) ** 2)
 
 # -------------------------
 # Export helpers (PDF/DOCX/JSON)
@@ -354,8 +399,8 @@ DEFAULT_PLAN: Dict[str, Any] = {
     "hypotheses": [],
     "proposed_solution": "",
     "variants": [{"control": "", "variation": "", "notes": ""}],
-    "metrics": [{"name": "", "formula": "", "importance": "Primary"}],
-    "guardrail_metrics": [{"name": "", "direction": "Decrease", "threshold": ""}],
+    "metrics": [],
+    "guardrail_metrics": [],
     "experiment_design": {
         "traffic_allocation": "50/50",
         "sample_size_per_variant": 0,
@@ -363,6 +408,10 @@ DEFAULT_PLAN: Dict[str, Any] = {
         "test_duration_days": 0,
         "dau_coverage_percent": 0.0,
         "power": 80.0,
+        # --- NEW: Add calculator fields to default plan ---
+        "baseline_conversion_rate": 10.0,
+        "mde_percent": 5.0,
+        "daily_traffic_for_experiment": 1000,
     },
     "success_criteria": {
         "confidence_level": 95.0, 
@@ -376,11 +425,7 @@ DEFAULT_PLAN: Dict[str, Any] = {
         "stopping_rules": "", 
         "rollback_criteria": ""
     },
-    "risks_and_assumptions": [{
-        "risk": "", 
-        "severity": "Medium", 
-        "mitigation": ""
-    }],
+    "risks_and_assumptions": [],
     "statistical_rationale": "",
 }
 
@@ -458,6 +503,10 @@ def sanitize_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
         "test_duration_days": safe_int(ed.get("test_duration_days", 0)),
         "dau_coverage_percent": safe_float(ed.get("dau_coverage_percent", 0.0)),
         "power": safe_float(ed.get("power", 80.0)),
+        # --- NEW: Ensure calculator fields are sanitized ---
+        "baseline_conversion_rate": safe_float(ed.get("baseline_conversion_rate", 10.0)),
+        "mde_percent": safe_float(ed.get("mde_percent", 5.0)),
+        "daily_traffic_for_experiment": safe_int(ed.get("daily_traffic_for_experiment", 1000)),
     }
 
     # success criteria
@@ -650,7 +699,7 @@ def main():
     if "experiment_plan" not in st.session_state:
         st.session_state["experiment_plan"] = {}
     if "final_prd" not in st.session_state:
-        st.session_state["final_prd"] = DEFAULT_PLAN
+        st.session_state["final_prd"] = json.loads(json.dumps(DEFAULT_PLAN))
     if "show_tips_panel" not in st.session_state:
         st.session_state["show_tips_panel"] = False
     if "tips_list" not in st.session_state:
@@ -810,130 +859,112 @@ def main():
                         except Exception as e:
                             st.error(f"Failed to regenerate variants: {str(e)}")
 
-            # Metrics
-            with st.expander("📊 Metrics & Guardrails", expanded=False):
-                metrics = ensure_list(st.session_state["final_prd"].get("metrics", []))
-                if not metrics:
-                    metrics = [{"name": "", "formula": "", "importance": "Primary"}]
+            # --- MODIFIED: This section is now dynamic and has a new title ---
+            with st.expander("📊 Success Metrics", expanded=False):
+                if 'metrics' not in st.session_state.final_prd or not isinstance(st.session_state.final_prd['metrics'], list):
+                    st.session_state.final_prd['metrics'] = []
                 
-                # Render up to 3 metrics editable
-                for i in range(min(len(metrics), 3)):  # Limit to 3 metrics
-                    metrics[i]["name"] = st.text_input(
-                        f"Metric {i+1} Name", 
-                        value=metrics[i].get("name",""), 
-                        key=f"edit_m_name_{i}"
-                    )
-                    metrics[i]["formula"] = st.text_input(
-                        f"Metric {i+1} Formula", 
-                        value=metrics[i].get("formula",""), 
-                        key=f"edit_m_for_{i}"
-                    )
-                    metrics[i]["importance"] = st.selectbox(
-                        f"Metric {i+1} Importance", 
-                        ["Primary","Secondary"], 
-                        index=0 if metrics[i].get("importance","Primary")=="Primary" else 1, 
-                        key=f"edit_m_imp_{i}"
-                    )
-                st.session_state["final_prd"]["metrics"] = metrics
+                for i, metric in enumerate(st.session_state.final_prd['metrics']):
+                    cols = st.columns([4, 4, 2, 1])
+                    metric['name'] = cols[0].text_input("Metric Name", value=metric.get('name', ''), key=f"metric_name_{i}")
+                    metric['formula'] = cols[1].text_input("How is it measured?", value=metric.get('formula', ''), key=f"metric_formula_{i}")
+                    metric['importance'] = cols[2].selectbox("Importance", ["Primary", "Secondary"], index=0 if metric.get('importance', 'Primary') == 'Primary' else 1, key=f"metric_imp_{i}")
+                    if cols[3].button("➖", key=f"remove_metric_{i}", help="Remove this metric"):
+                        st.session_state.final_prd['metrics'].pop(i)
+                        st.rerun()
                 
-                if st.button("♻️ Regenerate Metrics", key="regen_metrics"):
-                    with st.spinner("Regenerating metrics..."):
-                        try:
-                            ctx = st.session_state.get("sidebar_context", {})
-                            hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
-                            if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
-                                raw_new = _generate_experiment_plan(ctx, hyp)
-                                parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
-                                new_plan = sanitize_plan(parsed_new)
-                                st.session_state["final_prd"]["metrics"] = new_plan.get("metrics", [])
-                                st.session_state["final_prd"]["guardrail_metrics"] = new_plan.get("guardrail_metrics", [])
-                                st.success("Metrics regenerated.")
-                            else:
-                                st.warning("LLM not available.")
-                        except Exception as e:
-                            st.error(f"Failed to regenerate metrics: {str(e)}")
+                if st.button("Add Metric"):
+                    st.session_state.final_prd['metrics'].append({'name': '', 'formula': '', 'importance': 'Secondary'})
+                    st.rerun()
 
-            # Guardrail metrics
+            # --- MODIFIED: This section is now dynamic ---
             with st.expander("🛡️ Guardrail Metrics", expanded=False):
-                guardrails = ensure_list(st.session_state["final_prd"].get("guardrail_metrics", []))
-                if not guardrails:
-                    guardrails = [{"name": "", "direction": "Decrease", "threshold": ""}]
-                
-                for i in range(min(len(guardrails), 3)):  # Limit to 3 guardrails
-                    guardrails[i]["name"] = st.text_input(
-                        f"Guardrail {i+1} Name", 
-                        value=guardrails[i].get("name", ""), 
-                        key=f"edit_g_name_{i}"
-                    )
-                    guardrails[i]["direction"] = st.selectbox(
-                        f"Guardrail {i+1} Direction", 
-                        ["Increase", "Decrease", "No Change"], 
-                        index=["Increase", "Decrease", "No Change"].index(guardrails[i].get("direction", "Decrease")), 
-                        key=f"edit_g_dir_{i}"
-                    )
-                    guardrails[i]["threshold"] = st.text_input(
-                        f"Guardrail {i+1} Threshold", 
-                        value=guardrails[i].get("threshold", ""), 
-                        key=f"edit_g_thr_{i}"
-                    )
-                st.session_state["final_prd"]["guardrail_metrics"] = guardrails
-                
-                if st.button("♻️ Regenerate Guardrails", key="regen_guardrails"):
-                    with st.spinner("Regenerating guardrails..."):
-                        try:
-                            ctx = st.session_state.get("sidebar_context", {})
-                            hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
-                            if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
-                                raw_new = _generate_experiment_plan(ctx, hyp)
-                                parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
-                                new_plan = sanitize_plan(parsed_new)
-                                st.session_state["final_prd"]["guardrail_metrics"] = new_plan.get("guardrail_metrics", [])
-                                st.success("Guardrails regenerated.")
-                            else:
-                                st.warning("LLM not available.")
-                        except Exception as e:
-                            st.error(f"Failed to regenerate guardrails: {str(e)}")
+                if 'guardrail_metrics' not in st.session_state.final_prd or not isinstance(st.session_state.final_prd['guardrail_metrics'], list):
+                    st.session_state.final_prd['guardrail_metrics'] = []
 
-            # Risks & Assumptions
+                for i, guardrail in enumerate(st.session_state.final_prd['guardrail_metrics']):
+                    cols = st.columns([4, 3, 3, 1])
+                    guardrail['name'] = cols[0].text_input("Guardrail Name", value=guardrail.get('name', ''), key=f"guard_name_{i}")
+                    guardrail['direction'] = cols[1].selectbox("Desired Direction", ["Increase", "Decrease", "No Change"], index=["Increase", "Decrease", "No Change"].index(guardrail.get("direction", "No Change")), key=f"guard_dir_{i}")
+                    guardrail['threshold'] = cols[2].text_input("Threshold", value=guardrail.get('threshold', ''), key=f"guard_thresh_{i}")
+                    if cols[3].button("➖", key=f"remove_guard_{i}", help="Remove this guardrail"):
+                        st.session_state.final_prd['guardrail_metrics'].pop(i)
+                        st.rerun()
+
+                if st.button("Add Guardrail"):
+                    st.session_state.final_prd['guardrail_metrics'].append({'name': '', 'direction': 'No Change', 'threshold': ''})
+                    st.rerun()
+
+            # --- NEW: Integrated Statistical Calculator Expander ---
+            with st.expander("📐 Experiment Design & Calculator", expanded=True):
+                if not SCIPY_AVAILABLE:
+                    st.error("Statistical calculation requires the 'scipy' library. Please install it (`pip install scipy`) to enable this feature.")
+                else:
+                    st.info("Adjust the values below to automatically calculate sample size and test duration.")
+                    # Ensure the experiment_design dict exists
+                    if "experiment_design" not in st.session_state.final_prd:
+                        st.session_state.final_prd["experiment_design"] = {}
+                    ed = st.session_state.final_prd["experiment_design"]
+
+                    c1, c2, c3 = st.columns(3)
+                    # --- NEW: Aggressive input validation via number_input parameters ---
+                    ed['baseline_conversion_rate'] = c1.number_input(
+                        "Baseline Conversion Rate (%)", min_value=0.01, max_value=99.99,
+                        value=ed.get('baseline_conversion_rate', 10.0), step=0.1, format="%.2f",
+                        help="The current conversion rate of your control group (e.g., 15.5 for 15.5%)."
+                    )
+                    ed['mde_percent'] = c2.number_input(
+                        "Minimum Detectable Effect (MDE) (%)", min_value=0.1,
+                        value=ed.get('mde_percent', 5.0), step=0.1, format="%.1f",
+                        help="The minimum relative lift you want to detect (e.g., 5 for a 5% lift)."
+                    )
+                    ed['daily_traffic_for_experiment'] = c3.number_input(
+                        "Daily Users in Experiment", min_value=1,
+                        value=ed.get('daily_traffic_for_experiment', 1000), step=100,
+                        help="Total daily users who will see either the control or variation."
+                    )
+                    
+                    # Perform Calculation in real-time
+                    baseline_rate_dec = ed['baseline_conversion_rate'] / 100.0
+                    mde_dec = ed['mde_percent'] / 100.0
+                    power_dec = st.session_state.final_prd.get('success_criteria', {}).get('power', 80.0) / 100.0
+                    
+                    sample_size = calculate_sample_size(baseline_rate_dec, mde_dec, power=power_dec)
+                    
+                    # Update state and display results
+                    if sample_size:
+                        ed['sample_size_per_variant'] = sample_size
+                        ed['total_sample_size'] = sample_size * 2
+                        daily_traffic = ed.get('daily_traffic_for_experiment', 0)
+                        ed['test_duration_days'] = math.ceil(ed['total_sample_size'] / daily_traffic) if daily_traffic > 0 else 0
+                        
+                        st.success(
+                            f"""
+                            **Required Sample Size (per variant):** `{ed['sample_size_per_variant']:,}`\n
+                            **Total Required Sample Size:** `{ed['total_sample_size']:,}`\n
+                            **Estimated Test Duration:** `{ed['test_duration_days']} days`
+                            """
+                        )
+                    else:
+                        st.warning("Invalid inputs for calculation. Please check that MDE is not too high and baseline is valid.")
+
+            # --- MODIFIED: This section is now dynamic ---
             with st.expander("⚠️ Risks & Assumptions", expanded=False):
-                risks = ensure_list(st.session_state["final_prd"].get("risks_and_assumptions", []))
-                if not risks:
-                    risks = [{"risk": "", "severity": "Medium", "mitigation": ""}]
-                
-                for i in range(min(len(risks), 3)):  # Limit to 3 risks
-                    risks[i]["risk"] = st.text_input(
-                        f"Risk {i+1}", 
-                        value=risks[i].get("risk", ""), 
-                        key=f"edit_risk_{i}"
-                    )
-                    risks[i]["severity"] = st.selectbox(
-                        f"Severity {i+1}", 
-                        ["High", "Medium", "Low"], 
-                        index=["High", "Medium", "Low"].index(risks[i].get("severity", "Medium")), 
-                        key=f"edit_r_sev_{i}"
-                    )
-                    risks[i]["mitigation"] = st.text_input(
-                        f"Mitigation {i+1}", 
-                        value=risks[i].get("mitigation", ""), 
-                        key=f"edit_r_mit_{i}"
-                    )
-                st.session_state["final_prd"]["risks_and_assumptions"] = risks
-                
-                if st.button("♻️ Regenerate Risks", key="regen_risks"):
-                    with st.spinner("Regenerating risks..."):
-                        try:
-                            ctx = st.session_state.get("sidebar_context", {})
-                            hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
-                            if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
-                                raw_new = _generate_experiment_plan(ctx, hyp)
-                                parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
-                                new_plan = sanitize_plan(parsed_new)
-                                st.session_state["final_prd"]["risks_and_assumptions"] = new_plan.get("risks_and_assumptions", [])
-                                st.success("Risks regenerated.")
-                            else:
-                                st.warning("LLM not available.")
-                        except Exception as e:
-                            st.error(f"Failed to regenerate risks: {str(e)}")
+                if 'risks_and_assumptions' not in st.session_state.final_prd or not isinstance(st.session_state.final_prd['risks_and_assumptions'], list):
+                    st.session_state.final_prd['risks_and_assumptions'] = []
+
+                for i, risk in enumerate(st.session_state.final_prd['risks_and_assumptions']):
+                    cols = st.columns([5, 2, 5, 1])
+                    risk['risk'] = cols[0].text_input("Risk", value=risk.get('risk', ''), key=f"risk_risk_{i}")
+                    risk['severity'] = cols[1].selectbox("Severity", ["High", "Medium", "Low"], index=["High", "Medium", "Low"].index(risk.get("severity", "Medium")), key=f"risk_sev_{i}")
+                    risk['mitigation'] = cols[2].text_input("Mitigation", value=risk.get('mitigation', ''), key=f"risk_mit_{i}")
+                    if cols[3].button("➖", key=f"remove_risk_{i}", help="Remove this risk"):
+                        st.session_state.final_prd['risks_and_assumptions'].pop(i)
+                        st.rerun()
+
+                if st.button("Add Risk"):
+                    st.session_state.final_prd['risks_and_assumptions'].append({'risk': '', 'severity': 'Medium', 'mitigation': ''})
+                    st.rerun()
 
             # Success & Learning Criteria
             with st.expander("📘 Success & Learning Criteria", expanded=False):
