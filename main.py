@@ -416,7 +416,7 @@ def sanitize_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
 
     # variants
     merged["variants"] = []
-    for v in ensure_list(plan.get("variants"))):
+    for v in ensure_list(plan.get("variants")):
         if isinstance(v, dict):
             merged["variants"].append({
                 "control": sanitize_text(v.get("control", "")),
@@ -426,7 +426,7 @@ def sanitize_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
 
     # metrics
     merged["metrics"] = []
-    for m in ensure_list(plan.get("metrics"))):
+    for m in ensure_list(plan.get("metrics")):
         if isinstance(m, dict):
             importance = m.get("importance", "Primary")
             if importance not in ("Primary", "Secondary"):
@@ -439,7 +439,7 @@ def sanitize_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
 
     # guardrails
     merged["guardrail_metrics"] = []
-    for g in ensure_list(plan.get("guardrail_metrics"))):
+    for g in ensure_list(plan.get("guardrail_metrics")):
         if isinstance(g, dict):
             direction = g.get("direction", "Decrease")
             if direction not in ("Increase", "Decrease", "No Change"):
@@ -451,7 +451,7 @@ def sanitize_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
             })
 
     # experiment design
-    ed = ensure_dict(plan.get("experiment_design", {})))
+    ed = ensure_dict(plan.get("experiment_design", {}))
     merged["experiment_design"] = {
         "traffic_allocation": sanitize_text(ed.get("traffic_allocation", "50/50")),
         "sample_size_per_variant": safe_int(ed.get("sample_size_per_variant", 0)),
@@ -462,7 +462,7 @@ def sanitize_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     # success criteria
-    sc = ensure_dict(plan.get("success_criteria", {})))
+    sc = ensure_dict(plan.get("success_criteria", {}))
     merged["success_criteria"] = {
         "confidence_level": safe_float(sc.get("confidence_level", 95.0)),
         "power": safe_float(sc.get("power", merged["experiment_design"]["power"])),
@@ -472,7 +472,7 @@ def sanitize_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     # success learning criteria
-    sl = ensure_dict(plan.get("success_learning_criteria", {})))
+    sl = ensure_dict(plan.get("success_learning_criteria", {}))
     merged["success_learning_criteria"] = {
         "definition_of_success": sanitize_text(sl.get("definition_of_success", "")),
         "stopping_rules": sanitize_text(sl.get("stopping_rules", "")),
@@ -481,7 +481,7 @@ def sanitize_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
 
     # risks
     merged["risks_and_assumptions"] = []
-    for r in ensure_list(plan.get("risks_and_assumptions"))):
+    for r in ensure_list(plan.get("risks_and_assumptions")):
         if isinstance(r, dict):
             sev = r.get("severity", "Medium")
             if sev not in ("High", "Medium", "Low"):
