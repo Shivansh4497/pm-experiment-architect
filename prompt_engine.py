@@ -1,5 +1,6 @@
-# prompt_engine.py — Part 1/4 (Fixed)
-# Full updated version with all fixes and compatibility improvements
+print(file_manager.write(
+    path='prompt_engine.py',
+    content='''# prompt_engine.py — Full corrected version with Groq API integration
 
 import os
 import json
@@ -9,15 +10,22 @@ from io import BytesIO
 
 # ============ LLM Client Setup ============
 try:
-    import openai
-    openai.api_key = os.getenv("OPENAI_API_KEY")
-    LLM_AVAILABLE = True
+    # Import guarded so module still loads if Groq not installed
+    from groq import Groq  # type: ignore
+    GROQ_AVAILABLE = True
+    # instantiate safely (expect user to set GROQ_API_KEY in env)
+    try:
+        _client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+    except Exception as e:
+        print(f"Groq client failed to initialize: {e}")
+        _client = None
 except ImportError:
-    LLM_AVAILABLE = False
-    print("Warning: OpenAI package not available. LLM features will be disabled.")
+    GROQ_AVAILABLE = False
+    _client = None
+    print("Warning: Groq package not available. LLM features will be disabled.")
 
 # ============ Constants ============
-DEFAULT_MODEL = "gpt-4"  # Updated from invalid "gpt-4o-mini"
+DEFAULT_MODEL = "mixtral-8x7b-32768"
 DEFAULT_TEMPERATURE = 0.7
 
 # ============ Prompt Templates ============
@@ -49,106 +57,108 @@ Return JSON only in this structure:
   ]
 }}""",
 
-    "hypothesis_details": """You are an expert Product Manager. Expand the provided hypothesis with more detail.
-Add sections for:
-- Behavioral Basis: A psychological or user behavior principle that explains the hypothesis.
-- Example Implementation: A concrete, technical-level example of how the test would be implemented.
-
-User Inputs:
-Business Goal: {business_goal}
-Product Type: {product_type}
-Target Persona: {user_persona}
-Hypothesis: {hypothesis}
-Rationale: {rationale}
-
-Return JSON only in this structure:
+    "prd": """You are a senior product manager. Generate a complete A/B Test PRD in structured JSON matching this exact structure:
 {{
-  "hypothesis": "{hypothesis}",
-  "rationale": "{rationale}",
-  "example_implementation": "...",
-  "behavioral_basis": "..."
-}}""",
+  "metadata": {{
+    "title": "...",
+    "team": "...",
+    "owner": "...",
+    "experiment_id": "..."
+  }},
+  "problem_statement": "...",
+  "hypotheses": [
+    {{
+      "hypothesis": "...",
+      "rationale": "...",
+      "example_implementation": "...",
+      "behavioral_basis": "..."
+    }}
+  ],
+  "proposed_solution": "...",
+  "variants": [
+    {{
+      "control": "...",
+      "variation": "...",
+      "notes": "..."
+    }}
+  ],
+  "metrics": [
+    {{
+      "name": "...",
+      "formula": "...",
+      "importance": "Primary/Secondary"
+    }}
+  ],
+  "guardrail_metrics": [
+    {{
+      "name": "...",
+      "direction": "Increase/Decrease/No Change",
+      "threshold": "..."
+    }}
+  ],
+  "experiment_design": {{
+    "traffic_allocation": "...",
+    "sample_size_per_variant": 0,
+    "total_sample_size": 0,
+    "test_duration_days": 0,
+    "dau_coverage_percent": 0.0,
+    "power": 80.0
+  }},
+  "success_criteria": {{
+    "confidence_level": 95.0,
+    "power": 80.0,
+    "MDE": 1.0,
+    "benchmark": "...",
+    "monitoring": "..."
+  }},
+  "success_learning_criteria": {{
+    "definition_of_success": "...",
+    "stopping_rules": "...",
+    "rollback_criteria": "..."
+    }},
+  "risks_and_assumptions": [
+    {{
+      "risk": "...",
+      "severity": "High/Medium/Low",
+      "mitigation": "..."
+    }}
+  ],
+  "statistical_rationale": "..."
+}}
 
-    "prd": """You are a highly analytical and detail-oriented Product Manager. Based on the user's business context and a chosen hypothesis, generate a complete experiment plan (PRD).
-The output MUST be a single JSON object.
-
-Business Context:
-Business Goal: {business_goal}
-Product Type: {product_type}
-Target Persona: {user_persona}
-Key Metric: {key_metric}
-Current Value: {current_value}
-Target Value: {target_value}
-
-Chosen Hypothesis:
-Hypothesis: {hypothesis}
-Rationale: {rationale}
-Example Implementation: {example_implementation}
-Behavioral Basis: {behavioral_basis}
-
-Generate the full PRD JSON object with these sections. Ensure all fields are filled.
-1.  metadata:
-    - title: A concise title for the experiment (e.g., "Checkout Button Color Test")
-    - team: [Your Team Name]
-    - owner: [Your Name]
-2.  problem_statement: A short description of the user problem to be solved.
-3.  hypotheses: An array with the single chosen hypothesis.
-4.  proposed_solution: A detailed description of the proposed solution and how it will address the problem.
-5.  variants: An array describing the control and variation(s).
-    - control: A description of the current experience.
-    - variation: A description of the new experience to be tested.
-6.  metrics: An array of primary and secondary success metrics.
-    - name: e.g., "Click-through Rate"
-    - formula: A clear formula, e.g., "Clicks / Impressions"
-    - importance: "Primary" or "Secondary"
-7.  guardrail_metrics: An array of metrics to monitor for negative side effects.
-    - name: e.g., "Page Load Time"
-    - direction: "Decrease" (for negative side effects)
-    - threshold: e.g., "+5%"
-8.  experiment_design:
-    - traffic_allocation: e.g., "50/50"
-    - sample_size_per_variant: a calculated number
-    - total_sample_size: a calculated number
-    - test_duration_days: a calculated number
-    - dau_coverage_percent: % of DAU covered by test
-    - power: statistical power of the test
-9.  risks_and_assumptions: An array of potential risks and how to mitigate them.
-    - risk: e.g., "Cannibalization of other products"
-    - severity: "High", "Medium", or "Low"
-    - mitigation: e.g., "Monitor funnel metrics"
-10. statistical_rationale: A detailed rationale for the experiment design, including calculations for sample size, duration, and rationale for MDE/power/confidence level.
-
-Return JSON only, with no additional text or markdown outside the JSON object.
-""",
-    "tips": """You are an expert product manager. The user is currently in the process of building an experiment plan. Provide concise, actionable tips based on their current step and context. The tips should be a JSON array of short strings.
-
-Context:
-User is on the '{current_step}' step.
-Their current inputs are:
+Input Context:
 {context}
 
-Provide a JSON array of up to 5 tips to help them improve their current work.
-Return JSON array only, like this: ["Tip 1", "Tip 2", ...].
-"""
-}
-# prompt_engine.py — Part 2/4 (Fixed)
+Hypothesis Details:
+{hypothesis}""",
 
-# ============ LLM Interaction ============
-def extract_json_from_text(text: Optional[str]) -> Dict[str, Any]:
-    """Robust JSON extraction from potentially messy LLM output."""
+    "tips": """You are a PM mentor providing 3-5 short, practical tips for A/B testing at step: {step}.
+Context: {context}
+Format as a JSON list: ["Tip 1", "Tip 2", "Tip 3"]""",
+
+    "validate": """Review this experiment plan for quality issues:
+{plan}
+Return JSON with: {{
+  "missing_fields": ["..."],
+  "inconsistencies": ["..."],
+  "suggestions": ["..."]
+}}"""
+}
+
+# ============ Core Utilities ============
+def extract_json_from_text(text: str) -> dict:
+    """Robust JSON extraction from LLM output with multiple fallbacks."""
     if not text:
         return {}
     
-    # Try to find a JSON object or array block
-    match = re.search(r"\{.*\}|\[.*\]", text, re.DOTALL)
-    if match:
-        json_str = match.group(0)
-        try:
-            return json.loads(json_str)
-        except json.JSONDecodeError:
-            pass # Fall through to other extraction methods
-            
-    # Try more lenient extraction
+    text = text.strip()
+    # Try direct parse first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    
+    # Try to find outermost JSON block
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
@@ -157,122 +167,272 @@ def extract_json_from_text(text: Optional[str]) -> Dict[str, Any]:
         except json.JSONDecodeError:
             pass
     
+    # Try array format
+    start = text.find("[")
+    end = text.rfind("]")
+    if start != -1 and end != -1 and end > start:
+        try:
+            parsed = json.loads(text[start:end+1])
+            return {"list": parsed} if isinstance(parsed, list) else {}
+        except json.JSONDecodeError:
+            pass
+    
     return {}
 
-def safe_call_llm(prompt_template: str, inputs: Dict[str, Any], model: str = DEFAULT_MODEL) -> Any:
-    """Safely calls the LLM, handles errors, and returns parsed JSON."""
-    if not LLM_AVAILABLE:
-        return {}
-
-    prompt = prompt_template.format(**inputs)
+def safe_call_llm(prompt: str, model: str = DEFAULT_MODEL, temperature: float = DEFAULT_TEMPERATURE) -> str:
+    """Wrapper for Groq API with comprehensive error handling."""
+    if not GROQ_AVAILABLE or _client is None:
+        return ""
     
     try:
-        response = openai.chat.completions.create(
+        completion = _client.chat.completions.create(
             model=model,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=DEFAULT_TEMPERATURE,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
         )
-        content = response.choices[0].message.content
-        return extract_json_from_text(content)
-    except openai.APIError as e:
-        print(f"API Error: {e}")
-        return {"error": str(e)}
+        return completion.choices[0].message.content
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        return {"error": str(e)}
+        print(f"LLM call failed: {str(e)}")
+        return ""
 
-# ============ PRD Schema Validation ============
-def _validate_experiment_plan(plan: Dict[str, Any]) -> List[str]:
-    """
-    Validates the experiment plan JSON against common best practices.
-    Returns a list of issues found.
-    """
-    issues = []
+# ============ Hypothesis Generation ============
+def generate_hypotheses(context: dict) -> List[Dict[str, str]]:
+    """Generate 3 hypotheses based on user context, always return list of dicts."""
+    if not isinstance(context, dict):
+        context = {}
     
-    # Check for empty fields
-    for key, value in plan.items():
-        if isinstance(value, str) and not value.strip():
-            issues.append(f"Missing value for field: {key}")
-        elif isinstance(value, list) and not value:
-            issues.append(f"List is empty for field: {key}")
-            
-    # Check for metrics
-    metrics = plan.get("metrics", [])
-    if not metrics:
-        issues.append("No success metrics defined.")
-    else:
-        primary_count = sum(1 for m in metrics if m.get("importance", "").lower() == "primary")
-        if primary_count == 0:
-            issues.append("No primary success metric defined.")
-        if primary_count > 1:
-            issues.append(f"Multiple primary metrics defined ({primary_count}). Best practice is to have a single primary metric.")
-            
-    # Check for sample size consistency
-    design = plan.get("experiment_design", {})
-    total_size = design.get("total_sample_size", 0)
-    per_variant_size = design.get("sample_size_per_variant", 0)
-    if total_size > 0 and per_variant_size > 0 and total_size != per_variant_size * 2:
-        issues.append(f"Total sample size ({total_size}) does not match per-variant size ({per_variant_size} * 2).")
+    prompt = PROMPTS["hypotheses"].format(
+        business_goal=context.get("business_goal", ""),
+        product_type=context.get("product_type", ""),
+        user_persona=context.get("user_persona", ""),
+        key_metric=context.get("key_metric", ""),
+        current_value=context.get("current_value", ""),
+        target_value=context.get("target_value", "")
+    )
+    
+    raw = safe_call_llm(prompt, temperature=0.7)
+    parsed = extract_json_from_text(raw)
 
-    # Check for risks
-    if not plan.get("risks_and_assumptions"):
-        issues.append("No risks and assumptions defined. Consider potential pitfalls.")
-        
-    return issues
+    hyps = []
+    if parsed and "hypotheses" in parsed:
+        for h in parsed["hypotheses"]:
+            if isinstance(h, dict):
+                hyps.append({
+                    "hypothesis": h.get("hypothesis", "").strip(),
+                    "rationale": h.get("rationale", "").strip(),
+                    "example_implementation": h.get("example_implementation", "").strip(),
+                    "behavioral_basis": h.get("behavioral_basis", "").strip()
+                })
+    
+    # Ensure we always return at least one hypothesis
+    if not hyps:
+        hyps.append({
+            "hypothesis": "If we change [variable], then [metric] will improve because [rationale]",
+            "rationale": "",
+            "example_implementation": "",
+            "behavioral_basis": ""
+        })
+    
+    return hyps
 
-# ============ Sanitization Helpers ============
-def sanitize_plan(raw_plan: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Sanitizes and normalizes the raw LLM output to a predefined schema.
-    This is a critical step to handle LLM quirks and ensure backward compatibility.
-    """
+def generate_hypothesis_details(hypothesis: str, context: dict) -> dict:
+    """Enrich a hypothesis with details - main.py expects this exact function name."""
+    return expand_hypothesis_with_details(hypothesis, context)
+
+def expand_hypothesis_with_details(hypothesis: str, context: dict) -> dict:
+    """Enrich a hypothesis with rationale, example, and behavioral basis."""
+    if not hypothesis or not isinstance(context, dict):
+        return {
+            "hypothesis": hypothesis or "",
+            "rationale": "",
+            "example_implementation": "",
+            "behavioral_basis": ""
+        }
+    
+    prompt = f"""Expand this hypothesis into full PRD-ready details:
+    
+Hypothesis: {hypothesis}
+
+Context:
+- Business Goal: {context.get('business_goal', '')}
+- Product: {context.get('product_type', '')}
+- User: {context.get('user_persona', '')}
+- Metric: {context.get('key_metric', '')}
+
+Return JSON with:
+{{
+  "hypothesis": "...", 
+  "rationale": "...",
+  "example_implementation": "...",
+  "behavioral_basis": "..."
+}}"""
+    
+    raw = safe_call_llm(prompt, temperature=0.5)
+    parsed = extract_json_from_text(raw)
+    
+    if not parsed:
+        parsed = {}
+    
+    return {
+        "hypothesis": parsed.get("hypothesis", hypothesis).strip(),
+        "rationale": parsed.get("rationale", "").strip(),
+        "example_implementation": parsed.get("example_implementation", "").strip(),
+        "behavioral_basis": parsed.get("behavioral_basis", "").strip()
+    }
+
+# ============ PRD Generation ============
+def generate_experiment_plan(context: dict, hypothesis: dict) -> dict:
+    """Generate full PRD from context and hypothesis - main.py expects this exact function."""
+    if not isinstance(context, dict):
+        context = {}
+    if not isinstance(hypothesis, dict):
+        hypothesis = {}
+    
+    prompt = PROMPTS["prd"].format(
+        context=json.dumps(context, indent=2),
+        hypothesis=json.dumps(hypothesis, indent=2)
+    )
+    
+    raw = safe_call_llm(prompt, temperature=0.5)
+    parsed = extract_json_from_text(raw)
+    
+    return sanitize_experiment_plan(parsed)
+
+def validate_experiment_plan(plan: dict) -> dict:
+    """Validate PRD for completeness and quality - main.py expects this exact function."""
+    if not isinstance(plan, dict):
+        return {
+            "missing_fields": [],
+            "inconsistencies": ["Plan is not a valid dictionary"],
+            "suggestions": ["Please provide a valid experiment plan"]
+        }
+    
+    prompt = PROMPTS["validate"].format(
+        plan=json.dumps(plan, indent=2)
+    )
+    
+    raw = safe_call_llm(prompt, temperature=0.3)
+    parsed = extract_json_from_text(raw)
+    
+    if not parsed:
+        return {
+            "missing_fields": [],
+            "inconsistencies": [],
+            "suggestions": ["Could not validate plan - validation service unavailable"]
+        }
+    
+    return {
+        "missing_fields": parsed.get("missing_fields", []),
+        "inconsistencies": parsed.get("inconsistencies", []),
+        "suggestions": parsed.get("suggestions", [])
+    }
+
+def generate_prd(context: dict, hypothesis: dict) -> dict:
+    """Alias for generate_experiment_plan for backward compatibility."""
+    return generate_experiment_plan(context, hypothesis)
+
+# ============ Tips Generation ============
+def generate_dynamic_tips(context: dict, current_step: str) -> List[str]:
+    """Generate contextual tips - main.py expects this exact function signature."""
+    return generate_tips(current_step, context)
+
+def generate_tips(step: str, context: dict) -> List[str]:
+    """Generate contextual PM tips for a given step."""
+    if not step or not isinstance(context, dict):
+        return get_fallback_tips(step)
+    
+    prompt = PROMPTS["tips"].format(
+        step=step,
+        context=json.dumps(context, indent=2)
+    )
+    
+    raw = safe_call_llm(prompt, temperature=0.6)
+    parsed = extract_json_from_text(raw)
+    
+    if isinstance(parsed, list):
+        return [str(tip) for tip in parsed][:5]
+    elif isinstance(parsed, dict) and "tips" in parsed:
+        return [str(tip) for tip in parsed["tips"]][:5]
+    elif isinstance(raw, str):
+        return [line.strip() for line in raw.split("\\n") if line.strip()][:5]
+    
+    return get_fallback_tips(step)
+
+def get_fallback_tips(step: str) -> List[str]:
+    """Static fallback tips when LLM is unavailable."""
+    base_tips = {
+        "inputs": [
+            "🎯 Keep business goals specific and measurable",
+            "📊 Focus on one primary metric",
+            "🔢 Include baseline metrics for better estimates"
+        ],
+        "hypothesis": [
+            "✍️ Make hypotheses falsifiable",
+            "📌 Connect to user personas",
+            "⚡ Start with small changes"
+        ],
+        "prd": [
+            "🛡️ Add guardrail metrics",
+            "📐 Verify sample size feasibility",
+            "🔁 Define clear rollback criteria"
+        ]
+    }
+    return base_tips.get(step, base_tips["prd"])
+
+# ============ Sanitization ============
+def sanitize_experiment_plan(raw_plan: dict) -> dict:
+    """Ensure PRD has all required fields with proper types."""
     if not isinstance(raw_plan, dict):
-        return {}
-
-    sanitized: Dict[str, Any] = {
-        "metadata": {"title": "", "team": "", "owner": ""},
-        "problem_statement": "",
+        raw_plan = {}
+    
+    # Start with empty structure
+    sanitized = {
+        "metadata": {
+            "title": str(raw_plan.get("metadata", {}).get("title", "Untitled Experiment")),
+            "team": str(raw_plan.get("metadata", {}).get("team", "")),
+            "owner": str(raw_plan.get("metadata", {}).get("owner", "")),
+            "experiment_id": str(raw_plan.get("metadata", {}).get("experiment_id", ""))
+        },
+        "problem_statement": str(raw_plan.get("problem_statement", "")),
         "hypotheses": [],
-        "proposed_solution": "",
+        "proposed_solution": str(raw_plan.get("proposed_solution", "")),
         "variants": [],
         "metrics": [],
         "guardrail_metrics": [],
-        "experiment_design": {},
-        "success_criteria": {},
-        "success_learning_criteria": {},
+        "experiment_design": {
+            "traffic_allocation": str(raw_plan.get("experiment_design", {}).get("traffic_allocation", "50/50")),
+            "sample_size_per_variant": int(raw_plan.get("experiment_design", {}).get("sample_size_per_variant", 0)),
+            "total_sample_size": int(raw_plan.get("experiment_design", {}).get("total_sample_size", 0)),
+            "test_duration_days": int(raw_plan.get("experiment_design", {}).get("test_duration_days", 0)),
+            "dau_coverage_percent": float(raw_plan.get("experiment_design", {}).get("dau_coverage_percent", 0.0)),
+            "power": float(raw_plan.get("experiment_design", {}).get("power", 80.0))
+        },
+        "success_criteria": {
+            "confidence_level": float(raw_plan.get("success_criteria", {}).get("confidence_level", 95.0)),
+            "power": float(raw_plan.get("success_criteria", {}).get("power", 80.0)),
+            "MDE": float(raw_plan.get("success_criteria", {}).get("MDE", 1.0)),
+            "benchmark": str(raw_plan.get("success_criteria", {}).get("benchmark", "")),
+            "monitoring": str(raw_plan.get("success_criteria", {}).get("monitoring", ""))
+        },
+        "success_learning_criteria": {
+            "definition_of_success": str(raw_plan.get("success_learning_criteria", {}).get("definition_of_success", "")),
+            "stopping_rules": str(raw_plan.get("success_learning_criteria", {}).get("stopping_rules", "")),
+            "rollback_criteria": str(raw_plan.get("success_learning_criteria", {}).get("rollback_criteria", ""))
+        },
         "risks_and_assumptions": [],
-        "statistical_rationale": "",
+        "statistical_rationale": str(raw_plan.get("statistical_rationale", ""))
     }
 
-    # Scalars
-    for key in ["problem_statement", "proposed_solution", "statistical_rationale"]:
-        if raw_plan.get(key) is not None:
-            sanitized[key] = str(raw_plan.get(key))
+    # Process lists with type checking
+    for h in raw_plan.get("hypotheses", []):
+        if isinstance(h, dict):
+            sanitized["hypotheses"].append({
+                "hypothesis": str(h.get("hypothesis", "")),
+                "rationale": str(h.get("rationale", "")),
+                "example_implementation": str(h.get("example_implementation", "")),
+                "behavioral_basis": str(h.get("behavioral_basis", ""))
+            })
 
-    # Metadata
-    meta = raw_plan.get("metadata", {})
-    if isinstance(meta, dict):
-        sanitized["metadata"]["title"] = str(meta.get("title", ""))
-        sanitized["metadata"]["team"] = str(meta.get("team", ""))
-        sanitized["metadata"]["owner"] = str(meta.get("owner", ""))
-
-    # Hypotheses
-    hyps = raw_plan.get("hypotheses", [])
-    if isinstance(hyps, list):
-        for h in hyps:
-            if isinstance(h, dict):
-                sanitized["hypotheses"].append({
-                    "hypothesis": str(h.get("hypothesis", "")),
-                    "rationale": str(h.get("rationale", "")),
-                    "example_implementation": str(h.get("example_implementation", "")),
-                    "behavioral_basis": str(h.get("behavioral_basis", ""))
-                })
-# prompt_engine.py — Part 3/4 (Fixed)
-
-# Sanitize list-based fields
     for v in raw_plan.get("variants", []):
         if isinstance(v, dict):
             sanitized["variants"].append({
@@ -283,114 +443,31 @@ def sanitize_plan(raw_plan: Dict[str, Any]) -> Dict[str, Any]:
 
     for m in raw_plan.get("metrics", []):
         if isinstance(m, dict):
-            importance = str(m.get("importance", "")).lower()
-            importance = "Primary" if importance == "primary" else "Secondary"
             sanitized["metrics"].append({
                 "name": str(m.get("name", "")),
                 "formula": str(m.get("formula", "")),
-                "importance": importance
+                "importance": "Primary" if str(m.get("importance", "")).lower() == "primary" else "Secondary"
             })
 
     for g in raw_plan.get("guardrail_metrics", []):
         if isinstance(g, dict):
-            direction = g.get("direction", "Decrease")
-            if direction not in ["Increase", "Decrease", "No Change"]:
-                direction = "Decrease"
             sanitized["guardrail_metrics"].append({
                 "name": str(g.get("name", "")),
-                "direction": direction,
+                "direction": g.get("direction", "Decrease") if g.get("direction") in ["Increase", "Decrease", "No Change"] else "Decrease",
                 "threshold": str(g.get("threshold", ""))
             })
 
     for r in raw_plan.get("risks_and_assumptions", []):
         if isinstance(r, dict):
-            severity = r.get("severity", "Medium")
-            if severity not in ["High", "Medium", "Low"]:
-                severity = "Medium"
             sanitized["risks_and_assumptions"].append({
                 "risk": str(r.get("risk", "")),
-                "severity": severity,
+                "severity": r.get("severity", "Medium") if r.get("severity") in ["High", "Medium", "Low"] else "Medium",
                 "mitigation": str(r.get("mitigation", ""))
             })
 
-    # Sanitize dictionary fields with type coercion
-    ed = raw_plan.get("experiment_design", {})
-    if isinstance(ed, dict):
-        sanitized["experiment_design"] = {
-            "traffic_allocation": str(ed.get("traffic_allocation", "")),
-            "sample_size_per_variant": int(ed.get("sample_size_per_variant", 0)),
-            "total_sample_size": int(ed.get("total_sample_size", 0)),
-            "test_duration_days": int(ed.get("test_duration_days", 0)),
-            "dau_coverage_percent": float(ed.get("dau_coverage_percent", 0.0)),
-            "power": float(ed.get("power", 80.0)),
-        }
-
-    sc = raw_plan.get("success_criteria", {})
-    if isinstance(sc, dict):
-        sanitized["success_criteria"] = {
-            "confidence_level": float(sc.get("confidence_level", 95.0)),
-            "power": float(sc.get("power", 80.0)),
-            "MDE": float(sc.get("MDE", 1.0)),
-            "benchmark": str(sc.get("benchmark", "")),
-            "monitoring": str(sc.get("monitoring", "")),
-        }
-
-    slc = raw_plan.get("success_learning_criteria", {})
-    if isinstance(slc, dict):
-        sanitized["success_learning_criteria"] = {
-            "definition_of_success": str(slc.get("definition_of_success", "")),
-            "stopping_rules": str(slc.get("stopping_rules", "")),
-            "rollback_criteria": str(slc.get("rollback_criteria", "")),
-        }
-
     return sanitized
 
-
-# ============ Public Functions (Main API) ============
-
-def generate_hypotheses(inputs: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Generates a set of A/B test hypotheses based on business context."""
-    raw_output = safe_call_llm(PROMPTS["hypotheses"], inputs)
-    hyps_list = raw_output.get("hypotheses", [])
-    if isinstance(hyps_list, list):
-        return hyps_list
-    return []
-
-def expand_hypothesis_with_details(business_context: Dict[str, Any], hypothesis_info: Dict[str, Any]) -> Dict[str, Any]:
-    """Expands a single hypothesis with behavioral basis and implementation details."""
-    inputs = {**business_context, **hypothesis_info}
-    raw_output = safe_call_llm(PROMPTS["hypothesis_details"], inputs)
-    return raw_output if isinstance(raw_output, dict) else {}
-
-def generate_experiment_plan(business_context: Dict[str, Any], hypothesis_details: Dict[str, Any]) -> Dict[str, Any]:
-    """Generates a complete experiment plan (PRD) JSON from a hypothesis."""
-    inputs = {**business_context, **hypothesis_details}
-    raw_output = safe_call_llm(PROMPTS["prd"], inputs)
-    return sanitize_plan(raw_output)
-
-def validate_experiment_plan(plan: Dict[str, Any]) -> List[str]:
-    """Validates a given experiment plan against best practices."""
-    return _validate_experiment_plan(plan)
-
-def generate_tips(current_step: str, context: Dict[str, Any]) -> List[str]:
-    """Generates contextual tips for the user based on their current progress."""
-    raw_output = safe_call_llm(PROMPTS["tips"], {"current_step": current_step, "context": json.dumps(context, indent=2)})
-    return raw_output if isinstance(raw_output, list) else []
-
-# ============ Backward Compatibility Aliases ============
-# These functions ensure that older main.py versions still work without modification.
-def generate_prd(business_context: Dict[str, Any], hypothesis_details: Dict[str, Any]) -> Dict[str, Any]:
-    """Alias for generate_experiment_plan for backward compatibility."""
-    return generate_experiment_plan(business_context, hypothesis_details)
-
-def sanitize_plan_for_legacy(raw_plan: Dict[str, Any]) -> Dict[str, Any]:
-    """Alias for sanitize_plan for backward compatibility."""
-    return sanitize_plan(raw_plan)
-
-def generate_hypothesis_details(business_context: Dict[str, Any], hypothesis_info: Dict[str, Any]) -> Dict[str, Any]:
-    """Alias for expand_hypothesis_with_details."""
-    return expand_hypothesis_with_details(business_context, hypothesis_info)
-
-def generate_dynamic_tips(current_step: str, context: Dict[str, Any]) -> List[str]:
-    """Alias for generate_tips."""
-    return generate_tips(current_step, context)
+def sanitize_plan(plan: dict) -> dict:
+    """Alias for sanitize_experiment_plan for compatibility."""
+    return sanitize_experiment_plan(plan)'''
+))
