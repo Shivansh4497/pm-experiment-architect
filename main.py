@@ -1155,6 +1155,9 @@ def main():
     # Step 6: Finalize & Export
     # -------------------------
     st.header("Step 6: Finalize & Export")
+    ed = st.session_state.get("experiment_design", {})
+    if not isinstance(ed, dict):
+        ed = {}
     if "experiment_plan" in st.session_state:
         plan = st.session_state["experiment_plan"]
 
