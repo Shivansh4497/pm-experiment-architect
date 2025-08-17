@@ -554,7 +554,7 @@ def prd_to_markdown(plan: Dict[str, Any]) -> str:
         md.append("")
 
     md.append("## Experiment Design & Rollout")
-    ed = ensure_dict(plan.get("experiment_design", {})))
+    ed = ensure_dict(plan.get("experiment_design", {}))
     md.append(f"- **Traffic Allocation:** {ed.get('traffic_allocation','')}")
     md.append(f"- **Sample Size / Variant:** {ed.get('sample_size_per_variant','')}")
     md.append(f"- **Total Sample Size:** {ed.get('total_sample_size','')}")
@@ -577,7 +577,7 @@ def prd_to_markdown(plan: Dict[str, Any]) -> str:
         md.append(f"- **Rollback Criteria:** {sl.get('rollback_criteria','')}")
         md.append("")
 
-    sc = ensure_dict(plan.get("success_criteria", {})))
+    sc = ensure_dict(plan.get("success_criteria", {}))
     md.append("## Statistical Rationale & Success Criteria")
     md.append(f"- **Confidence Level:** {sc.get('confidence_level','')}%")
     md.append(f"- **Power:** {sc.get('power','')}%")
