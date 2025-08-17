@@ -534,7 +534,7 @@ def prd_to_markdown(plan: Dict[str, Any]) -> str:
     md.append("## Proposed Solution & Variants")
     md.append(plan.get("proposed_solution", "") or "-")
     md.append("")
-    for v in ensure_list(plan.get("variants"))):
+    for v in ensure_list(plan.get("variants")):
         md.append(f"- **Control:** {v.get('control','')}")
         md.append(f"- **Variation:** {v.get('variation','')}")
         if v.get("notes"):
