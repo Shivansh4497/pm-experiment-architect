@@ -794,6 +794,7 @@ def main():
                     key="edit_problem"
                 )
                 if st.button("♻️ Regenerate Problem Statement", key="regen_problem"):
+                    # --- MODIFIED: Added graceful error handling ---
                     with st.spinner("Regenerating problem statement..."):
                         try:
                             ctx = st.session_state.get("sidebar_context", {})
@@ -807,7 +808,21 @@ def main():
                             else:
                                 st.warning("LLM not available.")
                         except Exception as e:
-                            st.error(f"Failed to regenerate problem statement: {str(e)}")
+                            st.error(f"Failed to regenerate: {str(e)}")
+
+            # --- MODIFIED: Added Live Validation and placeholder for hypothesis ---
+            with st.expander("🔬 Hypothesis", expanded=True):
+                # Ensure hypotheses list exists and has at least one item
+                if not st.session_state.final_prd.get("hypotheses"):
+                    st.session_state.final_prd["hypotheses"] = [{"hypothesis": ""}]
+                
+                hyp = st.session_state.final_prd["hypotheses"][0]
+                hyp['hypothesis'] = st.text_area("Hypothesis Statement", value=hyp.get('hypothesis', ''), height=100, key="edit_hypothesis_statement")
+
+                # --- NEW: Live Validation Logic ---
+                primary_metric = next((m for m in st.session_state.final_prd.get('metrics', []) if m.get('importance') == 'Primary'), None)
+                if primary_metric and primary_metric.get('name') and hyp.get('hypothesis') and primary_metric['name'].lower() not in hyp['hypothesis'].lower():
+                    st.warning(f"💡 Suggestion: Ensure your hypothesis clearly relates to your primary metric ('{primary_metric['name']}').")
 
             # Proposed Solution & Variants
             with st.expander("🛠️ Proposed Solution & Variants", expanded=False):
@@ -823,26 +838,13 @@ def main():
                     variants = [{"control": "", "variation": "", "notes": ""}]
                 
                 v0 = variants[0]
-                v0["control"] = st.text_area(
-                    "Control", 
-                    value=v0.get("control",""), 
-                    height=80, 
-                    key="edit_vctrl"
-                )
-                v0["variation"] = st.text_area(
-                    "Variation", 
-                    value=v0.get("variation",""), 
-                    height=80, 
-                    key="edit_vvar"
-                )
-                v0["notes"] = st.text_input(
-                    "Notes", 
-                    value=v0.get("notes",""), 
-                    key="edit_vnotes"
-                )
+                v0["control"] = st.text_area("Control", value=v0.get("control",""), height=80, key="edit_vctrl")
+                v0["variation"] = st.text_area("Variation", value=v0.get("variation",""), height=80, key="edit_vvar")
+                v0["notes"] = st.text_input("Notes", value=v0.get("notes",""), key="edit_vnotes")
                 st.session_state["final_prd"]["variants"] = [v0]
                 
                 if st.button("♻️ Regenerate Solution & Variants", key="regen_variants"):
+                    # --- MODIFIED: Added graceful error handling ---
                     with st.spinner("Regenerating variants..."):
                         try:
                             ctx = st.session_state.get("sidebar_context", {})
@@ -857,11 +859,11 @@ def main():
                             else:
                                 st.warning("LLM not available.")
                         except Exception as e:
-                            st.error(f"Failed to regenerate variants: {str(e)}")
+                            st.error(f"Failed to regenerate: {str(e)}")
 
-            # --- MODIFIED: This section is now dynamic and has a new title ---
-            with st.expander("📊 Success Metrics", expanded=False):
-                if 'metrics' not in st.session_state.final_prd or not isinstance(st.session_state.final_prd['metrics'], list):
+            # --- MODIFIED: Replaced static metric editing with Dynamic List ---
+            with st.expander("📊 Success Metrics", expanded=True):
+                if 'metrics' not in st.session_state.final_prd or not isinstance(st.session_state.final_prd.get('metrics'), list):
                     st.session_state.final_prd['metrics'] = []
                 
                 for i, metric in enumerate(st.session_state.final_prd['metrics']):
@@ -877,9 +879,9 @@ def main():
                     st.session_state.final_prd['metrics'].append({'name': '', 'formula': '', 'importance': 'Secondary'})
                     st.rerun()
 
-            # --- MODIFIED: This section is now dynamic ---
+            # --- MODIFIED: Replaced static guardrail editing with Dynamic List ---
             with st.expander("🛡️ Guardrail Metrics", expanded=False):
-                if 'guardrail_metrics' not in st.session_state.final_prd or not isinstance(st.session_state.final_prd['guardrail_metrics'], list):
+                if 'guardrail_metrics' not in st.session_state.final_prd or not isinstance(st.session_state.final_prd.get('guardrail_metrics'), list):
                     st.session_state.final_prd['guardrail_metrics'] = []
 
                 for i, guardrail in enumerate(st.session_state.final_prd['guardrail_metrics']):
@@ -901,13 +903,11 @@ def main():
                     st.error("Statistical calculation requires the 'scipy' library. Please install it (`pip install scipy`) to enable this feature.")
                 else:
                     st.info("Adjust the values below to automatically calculate sample size and test duration.")
-                    # Ensure the experiment_design dict exists
                     if "experiment_design" not in st.session_state.final_prd:
                         st.session_state.final_prd["experiment_design"] = {}
                     ed = st.session_state.final_prd["experiment_design"]
 
                     c1, c2, c3 = st.columns(3)
-                    # --- NEW: Aggressive input validation via number_input parameters ---
                     ed['baseline_conversion_rate'] = c1.number_input(
                         "Baseline Conversion Rate (%)", min_value=0.01, max_value=99.99,
                         value=ed.get('baseline_conversion_rate', 10.0), step=0.1, format="%.2f",
@@ -924,14 +924,12 @@ def main():
                         help="Total daily users who will see either the control or variation."
                     )
                     
-                    # Perform Calculation in real-time
                     baseline_rate_dec = ed['baseline_conversion_rate'] / 100.0
                     mde_dec = ed['mde_percent'] / 100.0
                     power_dec = st.session_state.final_prd.get('success_criteria', {}).get('power', 80.0) / 100.0
                     
                     sample_size = calculate_sample_size(baseline_rate_dec, mde_dec, power=power_dec)
                     
-                    # Update state and display results
                     if sample_size:
                         ed['sample_size_per_variant'] = sample_size
                         ed['total_sample_size'] = sample_size * 2
@@ -948,9 +946,9 @@ def main():
                     else:
                         st.warning("Invalid inputs for calculation. Please check that MDE is not too high and baseline is valid.")
 
-            # --- MODIFIED: This section is now dynamic ---
+            # --- MODIFIED: Replaced static risk editing with Dynamic List ---
             with st.expander("⚠️ Risks & Assumptions", expanded=False):
-                if 'risks_and_assumptions' not in st.session_state.final_prd or not isinstance(st.session_state.final_prd['risks_and_assumptions'], list):
+                if 'risks_and_assumptions' not in st.session_state.final_prd or not isinstance(st.session_state.final_prd.get('risks_and_assumptions'), list):
                     st.session_state.final_prd['risks_and_assumptions'] = []
 
                 for i, risk in enumerate(st.session_state.final_prd['risks_and_assumptions']):
@@ -969,24 +967,13 @@ def main():
             # Success & Learning Criteria
             with st.expander("📘 Success & Learning Criteria", expanded=False):
                 sl = ensure_dict(st.session_state["final_prd"].get("success_learning_criteria", {}))
-                sl["definition_of_success"] = st.text_input(
-                    "Definition of Success", 
-                    value=sl.get("definition_of_success", ""), 
-                    key="edit_sl_def"
-                )
-                sl["stopping_rules"] = st.text_input(
-                    "Stopping Rules", 
-                    value=sl.get("stopping_rules", ""), 
-                    key="edit_sl_stop"
-                )
-                sl["rollback_criteria"] = st.text_input(
-                    "Rollback Criteria", 
-                    value=sl.get("rollback_criteria", ""), 
-                    key="edit_sl_roll"
-                )
+                sl["definition_of_success"] = st.text_input("Definition of Success", value=sl.get("definition_of_success", ""), key="edit_sl_def")
+                sl["stopping_rules"] = st.text_input("Stopping Rules", value=sl.get("stopping_rules", ""), key="edit_sl_stop")
+                sl["rollback_criteria"] = st.text_input("Rollback Criteria", value=sl.get("rollback_criteria", ""), key="edit_sl_roll")
                 st.session_state["final_prd"]["success_learning_criteria"] = sl
                 
                 if st.button("♻️ Regenerate Success & Learning", key="regen_success_learning"):
+                    # --- MODIFIED: Added graceful error handling ---
                     with st.spinner("Regenerating success criteria..."):
                         try:
                             ctx = st.session_state.get("sidebar_context", {})
@@ -1000,7 +987,7 @@ def main():
                             else:
                                 st.warning("LLM not available.")
                         except Exception as e:
-                            st.error(f"Failed to regenerate success & learning: {str(e)}")
+                            st.error(f"Failed to regenerate: {str(e)}")
 
             # Statistical Rationale
             with st.expander("📐 Statistical Rationale", expanded=False):
@@ -1011,6 +998,7 @@ def main():
                     key="edit_stat"
                 )
                 if st.button("♻️ Regenerate Statistical Rationale", key="regen_stats"):
+                    # --- MODIFIED: Added graceful error handling ---
                     with st.spinner("Regenerating statistical rationale..."):
                         try:
                             ctx = st.session_state.get("sidebar_context", {})
@@ -1024,7 +1012,7 @@ def main():
                             else:
                                 st.warning("LLM not available.")
                         except Exception as e:
-                            st.error(f"Failed to regenerate statistical rationale: {str(e)}")
+                            st.error(f"Failed to regenerate: {str(e)}")
 
             # Save edits back
             st.session_state["final_prd"] = sanitize_plan(st.session_state["final_prd"])
