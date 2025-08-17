@@ -178,7 +178,13 @@ def extract_json_from_text(text: str) -> dict:
         except json.JSONDecodeError:
             pass
     
-    return {}
+    # If all else fails, try to parse as a single JSON object even if malformed
+    try:
+        # Try to fix common issues like trailing commas
+        fixed = re.sub(r',\s*([}\]])', r'\1', text)
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        return {}
 
 # ============ Enhanced LLM Calling ============
 def safe_call_llm(prompt: str, model: str = DEFAULT_MODEL, temperature: float = DEFAULT_TEMPERATURE) -> str:
@@ -227,14 +233,16 @@ def generate_hypotheses(context: dict) -> List[Dict[str, str]]:
     # Transform response to expected format
     hypotheses = []
     if parsed:
-        # Handle both array and object responses
+        # Handle different response formats
         items = []
         if isinstance(parsed, list):
             items = parsed
         elif "hypotheses" in parsed:
             items = parsed["hypotheses"]
         elif isinstance(parsed, dict):
-            items = [parsed]
+            # Check if it's a single hypothesis in the expected format
+            if all(k in parsed for k in ["variable", "prediction", "rationale"]):
+                items = [parsed]
         
         for item in items[:3]:  # Only take first 3
             if not isinstance(item, dict):
