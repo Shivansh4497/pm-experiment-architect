@@ -159,6 +159,12 @@ def sanitize_text(x: Any) -> str:
 def ensure_list(x: Any) -> list:
     return x if isinstance(x, list) else []
 
+def safe_int(val, default=0):
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
 
 def ensure_dict(x: Any) -> dict:
     return x if isinstance(x, dict) else {}
@@ -1068,7 +1074,7 @@ def main():
         ed = plan.get("experiment_design", {})
         ed["traffic_allocation"] = st.text_input("Traffic Allocation", ed.get("traffic_allocation","50/50"))
         ed["sample_size_per_variant"] = st.number_input(
-            "Sample Size per Variant", value=int(ed.get("sample_size_per_variant", 0)), step=1
+            "Sample Size per Variant", value=safe_int(ed.get("sample_size_per_variant", 0)), step=1
         )
         ed["total_sample_size"] = st.number_input(
             "Total Sample Size", value=int(ed.get("total_sample_size", 0)), step=1
