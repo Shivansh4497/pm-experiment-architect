@@ -144,6 +144,34 @@ if Pydantic_AVAILABLE:
 # -------------------------
 # Utility helpers
 # -------------------------
+def generate_pdf_bytes_from_prd_dict(prd: dict) -> bytes:
+    """Generate PDF bytes from the PRD dictionary."""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    story = []
+
+    def add_section(title, content):
+        story.append(Paragraph(f"<b>{title}</b>", styles["Heading3"]))
+        if isinstance(content, dict):
+            for k, v in content.items():
+                story.append(Paragraph(f"{k}: {v}", styles["Normal"]))
+        elif isinstance(content, list):
+            for i, v in enumerate(content, 1):
+                story.append(Paragraph(f"{i}. {v}", styles["Normal"]))
+        else:
+            story.append(Paragraph(str(content), styles["Normal"]))
+        story.append(Spacer(1, 12))
+
+    # Loop over PRD sections
+    for section, content in prd.items():
+        add_section(section, content)
+
+    doc.build(story)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
+
 def sanitize_text(x: Any) -> str:
     if x is None:
         return ""
