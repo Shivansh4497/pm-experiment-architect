@@ -1,7 +1,5 @@
-# main.py — Complete and Fixed
-# This version includes all previously provided code segments,
-# a proper `main()` function, and a final `if __name__ == "__main__"` block
-# to ensure the application runs correctly and avoids the NameError.
+# main.py — Full updated app with improved UX, hypothesis enrichment, tabbed PRD preview/edit,
+# per-section regeneration, and a floating tips panel (manual refresh).
 
 import json
 import math
@@ -629,138 +627,129 @@ def generate_tips(context: Dict[str, Any], current_step: str) -> List[str]:
 # Main application
 # -------------------------
 def main():
-    """Main function to run the Streamlit app."""
-    # Global page config
-    st.set_page_config(layout="wide", page_title="Experiment Architect")
     inject_global_css()
-
+    st.set_page_config(layout="wide", page_title="Experiment Architect")
     st.title("💡 Experiment Architect")
     st.markdown("Automated A/B testing PRD generator. Based on a business problem, it generates hypotheses and a full experiment plan.")
 
     # State initialization
-    if "experiment_plan" not in st.session_state:
-        st.session_state["experiment_plan"] = None
+    if "sidebar_context" not in st.session_state:
+        st.session_state["sidebar_context"] = {
+            "business_goal": "",
+            "product_type": "",
+            "user_persona": "",
+            "key_metric": "",
+            "current_value": "",
+            "target_value": ""
+        }
     if "hypotheses" not in st.session_state:
         st.session_state["hypotheses"] = []
     if "chosen_hypothesis" not in st.session_state:
-        st.session_state["chosen_hypothesis"] = None
+        st.session_state["chosen_hypothesis"] = {}
+    if "experiment_plan" not in st.session_state:
+        st.session_state["experiment_plan"] = {}
     if "final_prd" not in st.session_state:
         st.session_state["final_prd"] = DEFAULT_PLAN
-    if "tips_list" not in st.session_state:
-        st.session_state["tips_list"] = generate_tips({}, "inputs")
     if "show_tips_panel" not in st.session_state:
-        st.session_state["show_tips_panel"] = True
-
-    # -------------------------
-    # Sidebar: User Inputs & Generation
-    # -------------------------
-    with st.sidebar:
-        st.header("1. Business Context")
-        
-        # Collect user inputs
-        business_goal = st.text_input("Business Goal", placeholder="e.g., Increase user engagement")
-        product_type = st.text_input("Product Type", placeholder="e.g., Mobile App")
-        user_persona = st.text_input("Target Persona", placeholder="e.g., First-time users")
-        key_metric = st.text_input("Key Metric", placeholder="e.g., Daily Active Users (DAU)")
-        current_value = st.text_input("Current Value", placeholder="e.g., 100,000 DAU")
-        target_value = st.text_input("Target Value", placeholder="e.g., 110,000 DAU")
-        
-        # Store context for tips & further generation
-        st.session_state["sidebar_context"] = {
-            "business_goal": business_goal,
-            "product_type": product_type,
-            "user_persona": user_persona,
-            "key_metric": key_metric,
-            "current_value": current_value,
-            "target_value": target_value,
-        }
-        
-        if st.button("Generate Hypotheses", use_container_width=True, key="gen_hyp"):
-            if not all([business_goal, product_type, user_persona, key_metric]):
-                st.warning("Please fill in all fields to generate hypotheses.")
-                st.session_state["hypotheses"] = []
-            else:
-                with st.spinner("Generating hypotheses..."):
-                    hypotheses_raw = _generate_hypotheses(st.session_state["sidebar_context"])
-                    st.session_state["hypotheses"] = ensure_list(hypotheses_raw)
-                    st.session_state["chosen_hypothesis"] = None
-                    st.session_state["experiment_plan"] = None
-                    st.session_state["final_prd"] = DEFAULT_PLAN
-                    st.success("Hypotheses generated!")
-                    st.session_state["tips_list"] = generate_tips(st.session_state["sidebar_context"], "hypothesis")
-
-    # -------------------------
-    # Main Content Area
-    # -------------------------
-    if not st.session_state["hypotheses"]:
-        st.info("💡 **Enter your product details in the sidebar and click 'Generate Hypotheses' to get started.**")
-
-    # Hypothesis Selection
-    elif not st.session_state["chosen_hypothesis"]:
-        st.header("2. Choose a Hypothesis")
-        
-        with st.expander("AI-Generated Hypotheses", expanded=True):
-            for i, hyp in enumerate(st.session_state["hypotheses"]):
-                col1, col2 = st.columns([0.8, 0.2])
-                with col1:
-                    st.subheader(f"Hypothesis {i+1}")
-                    st.markdown(f"**Hypothesis:** {hyp.get('hypothesis', '')}")
-                    st.markdown(f"**Rationale:** {hyp.get('rationale', '')}")
-                with col2:
-                    if st.button(f"Choose This One", key=f"choose_hyp_{i}"):
-                        with st.spinner("Expanding hypothesis details..."):
-                            expanded = _generate_hypothesis_details(
-                                st.session_state["sidebar_context"], hyp
-                            )
-                            st.session_state["chosen_hypothesis"] = expanded
-                            st.session_state["tips_list"] = generate_tips(st.session_state["chosen_hypothesis"], "prd")
-                            st.success(f"Hypothesis {i+1} selected!")
-                            st.experimental_rerun()
+        st.session_state["show_tips_panel"] = False
+    if "tips_list" not in st.session_state:
+        st.session_state["tips_list"] = []
     
-    # PRD Generation & Editing
-    else:
-        st.header("3. Your Experiment PRD")
-        chosen_hyp = st.session_state["chosen_hypothesis"]
+    # Sidebar for inputs
+    with st.sidebar:
+        st.subheader("1. Business Context")
+        ctx = st.session_state["sidebar_context"]
+        ctx["business_goal"] = st.text_input("Business Goal", value=ctx["business_goal"] or "increase revenue")
+        ctx["product_type"] = st.text_input("Product Type", value=ctx["product_type"] or "mobile gaming app")
+        ctx["user_persona"] = st.text_input("Target Persona", value=ctx["user_persona"] or "18 to 22 age group US users")
+        ctx["key_metric"] = st.text_input("Key Metric", value=ctx["key_metric"] or "ARPU")
+        ctx["current_value"] = st.text_input("Current Value", value=ctx["current_value"] or ".55")
+        ctx["target_value"] = st.text_input("Target Value", value=ctx["target_value"] or ".65")
         
-        if st.session_state["experiment_plan"] is None:
-            with st.spinner("Generating full experiment plan..."):
-                plan = _generate_experiment_plan(st.session_state["sidebar_context"], chosen_hyp)
-                if plan.get("error"):
-                    st.error(f"Failed to generate plan: {plan['error']}")
+        # Action button to generate hypotheses
+        if st.button("Generate Hypotheses", use_container_width=True):
+            if PROMPT_ENGINE_AVAILABLE and _generate_hypotheses:
+                with st.spinner("Generating hypotheses..."):
+                    generated_hypotheses = _generate_hypotheses(ctx)
+                    st.session_state["hypotheses"] = generated_hypotheses
+                    st.session_state["chosen_hypothesis"] = {}
                     st.session_state["experiment_plan"] = {}
-                else:
-                    st.session_state["experiment_plan"] = plan
-                    st.session_state["final_prd"] = sanitize_plan(plan)
-                    st.success("PRD generated! Now you can edit and export it.")
-                    st.experimental_rerun()
+                    st.success("Hypotheses generated!")
+            else:
+                st.warning("Prompt engine not available. Cannot generate hypotheses.")
+                st.session_state["hypotheses"] = [{
+                    "hypothesis": "Test Hypothesis 1", 
+                    "rationale": "Placeholder rationale", 
+                    "example_implementation": "Placeholder example", 
+                    "behavioral_basis": "Placeholder basis"
+                }]
 
-        # Display tabs for editing and preview
-        tab1, tab2 = st.tabs(["📝 Edit PRD", "👀 Preview & Export"])
+    # Main content area
+    if not st.session_state.get("hypotheses"):
+        st.info("Enter your product details in the sidebar and click 'Generate Hypotheses' to get started.")
+    elif not st.session_state.get("chosen_hypothesis"):
+        st.subheader("2. Choose a Hypothesis")
+        st.info("Hypotheses have been generated. Scroll down to view and select one.")
+        
+        # Display AI-generated hypotheses for user selection
+        with st.expander("🤖 AI-Generated Hypotheses", expanded=True):
+            if not st.session_state["hypotheses"]:
+                st.warning("No hypotheses were generated. Please try again or check the prompt engine.")
+            else:
+                for i, h in enumerate(st.session_state["hypotheses"]):
+                    with st.container(border=True):
+                        st.markdown(f"**Hypothesis {i+1}:** {h.get('hypothesis','')}")
+                        st.markdown(f"**Rationale:** {h.get('rationale','')}")
+                        st.markdown(f"**Implementation:** {h.get('example_implementation','')}")
+                        st.markdown(f"**Behavioral Basis:** {h.get('behavioral_basis','')}")
 
-        # Edit tab
+                        if st.button(f"Choose This One", key=f"choose_hyp_{i}"):
+                            st.session_state["chosen_hypothesis"] = h
+                            
+                            if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
+                                with st.spinner("Generating full PRD..."):
+                                    prd_raw = _generate_experiment_plan(st.session_state["sidebar_context"], h)
+                                    if isinstance(prd_raw, dict):
+                                        st.session_state["experiment_plan"] = prd_raw
+                                    else:
+                                        st.session_state["experiment_plan"] = extract_json_from_text(prd_raw)
+                                    st.session_state["final_prd"] = sanitize_plan(st.session_state["experiment_plan"])
+                                    st.success("Full PRD generated!")
+                            else:
+                                st.session_state["experiment_plan"] = DEFAULT_PLAN
+                                st.session_state["final_prd"] = sanitize_plan(DEFAULT_PLAN)
+                                st.warning("Prompt engine not available. Generated a default PRD plan.")
+                            st.rerun()
+
+    else:
+        # PRD editing and preview tabs
+        st.subheader("3. Edit & Finalize PRD")
+        st.markdown("Edit the generated PRD sections below. Use the **Preview** tab to see the final document.")
+        
+        tab1, tab2 = st.tabs(["✍️ Edit PRD", "👁️ Preview & Export"])
+
         with tab1:
             # Metadata
-            st.markdown("### Metadata")
-            with st.container():
-                cols_meta = st.columns(3)
-                meta_plan = st.session_state["final_prd"]["metadata"]
-                meta_plan["title"] = cols_meta[0].text_input("PRD Title", value=meta_plan.get("title", ""), key="edit_title")
-                meta_plan["team"] = cols_meta[1].text_input("Team", value=meta_plan.get("team", ""), key="edit_team")
-                meta_plan["owner"] = cols_meta[2].text_input("Owner", value=meta_plan.get("owner", ""), key="edit_owner")
-            
+            with st.expander("📝 Metadata", expanded=True):
+                meta = st.session_state["final_prd"]["metadata"]
+                meta["title"] = st.text_input("Title", value=meta["title"], key="edit_title")
+                meta["team"] = st.text_input("Team", value=meta["team"], key="edit_team")
+                meta["owner"] = st.text_input("Owner", value=meta["owner"], key="edit_owner")
+                st.session_state["final_prd"]["metadata"] = meta
+
             # Problem Statement
-            with st.expander("💡 Problem Statement", expanded=False):
+            with st.expander("❓ Problem Statement", expanded=False):
                 st.session_state["final_prd"]["problem_statement"] = st.text_area(
                     "Problem Statement",
                     value=st.session_state["final_prd"].get("problem_statement", ""),
                     height=120,
-                    key="edit_problem_statement"
+                    key="edit_problem"
                 )
-                if st.button("♻️ Regenerate Problem Statement", key="regen_problem_statement"):
+                if st.button("♻️ Regenerate Problem Statement", key="regen_problem"):
                     with st.spinner("Regenerating problem statement..."):
                         try:
                             ctx = st.session_state.get("sidebar_context", {})
-                            hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
+                            hyp = st.session_state.get("chosen_hypothesis", {})
                             if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
                                 raw_new = _generate_experiment_plan(ctx, hyp)
                                 parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
