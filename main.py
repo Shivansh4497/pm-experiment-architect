@@ -1,6 +1,7 @@
-# main.py — Part 1/3 (Fixed)
-# Full updated app with improved UX, hypothesis enrichment, tabbed PRD preview/edit,
-# per-section regeneration, and a floating tips panel (manual refresh).
+# main.py — Complete and Fixed
+# This version includes all previously provided code segments,
+# a proper `main()` function, and a final `if __name__ == "__main__"` block
+# to ensure the application runs correctly and avoids the NameError.
 
 import json
 import math
@@ -302,7 +303,6 @@ def generate_pdf_bytes_from_prd_dict(plan: Dict[str, Any]) -> Optional[bytes]:
     except Exception as e:
         st.error(f"PDF generation failed: {str(e)}")
         return None
-# main.py — Part 2/3 (Fixed)
 
 def generate_docx_bytes_from_plan(plan: Dict[str, Any]) -> Optional[bytes]:
     """Generate DOCX bytes from PRD dict using python-docx."""
@@ -624,186 +624,328 @@ def generate_tips(context: Dict[str, Any], current_step: str) -> List[str]:
         ]
     }
     return base_tips.get(current_step, base_tips["prd"])
-# main.py — Part 3/4 (Fixed)
+
+# -------------------------
+# Main application
+# -------------------------
+def main():
+    """Main function to run the Streamlit app."""
+    # Global page config
+    st.set_page_config(layout="wide", page_title="Experiment Architect")
+    inject_global_css()
+
+    st.title("💡 Experiment Architect")
+    st.markdown("Automated A/B testing PRD generator. Based on a business problem, it generates hypotheses and a full experiment plan.")
+
+    # State initialization
+    if "experiment_plan" not in st.session_state:
+        st.session_state["experiment_plan"] = None
+    if "hypotheses" not in st.session_state:
+        st.session_state["hypotheses"] = []
+    if "chosen_hypothesis" not in st.session_state:
+        st.session_state["chosen_hypothesis"] = None
+    if "final_prd" not in st.session_state:
+        st.session_state["final_prd"] = DEFAULT_PLAN
+    if "tips_list" not in st.session_state:
+        st.session_state["tips_list"] = generate_tips({}, "inputs")
+    if "show_tips_panel" not in st.session_state:
+        st.session_state["show_tips_panel"] = True
+
+    # -------------------------
+    # Sidebar: User Inputs & Generation
+    # -------------------------
+    with st.sidebar:
+        st.header("1. Business Context")
+        
+        # Collect user inputs
+        business_goal = st.text_input("Business Goal", placeholder="e.g., Increase user engagement")
+        product_type = st.text_input("Product Type", placeholder="e.g., Mobile App")
+        user_persona = st.text_input("Target Persona", placeholder="e.g., First-time users")
+        key_metric = st.text_input("Key Metric", placeholder="e.g., Daily Active Users (DAU)")
+        current_value = st.text_input("Current Value", placeholder="e.g., 100,000 DAU")
+        target_value = st.text_input("Target Value", placeholder="e.g., 110,000 DAU")
+        
+        # Store context for tips & further generation
+        st.session_state["sidebar_context"] = {
+            "business_goal": business_goal,
+            "product_type": product_type,
+            "user_persona": user_persona,
+            "key_metric": key_metric,
+            "current_value": current_value,
+            "target_value": target_value,
+        }
+        
+        if st.button("Generate Hypotheses", use_container_width=True, key="gen_hyp"):
+            if not all([business_goal, product_type, user_persona, key_metric]):
+                st.warning("Please fill in all fields to generate hypotheses.")
+                st.session_state["hypotheses"] = []
+            else:
+                with st.spinner("Generating hypotheses..."):
+                    hypotheses_raw = _generate_hypotheses(st.session_state["sidebar_context"])
+                    st.session_state["hypotheses"] = ensure_list(hypotheses_raw)
+                    st.session_state["chosen_hypothesis"] = None
+                    st.session_state["experiment_plan"] = None
+                    st.session_state["final_prd"] = DEFAULT_PLAN
+                    st.success("Hypotheses generated!")
+                    st.session_state["tips_list"] = generate_tips(st.session_state["sidebar_context"], "hypothesis")
+
+    # -------------------------
+    # Main Content Area
+    # -------------------------
+    if not st.session_state["hypotheses"]:
+        st.info("💡 **Enter your product details in the sidebar and click 'Generate Hypotheses' to get started.**")
+
+    # Hypothesis Selection
+    elif not st.session_state["chosen_hypothesis"]:
+        st.header("2. Choose a Hypothesis")
+        
+        with st.expander("AI-Generated Hypotheses", expanded=True):
+            for i, hyp in enumerate(st.session_state["hypotheses"]):
+                col1, col2 = st.columns([0.8, 0.2])
+                with col1:
+                    st.subheader(f"Hypothesis {i+1}")
+                    st.markdown(f"**Hypothesis:** {hyp.get('hypothesis', '')}")
+                    st.markdown(f"**Rationale:** {hyp.get('rationale', '')}")
+                with col2:
+                    if st.button(f"Choose This One", key=f"choose_hyp_{i}"):
+                        with st.spinner("Expanding hypothesis details..."):
+                            expanded = _generate_hypothesis_details(
+                                st.session_state["sidebar_context"], hyp
+                            )
+                            st.session_state["chosen_hypothesis"] = expanded
+                            st.session_state["tips_list"] = generate_tips(st.session_state["chosen_hypothesis"], "prd")
+                            st.success(f"Hypothesis {i+1} selected!")
+                            st.experimental_rerun()
+    
+    # PRD Generation & Editing
+    else:
+        st.header("3. Your Experiment PRD")
+        chosen_hyp = st.session_state["chosen_hypothesis"]
+        
+        if st.session_state["experiment_plan"] is None:
+            with st.spinner("Generating full experiment plan..."):
+                plan = _generate_experiment_plan(st.session_state["sidebar_context"], chosen_hyp)
+                if plan.get("error"):
+                    st.error(f"Failed to generate plan: {plan['error']}")
+                    st.session_state["experiment_plan"] = {}
+                else:
+                    st.session_state["experiment_plan"] = plan
+                    st.session_state["final_prd"] = sanitize_plan(plan)
+                    st.success("PRD generated! Now you can edit and export it.")
+                    st.experimental_rerun()
+
+        # Display tabs for editing and preview
+        tab1, tab2 = st.tabs(["📝 Edit PRD", "👀 Preview & Export"])
+
+        # Edit tab
+        with tab1:
+            # Metadata
+            st.markdown("### Metadata")
+            with st.container():
+                cols_meta = st.columns(3)
+                meta_plan = st.session_state["final_prd"]["metadata"]
+                meta_plan["title"] = cols_meta[0].text_input("PRD Title", value=meta_plan.get("title", ""), key="edit_title")
+                meta_plan["team"] = cols_meta[1].text_input("Team", value=meta_plan.get("team", ""), key="edit_team")
+                meta_plan["owner"] = cols_meta[2].text_input("Owner", value=meta_plan.get("owner", ""), key="edit_owner")
+            
+            # Problem Statement
+            with st.expander("💡 Problem Statement", expanded=False):
+                st.session_state["final_prd"]["problem_statement"] = st.text_area(
+                    "Problem Statement",
+                    value=st.session_state["final_prd"].get("problem_statement", ""),
+                    height=120,
+                    key="edit_problem_statement"
+                )
+                if st.button("♻️ Regenerate Problem Statement", key="regen_problem_statement"):
+                    with st.spinner("Regenerating problem statement..."):
+                        try:
+                            ctx = st.session_state.get("sidebar_context", {})
+                            hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
+                            if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
+                                raw_new = _generate_experiment_plan(ctx, hyp)
+                                parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
+                                new_plan = sanitize_plan(parsed_new)
+                                st.session_state["final_prd"]["problem_statement"] = new_plan.get("problem_statement", "")
+                                st.success("Problem statement regenerated.")
+                            else:
+                                st.warning("LLM not available.")
+                        except Exception as e:
+                            st.error(f"Failed to regenerate problem statement: {str(e)}")
 
             # Proposed Solution & Variants
-# main.py — Part 3/4 (Fixed)
-
-            # Proposed Solution & Variants
-    with st.expander("🛠️ Proposed Solution & Variants", expanded=False):
-        st.session_state["final_prd"]["proposed_solution"] = st.text_area(
-                "Proposed Solution", 
+            with st.expander("🛠️ Proposed Solution & Variants", expanded=False):
+                st.session_state["final_prd"]["proposed_solution"] = st.text_area(
+                    "Proposed Solution", 
                     value=st.session_state["final_prd"].get("proposed_solution", ""), 
                     height=120, 
                     key="edit_solution"
-        )
+                )
                 
-        variants = ensure_list(st.session_state["final_prd"].get("variants", []))
-        if not variants:
-            variants = [{"control": "", "variation": "", "notes": ""}]
+                variants = ensure_list(st.session_state["final_prd"].get("variants", []))
+                if not variants:
+                    variants = [{"control": "", "variation": "", "notes": ""}]
                 
-        v0 = variants[0]
-        v0["control"] = st.text_area(
+                v0 = variants[0]
+                v0["control"] = st.text_area(
                     "Control", 
                     value=v0.get("control",""), 
                     height=80, 
                     key="edit_vctrl"
-        )
-        v0["variation"] = st.text_area(
+                )
+                v0["variation"] = st.text_area(
                     "Variation", 
                     value=v0.get("variation",""), 
                     height=80, 
                     key="edit_vvar"
-        )
-        v0["notes"] = st.text_input(
+                )
+                v0["notes"] = st.text_input(
                     "Notes", 
                     value=v0.get("notes",""), 
                     key="edit_vnotes"
-        )
-        st.session_state["final_prd"]["variants"] = [v0]
+                )
+                st.session_state["final_prd"]["variants"] = [v0]
                 
-        if st.button("♻️ Regenerate Solution & Variants", key="regen_variants"):
-            with st.spinner("Regenerating variants..."):
-                try:
-                    ctx = st.session_state.get("sidebar_context", {})
-                    hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
-                    if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
-                        raw_new = _generate_experiment_plan(ctx, hyp)
-                        parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
-                        new_plan = sanitize_plan(parsed_new)
-                        st.session_state["final_prd"]["proposed_solution"] = new_plan.get("proposed_solution", "")
-                        st.session_state["final_prd"]["variants"] = new_plan.get("variants", [])
-                        st.success("Solution & variants regenerated.")
-                    else:
-                        st.warning("LLM not available.")
-                except Exception as e:
-                    st.error(f"Failed to regenerate variants: {str(e)}")
+                if st.button("♻️ Regenerate Solution & Variants", key="regen_variants"):
+                    with st.spinner("Regenerating variants..."):
+                        try:
+                            ctx = st.session_state.get("sidebar_context", {})
+                            hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
+                            if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
+                                raw_new = _generate_experiment_plan(ctx, hyp)
+                                parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
+                                new_plan = sanitize_plan(parsed_new)
+                                st.session_state["final_prd"]["proposed_solution"] = new_plan.get("proposed_solution", "")
+                                st.session_state["final_prd"]["variants"] = new_plan.get("variants", [])
+                                st.success("Solution & variants regenerated.")
+                            else:
+                                st.warning("LLM not available.")
+                        except Exception as e:
+                            st.error(f"Failed to regenerate variants: {str(e)}")
 
             # Metrics
-    with st.expander("📊 Metrics & Guardrails", expanded=False):
-        metrics = ensure_list(st.session_state["final_prd"].get("metrics", []))
-        if not metrics:
-            metrics = [{"name": "", "formula": "", "importance": "Primary"}]
+            with st.expander("📊 Metrics & Guardrails", expanded=False):
+                metrics = ensure_list(st.session_state["final_prd"].get("metrics", []))
+                if not metrics:
+                    metrics = [{"name": "", "formula": "", "importance": "Primary"}]
                 
                 # Render up to 3 metrics editable
-        for i in range(min(len(metrics), 3)):  # Limit to 3 metrics
-            metrics[i]["name"] = st.text_input(
+                for i in range(min(len(metrics), 3)):  # Limit to 3 metrics
+                    metrics[i]["name"] = st.text_input(
                         f"Metric {i+1} Name", 
                         value=metrics[i].get("name",""), 
                         key=f"edit_m_name_{i}"
-            )
-            metrics[i]["formula"] = st.text_input(
+                    )
+                    metrics[i]["formula"] = st.text_input(
                         f"Metric {i+1} Formula", 
                         value=metrics[i].get("formula",""), 
                         key=f"edit_m_for_{i}"
-            )
-            metrics[i]["importance"] = st.selectbox(
+                    )
+                    metrics[i]["importance"] = st.selectbox(
                         f"Metric {i+1} Importance", 
                         ["Primary","Secondary"], 
                         index=0 if metrics[i].get("importance","Primary")=="Primary" else 1, 
                         key=f"edit_m_imp_{i}"
-            )
-        st.session_state["final_prd"]["metrics"] = metrics
+                    )
+                st.session_state["final_prd"]["metrics"] = metrics
                 
-        if st.button("♻️ Regenerate Metrics", key="regen_metrics"):
-            with st.spinner("Regenerating metrics..."):
-                try:
-                    ctx = st.session_state.get("sidebar_context", {})
-                    hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
-                    if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
-                        raw_new = _generate_experiment_plan(ctx, hyp)
-                        parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
-                        new_plan = sanitize_plan(parsed_new)
-                        st.session_state["final_prd"]["metrics"] = new_plan.get("metrics", [])
-                        st.session_state["final_prd"]["guardrail_metrics"] = new_plan.get("guardrail_metrics", [])
-                        st.success("Metrics regenerated.")
-                    else:
-                        st.warning("LLM not available.")
-                except Exception as e:
-                    st.error(f"Failed to regenerate metrics: {str(e)}")
+                if st.button("♻️ Regenerate Metrics", key="regen_metrics"):
+                    with st.spinner("Regenerating metrics..."):
+                        try:
+                            ctx = st.session_state.get("sidebar_context", {})
+                            hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
+                            if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
+                                raw_new = _generate_experiment_plan(ctx, hyp)
+                                parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
+                                new_plan = sanitize_plan(parsed_new)
+                                st.session_state["final_prd"]["metrics"] = new_plan.get("metrics", [])
+                                st.session_state["final_prd"]["guardrail_metrics"] = new_plan.get("guardrail_metrics", [])
+                                st.success("Metrics regenerated.")
+                            else:
+                                st.warning("LLM not available.")
+                        except Exception as e:
+                            st.error(f"Failed to regenerate metrics: {str(e)}")
 
             # Guardrail metrics
-    with st.expander("🛡️ Guardrail Metrics", expanded=False):
-        guardrails = ensure_list(st.session_state["final_prd"].get("guardrail_metrics", []))
-        if not guardrails:
-            guardrails = [{"name": "", "direction": "Decrease", "threshold": ""}]
+            with st.expander("🛡️ Guardrail Metrics", expanded=False):
+                guardrails = ensure_list(st.session_state["final_prd"].get("guardrail_metrics", []))
+                if not guardrails:
+                    guardrails = [{"name": "", "direction": "Decrease", "threshold": ""}]
                 
-        for i in range(min(len(guardrails), 3)):  # Limit to 3 guardrails
-            guardrails[i]["name"] = st.text_input(
+                for i in range(min(len(guardrails), 3)):  # Limit to 3 guardrails
+                    guardrails[i]["name"] = st.text_input(
                         f"Guardrail {i+1} Name", 
                         value=guardrails[i].get("name", ""), 
                         key=f"edit_g_name_{i}"
-            )
-            guardrails[i]["direction"] = st.selectbox(
+                    )
+                    guardrails[i]["direction"] = st.selectbox(
                         f"Guardrail {i+1} Direction", 
                         ["Increase", "Decrease", "No Change"], 
                         index=["Increase", "Decrease", "No Change"].index(guardrails[i].get("direction", "Decrease")), 
                         key=f"edit_g_dir_{i}"
-            )
-            guardrails[i]["threshold"] = st.text_input(
+                    )
+                    guardrails[i]["threshold"] = st.text_input(
                         f"Guardrail {i+1} Threshold", 
                         value=guardrails[i].get("threshold", ""), 
                         key=f"edit_g_thr_{i}"
-            )
-        st.session_state["final_prd"]["guardrail_metrics"] = guardrails
+                    )
+                st.session_state["final_prd"]["guardrail_metrics"] = guardrails
                 
-        if st.button("♻️ Regenerate Guardrails", key="regen_guardrails"):
-            with st.spinner("Regenerating guardrails..."):
-                try:
-                    ctx = st.session_state.get("sidebar_context", {})
-                    hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
-                    if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
-                        raw_new = _generate_experiment_plan(ctx, hyp)
-                        parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
-                        new_plan = sanitize_plan(parsed_new)
-                        st.session_state["final_prd"]["guardrail_metrics"] = new_plan.get("guardrail_metrics", [])
-                        st.success("Guardrails regenerated.")
-                    else:
-                        st.warning("LLM not available.")
-                except Exception as e:
-                    st.error(f"Failed to regenerate guardrails: {str(e)}")
+                if st.button("♻️ Regenerate Guardrails", key="regen_guardrails"):
+                    with st.spinner("Regenerating guardrails..."):
+                        try:
+                            ctx = st.session_state.get("sidebar_context", {})
+                            hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
+                            if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
+                                raw_new = _generate_experiment_plan(ctx, hyp)
+                                parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
+                                new_plan = sanitize_plan(parsed_new)
+                                st.session_state["final_prd"]["guardrail_metrics"] = new_plan.get("guardrail_metrics", [])
+                                st.success("Guardrails regenerated.")
+                            else:
+                                st.warning("LLM not available.")
+                        except Exception as e:
+                            st.error(f"Failed to regenerate guardrails: {str(e)}")
 
             # Risks & Assumptions
-    with st.expander("⚠️ Risks & Assumptions", expanded=False):
-        risks = ensure_list(st.session_state["final_prd"].get("risks_and_assumptions", []))
-        if not risks:
-            risks = [{"risk": "", "severity": "Medium", "mitigation": ""}]
+            with st.expander("⚠️ Risks & Assumptions", expanded=False):
+                risks = ensure_list(st.session_state["final_prd"].get("risks_and_assumptions", []))
+                if not risks:
+                    risks = [{"risk": "", "severity": "Medium", "mitigation": ""}]
                 
-        for i in range(min(len(risks), 3)):  # Limit to 3 risks
-            risks[i]["risk"] = st.text_input(
+                for i in range(min(len(risks), 3)):  # Limit to 3 risks
+                    risks[i]["risk"] = st.text_input(
                         f"Risk {i+1}", 
                         value=risks[i].get("risk", ""), 
                         key=f"edit_risk_{i}"
-            )
-            risks[i]["severity"] = st.selectbox(
+                    )
+                    risks[i]["severity"] = st.selectbox(
                         f"Severity {i+1}", 
                         ["High", "Medium", "Low"], 
                         index=["High", "Medium", "Low"].index(risks[i].get("severity", "Medium")), 
                         key=f"edit_r_sev_{i}"
-            )
-            risks[i]["mitigation"] = st.text_input(
+                    )
+                    risks[i]["mitigation"] = st.text_input(
                         f"Mitigation {i+1}", 
                         value=risks[i].get("mitigation", ""), 
                         key=f"edit_r_mit_{i}"
-            )
-        st.session_state["final_prd"]["risks_and_assumptions"] = risks
+                    )
+                st.session_state["final_prd"]["risks_and_assumptions"] = risks
                 
-        if st.button("♻️ Regenerate Risks", key="regen_risks"):
-            with st.spinner("Regenerating risks..."):
-                try:
-                    ctx = st.session_state.get("sidebar_context", {})
-                    hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
-                    if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
-                        raw_new = _generate_experiment_plan(ctx, hyp)
-                        parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
-                        new_plan = sanitize_plan(parsed_new)
-                        st.session_state["final_prd"]["risks_and_assumptions"] = new_plan.get("risks_and_assumptions", [])
-                        st.success("Risks regenerated.")
-                    else:
-                        st.warning("LLM not available.")
-                except Exception as e:
-                    st.error(f"Failed to regenerate risks: {str(e)}")
-# main.py — Part 4/4 (Fixed)
+                if st.button("♻️ Regenerate Risks", key="regen_risks"):
+                    with st.spinner("Regenerating risks..."):
+                        try:
+                            ctx = st.session_state.get("sidebar_context", {})
+                            hyp = st.session_state.get("final_prd", {}).get("hypotheses", [{}])[0]
+                            if PROMPT_ENGINE_AVAILABLE and _generate_experiment_plan:
+                                raw_new = _generate_experiment_plan(ctx, hyp)
+                                parsed_new = raw_new if isinstance(raw_new, dict) else extract_json_from_text(raw_new)
+                                new_plan = sanitize_plan(parsed_new)
+                                st.session_state["final_prd"]["risks_and_assumptions"] = new_plan.get("risks_and_assumptions", [])
+                                st.success("Risks regenerated.")
+                            else:
+                                st.warning("LLM not available.")
+                        except Exception as e:
+                            st.error(f"Failed to regenerate risks: {str(e)}")
 
             # Success & Learning Criteria
             with st.expander("📘 Success & Learning Criteria", expanded=False):
