@@ -668,21 +668,19 @@ def main():
         
         # Action button to generate hypotheses
         if st.button("Generate Hypotheses", use_container_width=True):
-            if PROMPT_ENGINE_AVAILABLE and _generate_hypotheses:
+            if PROMPT_ENGINE_AVAILABLE and _generate_hypotheses and _client:  # Add _client check
                 with st.spinner("Generating hypotheses..."):
-                    generated_hypotheses = _generate_hypotheses(ctx)
-                    st.session_state["hypotheses"] = generated_hypotheses
-                    st.session_state["chosen_hypothesis"] = {}
-                    st.session_state["experiment_plan"] = {}
-                    st.success("Hypotheses generated!")
+                    try:
+                        generated_hypotheses = _generate_hypotheses(ctx)
+                        if generated_hypotheses and "error" not in generated_hypotheses[0]:
+                            st.session_state["hypotheses"] = generated_hypotheses
+                            st.success("Hypotheses generated!")
+                        else:
+                            st.error("Failed to generate hypotheses - check your API key and inputs")
+                    except Exception as e:
+                        st.error(f"Hypothesis generation failed: {str(e)}")
             else:
-                st.warning("Prompt engine not available. Cannot generate hypotheses.")
-                st.session_state["hypotheses"] = [{
-                    "hypothesis": "Test Hypothesis 1", 
-                    "rationale": "Placeholder rationale", 
-                    "example_implementation": "Placeholder example", 
-                    "behavioral_basis": "Placeholder basis"
-                }]
+                st.error("LLM service unavailable - check Groq API configuration")
 
     # Main content area
     if not st.session_state.get("hypotheses"):
