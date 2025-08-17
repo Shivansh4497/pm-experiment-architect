@@ -12,8 +12,21 @@ from reportlab.lib.units import inch
 from docx import Document
 
 # ============ LLM Client Setup ============
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
+GROQ_AVAILABLE = False
+_client = None
+try:
+    # Import guarded so module still loads if Groq not installed
+    from groq import Groq  # type: ignore
+    GROQ_AVAILABLE = True
+    # instantiate safely (expect user to set GROQ_API_KEY in env)
+    try:
+        _client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+    except Exception:
+        # keep _client None if init failed
+        _client = None
+except Exception:
+    GROQ_AVAILABLE = False
+    _client = None
 
 # ============ Prompt Templates ============
 PROMPTS = {
