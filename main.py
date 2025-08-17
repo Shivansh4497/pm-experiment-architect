@@ -160,8 +160,24 @@ def ensure_list(x: Any) -> list:
     return x if isinstance(x, list) else []
 
 def safe_int(val, default=0):
+    """Convert val to int safely, fallback to default on error."""
     try:
-        return int(val)
+        if val is None:
+            return default
+        if isinstance(val, str) and val.strip() == "":
+            return default
+        return int(float(val))  # handles ints, floats, numeric strings
+    except (ValueError, TypeError):
+        return default
+
+def safe_float(val, default=0.0):
+    """Convert val to float safely, fallback to default on error."""
+    try:
+        if val is None:
+            return default
+        if isinstance(val, str) and val.strip() == "":
+            return default
+        return float(val)
     except (ValueError, TypeError):
         return default
 
@@ -1061,10 +1077,10 @@ def main():
         st.subheader("Success Criteria")
         sc = plan.get("success_criteria", {})
         sc["confidence_level"] = st.number_input(
-            "Confidence Level (%)", value=float(sc.get("confidence_level", 95)), step=1.0
+            "Confidence Level (%)", value=safe_float(ed.get("confidence_level", 95.0)), step=0.1
         )
         sc["MDE"] = st.number_input(
-            "Minimum Detectable Effect (%)", value=float(sc.get("MDE", 5.0)), step=0.1
+            "Minimum Detectable Effect (%)",  value=safe_float(ed.get("mde", 0.0)), step=0.1
         )
         sc["benchmark"] = st.text_input("Benchmark", sc.get("benchmark", ""))
         sc["monitoring"] = st.text_input("Monitoring", sc.get("monitoring", ""))
@@ -1077,13 +1093,13 @@ def main():
             "Sample Size per Variant", value=safe_int(ed.get("sample_size_per_variant", 0)), step=1
         )
         ed["total_sample_size"] = st.number_input(
-            "Total Sample Size", value=int(ed.get("total_sample_size", 0)), step=1
+            "Sample Size per Variant", value=safe_int(ed.get("sample_size_per_variant", 0)), step=1
         )
         ed["test_duration_days"] = st.number_input(
-            "Test Duration (days)", value=float(ed.get("test_duration_days", 14)), step=0.5
+            "Test Duration (days)", value=safe_float(ed.get("test_duration_days", 14)), step=0.5
         )
         ed["dau_coverage_percent"] = st.number_input(
-            "DAU Coverage (%)", value=float(ed.get("dau_coverage_percent", 50)), step=1.0
+            "DAU Coverage (%)", value=safe_float(ed.get("experiment_dau_coverage", 0.0)), step=0.1
         )
         plan["experiment_design"] = ed
 
