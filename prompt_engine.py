@@ -146,45 +146,58 @@ def extract_json(text: Any) -> Optional[Dict[str, Any]]:
 # -------------------------
 def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
     """
-    Create an LLM system/user prompt to generate a full PRD following the canonical schema.
-    This prompt is explicit about the exact JSON structure required.
+    Create a strongly personalized prompt to generate a full PRD following the canonical schema.
+    Forces the model to explicitly reference ALL user inputs in each relevant section.
     """
     ctx = {k: ("" if v is None else str(v)) for k, v in context.items()}
 
     schema_text = json.dumps(_CANONICAL_SCHEMA, indent=2)
     prompt = textwrap.dedent(f"""
     You are an expert Principal Product Manager and experimentation lead.
-    Your task: generate a single, valid JSON object that is a complete A/B experiment PRD.
-    The JSON MUST follow the schema exactly (keys present). If a section has no content, use an empty string or empty list.
 
-    CONTEXT:
-    - Business goal: {ctx.get('high_level_goal', '')}
-    - Product Type: {ctx.get('product_type', '')}
-    - Target User Persona: {ctx.get('target_user', '')}
-    - Key Metric: {ctx.get('key_metric', '')}
-    - Current Value: {ctx.get('current_value', '')}
-    - Target Value: {ctx.get('target_value', '')}
-    - Additional notes: {ctx.get('notes', '')}
-
-    OUTPUT SCHEMA (must be valid JSON, no extra text):
+    TASK:
+    Generate a single, valid JSON object for an A/B experiment PRD that STRICTLY adheres to this schema:
     {schema_text}
 
-    GUIDELINES:
-    - Provide at least 1 and up to 3 hypotheses in the specified format "If [change] then [outcome] because [rationale]".
-    - For each hypothesis include: hypothesis, rationale (mention any credible source or reasoning), example_implementation (step-by-step UI or flow changes), behavioral_basis (named principle).
-    - Variants: clearly and unambiguously describe control and variation.
-    - Metrics: include one Primary metric and any Secondary or Diagnostic metrics as needed; provide formulas if applicable.
-    - Guardrails: include metrics and thresholds to prevent regressions.
-    - Success & Learning Criteria: include definition_of_success, stopping_rules, and rollback_criteria—be concrete and actionable.
-    - Experiment design: provide an initial sample size if possible (use provided current/target/MDE/confidence); if you cannot compute numeric values, use null and explain briefly inside 'statistical_rationale'.
-    - Risks: list likely technical or user risks and a short mitigation for each.
-    - Next steps: give 3-6 verb-first, assignable next steps (e.g., 'Assign: Data - compute event funnel by 2025-08-20').
-    - Statistical rationale: explain why chosen confidence/MDE/sample-size is appropriate, or state what additional inputs are needed.
+    PERSONALIZATION CONSTRAINTS (MANDATORY):
+    - You MUST explicitly reference ALL provided inputs in the most relevant sections:
+      • Business goal: {ctx.get('high_level_goal', '')}
+      • Product type: {ctx.get('product_type', '')}
+      • Target persona: {ctx.get('target_user', '')}
+      • Key metric: {ctx.get('key_metric', '')}
+      • Baseline (current value): {ctx.get('current_value', '')}
+      • Target value: {ctx.get('target_value', '')}
+      • Chosen hypothesis (if present): {ctx.get('chosen_hypothesis', '')}
+      • Confidence / Power / MDE (if present): {ctx.get('success_criteria', '')}
+      • DAU coverage / traffic allocation (if present): {ctx.get('experiment_design', '')}
 
-    Return only valid JSON that adheres to the schema.
+    FORMATTING:
+    - Return ONLY a single JSON object (no markdown fences, no commentary).
+    - All keys from the schema must be present. Use empty strings/lists only when truly unknown.
+    - Keep language concrete, specific to the product type/persona, and avoid generic phrases.
+
+    SECTION GUIDANCE (QUALITY BAR):
+    - "metadata": Title should combine the business goal + product type. Owner/team come from inputs if present.
+    - "problem_statement": Explain WHY improving {ctx.get('key_metric','')} for {ctx.get('target_user','')} matters NOW; reference the baseline {ctx.get('current_value','')} vs target {ctx.get('target_value','')}.
+    - "hypotheses": If context contains a chosen hypothesis object, include it as the first item with fields (hypothesis, rationale, example_implementation, behavioral_basis). Do NOT invent a different one unless needed as alternates.
+    - "variants": Control = current {ctx.get('product_type','')} experience; Variation = change directly tied to the hypothesis.
+    - "metrics": Include the key metric as Primary and add 2–3 Secondary/Diagnostic that make sense for {ctx.get('product_type','')} and {ctx.get('target_user','')}. Include formulas when obvious.
+    - "guardrail_metrics": Include at least 2 guardrails (e.g., retention, latency, error rate, uninstalls) with direction/thresholds.
+    - "success_criteria": Fill confidence_level / power / MDE using inputs when present; otherwise set defaults and state assumptions in statistical_rationale.
+    - "experiment_design": Propose sample_size_per_variant and total_sample_size if possible (based on current→target). If not enough info, set nulls and justify in statistical_rationale. Include traffic_allocation and dau_coverage_percent guidance.
+    - "risks_and_assumptions": 3–6 risks with severity + mitigation; avoid generic risks that don’t fit the product type.
+    - "success_learning_criteria": Be decisive about stopping rules and rollback, aligned to the key metric and guardrails.
+    - "next_steps": 3–6 verb-first, assignable items with discipline tags (e.g., [Design], [Data], [Eng]).
+
+    IMPORTANT:
+    - Do NOT hallucinate numbers; when missing, keep numeric fields null but provide a short justification in statistical_rationale.
+    - Make every section feel written for the supplied product type and persona—not a template.
+
+    Return only valid JSON.
     """).strip()
 
     return prompt
+
 
 
 def _build_hypothesis_prompt(context: dict) -> str:
