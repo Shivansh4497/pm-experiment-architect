@@ -179,24 +179,18 @@ def extract_json_from_text(text: str) -> dict:
 
 # ============ Enhanced LLM Calling ============
 def safe_call_llm(prompt: str, model: str = DEFAULT_MODEL, temperature: float = DEFAULT_TEMPERATURE) -> str:
-    """Wrapper for Groq API with comprehensive error handling"""
     if not GROQ_AVAILABLE or _client is None:
-        print("🔴 LLM Service Unavailable - Install Groq and set GROQ_API_KEY")
-        return ""
+        return json.dumps({"error": "LLM service not configured"})  # Return structured error
     
     try:
         completion = _client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
-            response_format={"type": "json_object"} if "```json" in prompt else None,
+            # ... existing code ...
         )
         if not completion.choices:
-            raise ValueError("Empty response from LLM")
+            return json.dumps({"error": "Empty response from LLM"})
         return completion.choices[0].message.content
     except Exception as e:
-        print(f"🚨 LLM Error: {str(e)}")
-        return ""
+        return json.dumps({"error": str(e)})
 
 # ============ Fixed Hypothesis Generation ============
 def generate_hypotheses(context: dict) -> List[Dict[str, str]]:
