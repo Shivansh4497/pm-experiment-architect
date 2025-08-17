@@ -31,30 +31,32 @@ DEFAULT_TEMPERATURE = 0.7
 
 # ============ Enhanced Prompt Templates ============
 PROMPTS = {
-    "hypotheses": """You are an expert Product Manager specializing in behavioral psychology. Generate 3 A/B test hypotheses with:
+    "hypotheses": """You are an expert Product Manager specializing in behavioral psychology. Generate 3 A/B test hypotheses in JSON format with these exact keys:
 
-1. SPECIFIC CHANGE: The exact UI/feature to modify (e.g. "purchase button color")
-2. METRIC IMPACT: Quantified prediction (e.g. "increase ARPU by 12%")
-3. RATIONALE: Data/psychology basis (e.g. "red triggers urgency per color psychology studies")
-4. IMPLEMENTATION: Technical details (e.g. "Change #buy-btn from blue to #FF0000")
-5. BEHAVIORAL BASIS: Academic theory (e.g. "Color Affordance Theory (Norman, 1988)")
-
-Format each EXACTLY like this:
 {
-  "variable": "specific_element",
-  "prediction": "metric_impact",
-  "rationale": "scientific_basis", 
-  "implementation": "technical_steps",
-  "behavioral_basis": "theory(reference)"
+  "hypotheses": [
+    {
+      "variable": "specific_element_to_change",
+      "prediction": "metric_impact",
+      "rationale": "scientific_basis", 
+      "implementation": "technical_steps",
+      "behavioral_basis": "theory(reference)"
+    }
+  ]
 }
 
 Business Context:
 - Goal: {business_goal}
 - Product: {product_type}
 - Persona: {user_persona}
-- Metric: {key_metric} (Current: {current_value} → Target: {target_value})""",
+- Metric: {key_metric} (Current: {current_value} → Target: {target_value})
 
-    "prd": """You are a senior product manager. Generate a complete A/B Test PRD in structured JSON matching this exact structure:
+IMPORTANT:
+1. Return ONLY valid JSON
+2. Include ALL 3 hypotheses
+3. Each hypothesis must have all 5 required fields""",
+
+    "prd": """You are a greatest product manager in the world. Generate a complete A/B Test PRD in structured JSON matching this exact structure:
 {
   "metadata": {
     "title": "...",
@@ -189,11 +191,14 @@ def extract_json_from_text(text: str) -> dict:
 # ============ Enhanced LLM Calling ============
 def safe_call_llm(prompt: str, model: str = DEFAULT_MODEL, temperature: float = DEFAULT_TEMPERATURE) -> str:
     if not GROQ_AVAILABLE or _client is None:
-        return json.dumps({"error": "LLM service not configured"})  # Return structured error
+        return json.dumps({"error": "LLM service not configured"})
     
     try:
         completion = _client.chat.completions.create(
-            # ... existing code ...
+            messages=[{"role": "user", "content": prompt}],
+            model=model,
+            temperature=temperature,
+            response_format={"type": "json_object"}  # <-- This enforces JSON response
         )
         if not completion.choices:
             return json.dumps({"error": "Empty response from LLM"})
@@ -227,22 +232,19 @@ def generate_hypotheses(context: dict) -> List[Dict[str, str]]:
         target_value=context.get("target_value", "")
     )
     
-    raw = safe_call_llm(prompt, temperature=0.7)
-    parsed = extract_json_from_text(raw)
+    try:
+        raw = safe_call_llm(prompt, temperature=0.7)
+        st.write(f"Debug - Raw LLM Response: {raw}")  # For debugging
+        
+        parsed = extract_json_from_text(raw)
+        st.write(f"Debug - Parsed JSON: {parsed}")  # For debugging
 
-    # Transform response to expected format
-    hypotheses = []
-    if parsed:
-        # Handle different response formats
-        items = []
-        if isinstance(parsed, list):
-            items = parsed
-        elif "hypotheses" in parsed:
-            items = parsed["hypotheses"]
-        elif isinstance(parsed, dict):
-            # Check if it's a single hypothesis in the expected format
-            if all(k in parsed for k in ["variable", "prediction", "rationale"]):
-                items = [parsed]
+        if not parsed:
+            raise ValueError("Empty or invalid JSON response")
+            
+        # Transform response to expected format
+        hypotheses = []
+        items = parsed.get("hypotheses", [])
         
         for item in items[:3]:  # Only take first 3
             if not isinstance(item, dict):
@@ -254,17 +256,20 @@ def generate_hypotheses(context: dict) -> List[Dict[str, str]]:
                 "example_implementation": item.get("implementation", ""),
                 "behavioral_basis": item.get("behavioral_basis", "")
             })
-    
-    # Fallback if generation failed
-    if not hypotheses:
-        hypotheses.append({
-            "hypothesis": "If we change [variable], then [metric] will improve",
-            "rationale": "AI generation failed - check API key and inputs",
-            "example_implementation": "Try providing more specific context",
+        
+        if not hypotheses:
+            raise ValueError("No valid hypotheses generated")
+            
+        return hypotheses
+        
+    except Exception as e:
+        st.error(f"Detailed error: {str(e)}")
+        return [{
+            "hypothesis": "Hypothesis generation failed",
+            "rationale": f"Error: {str(e)}",
+            "example_implementation": "Please check your inputs and try again",
             "behavioral_basis": "N/A"
-        })
-    
-    return hypotheses
+        }]
 
 def generate_hypothesis_details(hypothesis: str, context: dict) -> dict:
     """Wrapper for backward compatibility"""
