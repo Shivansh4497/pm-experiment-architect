@@ -569,7 +569,7 @@ def prd_to_markdown(plan: Dict[str, Any]) -> str:
             md.append(f"- **{r.get('risk','')}** (_{r.get('severity','')}_): {r.get('mitigation','')}")
         md.append("")
 
-    sl = ensure_dict(plan.get("success_learning_criteria", {})))
+    sl = ensure_dict(plan.get("success_learning_criteria", {}))
     if any(sl.values()):
         md.append("## Success & Learning Criteria")
         md.append(f"- **Definition of Success:** {sl.get('definition_of_success','')}")
