@@ -187,34 +187,66 @@ def _build_main_prompt(goal: str, context: Dict[str, Any]) -> str:
     return prompt
 
 
-def _build_hypothesis_prompt(hypothesis_text: str, context: Dict[str, Any]) -> str:
+def _build_hypothesis_prompt(context: dict) -> str:
     """
-    Prompt that asks the model to expand a one-line hypothesis into the structured hypothesis object.
+    Strongly personalized hypothesis generator.
+    Forces the LLM to tie every hypothesis to ALL user inputs.
     """
-    ctx = {k: ("" if v is None else str(v)) for k, v in context.items()}
-    prompt = textwrap.dedent(f"""
-    You are an expert Product Manager. Expand the following hypothesis into a JSON object with keys:
-    hypothesis, rationale, example_implementation, behavioral_basis.
+    business_goal = context.get("business_goal", "")
+    product_type = context.get("product_type", "")
+    user_persona = context.get("user_persona", "")
+    key_metric = context.get("key_metric", "")
+    current_value = context.get("current_value", "")
+    target_value = context.get("target_value", "")
 
-    Context:
-    - Business goal: {ctx.get('high_level_goal', '')}
-    - Product Type: {ctx.get('product_type', '')}
-    - Key Metric: {ctx.get('key_metric', '')}
-    - Target Persona: {ctx.get('target_user', '')}
+    return f"""
+You are acting as a Senior Product Manager designing A/B tests.
 
-    INPUT HYPOTHESIS:
-    \"\"\"{hypothesis_text}\"\"\"
+The user has provided the following context:
+- Business Goal: {business_goal}
+- Product Type: {product_type}
+- Target User Persona: {user_persona}
+- Key Metric: {key_metric}
+- Current Value: {current_value}
+- Target Value: {target_value}
 
-    OUTPUT (valid JSON only, single object):
+TASK:
+Generate 3 distinct, *highly personalized* hypotheses for an A/B test.
+Every hypothesis MUST explicitly connect to ALL of the following:
+1. The **Business Goal** ({business_goal})
+2. The **Product Type** ({product_type})
+3. The **Target Persona** ({user_persona})
+4. The **Key Metric** ({key_metric}), including its **Current Value** ({current_value}) and **Target Value** ({target_value})
+
+FORMAT REQUIREMENTS:
+- Each hypothesis must follow this format:  
+  "We believe that [specific product change for this product type]  
+   will result in [measurable impact tied to the key metric]  
+   for [the described persona]."
+- Avoid generic or vague hypotheses. Tailor them to this exact product and persona.
+- Always explain *why* this hypothesis matters in relation to the baseline and target values.
+
+OUTPUT JSON SCHEMA:
+{{
+  "hypotheses": [
     {{
-      "hypothesis": "...",
-      "rationale": "...",
-      "example_implementation": "...",
-      "behavioral_basis": "..."
-    }}
-    """).strip()
+      "hypothesis": "string",
+      "rationale": "Explain why this hypothesis is important and how it ties to the goal/metric/target persona",
+      "example_implementation": "Give a concrete example of how this hypothesis could be tested in {product_type}",
+      "behavioral_basis": "Describe the behavioral or psychological principle that supports this hypothesis"
+    }},
+    ...
+  ]
+}}
 
-    return prompt
+CONSTRAINTS:
+- Each hypothesis must be unique, non-overlapping, and specific.
+- Avoid boilerplate language like "increase engagement" without details — be concrete.
+- Ensure hypotheses are testable within an A/B framework.
+
+RETURN ONLY VALID JSON.
+"""
+
 
 
 def generate_hypotheses(context: Dict[str, Any]) -> str:
