@@ -11,7 +11,7 @@ try:
     from groq import Groq
     GROQ_AVAILABLE = True
     try:
-        _client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+        _client = Groq(api_key=st.secrets["GROQ_API_KEY"])
         if not _client:
             print("🔴 Groq client failed: No API key found")
     except Exception as e:
