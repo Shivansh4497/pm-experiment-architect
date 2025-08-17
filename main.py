@@ -1095,7 +1095,7 @@ def main():
             "Sample Size per Variant", value=safe_int(ed.get("sample_size_per_variant", 0)), step=1
         )
         ed["total_sample_size"] = st.number_input(
-            "Sample Size per Variant", value=safe_int(ed.get("sample_size_per_variant", 0)), step=1
+            "total sample size", value=safe_int(ed.get("sample_size_per_variant", 0)), step=1
         )
         ed["test_duration_days"] = st.number_input(
             "Test Duration (days)", value=safe_float(ed.get("test_duration_days", 14)), step=0.5
