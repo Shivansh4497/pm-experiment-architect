@@ -1,6 +1,4 @@
-file_manager.write(
-    path='prompt_engine.py',
-    content='''# prompt_engine.py — Full corrected version with Groq API integration
+# prompt_engine.py — Full corrected version with Groq API integration
 
 import os
 import json
@@ -469,5 +467,4 @@ def sanitize_experiment_plan(raw_plan: dict) -> dict:
 
 def sanitize_plan(plan: dict) -> dict:
     """Alias for sanitize_experiment_plan for compatibility."""
-    return sanitize_experiment_plan(plan)'''
-)
+    return sanitize_experiment_plan(plan)
