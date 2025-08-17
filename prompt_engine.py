@@ -154,47 +154,34 @@ def extract_json_from_text(text: str) -> dict:
     
     text = text.strip()
     
-    # Try direct parse first
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-    
     # Handle code block formatting
     json_pattern = r'```(?:json)?\n([\s\S]*?)\n```'
     matches = re.findall(json_pattern, text)
     if matches:
-        try:
-            return json.loads(matches[0])
-        except json.JSONDecodeError:
-            pass
-    
+        text = matches[0]
+
     # Try to find outermost JSON block
     start = text.find('{')
     end = text.rfind('}')
     if start != -1 and end > start:
+        json_str = text[start:end+1]
         try:
-            return json.loads(text[start:end+1])
+            return json.loads(json_str)
         except json.JSONDecodeError:
-            pass
+            pass # Fallback to other methods
     
     # Try array format
     start = text.find('[')
     end = text.rfind(']')
     if start != -1 and end > start:
+        json_str = text[start:end+1]
         try:
-            parsed = json.loads(text[start:end+1])
+            parsed = json.loads(json_str)
             return {"list": parsed} if isinstance(parsed, list) else {}
         except json.JSONDecodeError:
             pass
-    
-    # If all else fails, try to parse as a single JSON object even if malformed
-    try:
-        # Try to fix common issues like trailing commas
-        fixed = re.sub(r',\s*([}\]])', r'\1', text)
-        return json.loads(fixed)
-    except json.JSONDecodeError:
-        return {}
+
+    return {}
 
 # ============ Enhanced LLM Calling ============
 def safe_call_llm(prompt: str, model: str = DEFAULT_MODEL, temperature: float = DEFAULT_TEMPERATURE) -> str:
