@@ -1073,7 +1073,9 @@ def main():
             new_risks.append({"risk": risk, "severity": severity, "mitigation": mitigation})
         plan["risks_and_assumptions"] = new_risks
 # main.py — Part 5/5: Step 5–6 UI (Quality Check, Export) + Entrypoint
-
+        ed = st.session_state.get("experiment_design", {})
+        if not isinstance(ed, dict):
+            ed = {}
         st.subheader("Success Criteria")
         sc = plan.get("success_criteria", {})
         sc["confidence_level"] = st.number_input(
@@ -1155,9 +1157,7 @@ def main():
     # Step 6: Finalize & Export
     # -------------------------
     st.header("Step 6: Finalize & Export")
-    ed = st.session_state.get("experiment_design", {})
-    if not isinstance(ed, dict):
-        ed = {}
+    
     if "experiment_plan" in st.session_state:
         plan = st.session_state["experiment_plan"]
 
