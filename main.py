@@ -405,7 +405,7 @@ def sanitize_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
 
     # hypotheses
     merged["hypotheses"] = []
-    for h in ensure_list(plan.get("hypotheses"))):
+    for h in ensure_list(plan.get("hypotheses")):
         if isinstance(h, dict):
             merged["hypotheses"].append({
                 "hypothesis": sanitize_text(h.get("hypothesis", "")),
