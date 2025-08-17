@@ -1,4 +1,4 @@
-# prompt_engine.py — Full corrected version with Groq API integration
+# prompt_engine.py - Complete Fixed Version (Part 1/2)
 
 import os
 import json
@@ -8,127 +8,117 @@ from io import BytesIO
 
 # ============ LLM Client Setup ============
 try:
-    # Import guarded so module still loads if Groq not installed
-    from groq import Groq  # type: ignore
+    from groq import Groq
     GROQ_AVAILABLE = True
-    # instantiate safely (expect user to set GROQ_API_KEY in env)
     try:
         _client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+        if not _client:
+            print("🔴 Groq client failed: No API key found")
     except Exception as e:
-        print(f"Groq client failed to initialize: {e}")
+        print(f"🔴 Groq client failed: {str(e)}")
         _client = None
 except ImportError:
     GROQ_AVAILABLE = False
     _client = None
-    print("Warning: Groq package not available. LLM features will be disabled.")
+    print("⚠️ Groq package not available. LLM features disabled.")
 
 # ============ Constants ============
 DEFAULT_MODEL = "mixtral-8x7b-32768"
 DEFAULT_TEMPERATURE = 0.7
 
-# ============ Prompt Templates ============
+# ============ Enhanced Prompt Templates ============
 PROMPTS = {
-    "hypotheses": """You are an expert Product Manager. Based on the user inputs, generate 3 highly relevant A/B test hypotheses.
-Each hypothesis must be structured JSON with:
-- hypothesis: a single clear testable statement
-- rationale: why this change could work
-- example_implementation: one concrete way to run this test
-- behavioral_basis: psychological principle backing this
+    "hypotheses": """You are an expert Product Manager specializing in behavioral psychology. Generate 3 A/B test hypotheses with:
 
-User Inputs:
-Business Goal: {business_goal}
-Product Type: {product_type}
-Target Persona: {user_persona}
-Key Metric: {key_metric}
-Current Value: {current_value}
-Target Value: {target_value}
+1. SPECIFIC CHANGE: The exact UI/feature to modify (e.g. "purchase button color")
+2. METRIC IMPACT: Quantified prediction (e.g. "increase ARPU by 12%")
+3. RATIONALE: Data/psychology basis (e.g. "red triggers urgency per color psychology studies")
+4. IMPLEMENTATION: Technical details (e.g. "Change #buy-btn from blue to #FF0000")
+5. BEHAVIORAL BASIS: Academic theory (e.g. "Color Affordance Theory (Norman, 1988)")
 
-Return JSON only in this structure:
-{{
-  "hypotheses": [
-    {{
-      "hypothesis": "...",
-      "rationale": "...",
-      "example_implementation": "...",
-      "behavioral_basis": "..."
-    }}
-  ]
-}}""",
+Format each EXACTLY like this:
+{
+  "variable": "specific_element",
+  "prediction": "metric_impact",
+  "rationale": "scientific_basis", 
+  "implementation": "technical_steps",
+  "behavioral_basis": "theory(reference)"
+}
+
+Business Context:
+- Goal: {business_goal}
+- Product: {product_type}
+- Persona: {user_persona}
+- Metric: {key_metric} (Current: {current_value} → Target: {target_value})""",
 
     "prd": """You are a senior product manager. Generate a complete A/B Test PRD in structured JSON matching this exact structure:
-{{
-  "metadata": {{
+{
+  "metadata": {
     "title": "...",
     "team": "...",
     "owner": "...",
     "experiment_id": "..."
-  }},
+  },
   "problem_statement": "...",
   "hypotheses": [
-    {{
+    {
       "hypothesis": "...",
       "rationale": "...",
       "example_implementation": "...",
       "behavioral_basis": "..."
-    }}
+    }
   ],
   "proposed_solution": "...",
   "variants": [
-    {{
+    {
       "control": "...",
       "variation": "...",
       "notes": "..."
-    }}
+    }
   ],
   "metrics": [
-    {{
+    {
       "name": "...",
       "formula": "...",
       "importance": "Primary/Secondary"
-    }}
+    }
   ],
   "guardrail_metrics": [
-    {{
+    {
       "name": "...",
       "direction": "Increase/Decrease/No Change",
       "threshold": "..."
-    }}
+    }
   ],
-  "experiment_design": {{
+  "experiment_design": {
     "traffic_allocation": "...",
     "sample_size_per_variant": 0,
     "total_sample_size": 0,
     "test_duration_days": 0,
     "dau_coverage_percent": 0.0,
     "power": 80.0
-  }},
-  "success_criteria": {{
+  },
+  "success_criteria": {
     "confidence_level": 95.0,
     "power": 80.0,
     "MDE": 1.0,
     "benchmark": "...",
     "monitoring": "..."
-  }},
-  "success_learning_criteria": {{
+  },
+  "success_learning_criteria": {
     "definition_of_success": "...",
     "stopping_rules": "...",
     "rollback_criteria": "..."
-    }},
+  },
   "risks_and_assumptions": [
-    {{
+    {
       "risk": "...",
       "severity": "High/Medium/Low",
       "mitigation": "..."
-    }}
+    }
   ],
   "statistical_rationale": "..."
-}}
-
-Input Context:
-{context}
-
-Hypothesis Details:
-{hypothesis}""",
+}""",
 
     "tips": """You are a PM mentor providing 3-5 short, practical tips for A/B testing at step: {step}.
 Context: {context}
@@ -136,39 +126,49 @@ Format as a JSON list: ["Tip 1", "Tip 2", "Tip 3"]""",
 
     "validate": """Review this experiment plan for quality issues:
 {plan}
-Return JSON with: {{
+Return JSON with: {
   "missing_fields": ["..."],
   "inconsistencies": ["..."],
   "suggestions": ["..."]
-}}"""
+}"""
 }
 
-# ============ Core Utilities ============
+# ============ Robust JSON Extraction ============
 def extract_json_from_text(text: str) -> dict:
-    """Robust JSON extraction from LLM output with multiple fallbacks."""
+    """Improved JSON extraction with multiple fallback methods"""
     if not text:
         return {}
     
     text = text.strip()
+    
     # Try direct parse first
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
     
+    # Handle code block formatting
+    json_pattern = r'```(?:json)?\n([\s\S]*?)\n```'
+    matches = re.findall(json_pattern, text)
+    if matches:
+        try:
+            return json.loads(matches[0])
+        except json.JSONDecodeError:
+            pass
+    
     # Try to find outermost JSON block
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1 and end > start:
+    start = text.find('{')
+    end = text.rfind('}')
+    if start != -1 and end > start:
         try:
             return json.loads(text[start:end+1])
         except json.JSONDecodeError:
             pass
     
     # Try array format
-    start = text.find("[")
-    end = text.rfind("]")
-    if start != -1 and end != -1 and end > start:
+    start = text.find('[')
+    end = text.rfind(']')
+    if start != -1 and end > start:
         try:
             parsed = json.loads(text[start:end+1])
             return {"list": parsed} if isinstance(parsed, list) else {}
@@ -177,9 +177,11 @@ def extract_json_from_text(text: str) -> dict:
     
     return {}
 
+# ============ Enhanced LLM Calling ============
 def safe_call_llm(prompt: str, model: str = DEFAULT_MODEL, temperature: float = DEFAULT_TEMPERATURE) -> str:
-    """Wrapper for Groq API with comprehensive error handling."""
+    """Wrapper for Groq API with comprehensive error handling"""
     if not GROQ_AVAILABLE or _client is None:
+        print("🔴 LLM Service Unavailable - Install Groq and set GROQ_API_KEY")
         return ""
     
     try:
@@ -187,17 +189,31 @@ def safe_call_llm(prompt: str, model: str = DEFAULT_MODEL, temperature: float = 
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
+            response_format={"type": "json_object"} if "```json" in prompt else None,
         )
+        if not completion.choices:
+            raise ValueError("Empty response from LLM")
         return completion.choices[0].message.content
     except Exception as e:
-        print(f"LLM call failed: {str(e)}")
+        print(f"🚨 LLM Error: {str(e)}")
         return ""
 
-# ============ Hypothesis Generation ============
+# ============ Fixed Hypothesis Generation ============
 def generate_hypotheses(context: dict) -> List[Dict[str, str]]:
-    """Generate 3 hypotheses based on user context, always return list of dicts."""
+    """Generate 3 complete hypotheses with all required components"""
     if not isinstance(context, dict):
         context = {}
+    
+    # Validate required fields
+    required_fields = ['business_goal', 'product_type', 'key_metric']
+    if any(field not in context for field in required_fields):
+        return [{
+            "error": "Missing required fields",
+            "hypothesis": "Please provide business_goal, product_type and key_metric",
+            "rationale": "",
+            "example_implementation": "",
+            "behavioral_basis": ""
+        }]
     
     prompt = PROMPTS["hypotheses"].format(
         business_goal=context.get("business_goal", ""),
@@ -211,34 +227,46 @@ def generate_hypotheses(context: dict) -> List[Dict[str, str]]:
     raw = safe_call_llm(prompt, temperature=0.7)
     parsed = extract_json_from_text(raw)
 
-    hyps = []
-    if parsed and "hypotheses" in parsed:
-        for h in parsed["hypotheses"]:
-            if isinstance(h, dict):
-                hyps.append({
-                    "hypothesis": h.get("hypothesis", "").strip(),
-                    "rationale": h.get("rationale", "").strip(),
-                    "example_implementation": h.get("example_implementation", "").strip(),
-                    "behavioral_basis": h.get("behavioral_basis", "").strip()
-                })
+    # Transform response to expected format
+    hypotheses = []
+    if parsed:
+        # Handle both array and object responses
+        items = []
+        if isinstance(parsed, list):
+            items = parsed
+        elif "hypotheses" in parsed:
+            items = parsed["hypotheses"]
+        elif isinstance(parsed, dict):
+            items = [parsed]
+        
+        for item in items[:3]:  # Only take first 3
+            if not isinstance(item, dict):
+                continue
+                
+            hypotheses.append({
+                "hypothesis": f"If we change {item.get('variable', '[variable]')}, then {item.get('prediction', '[metric impact]')}",
+                "rationale": item.get("rationale", ""),
+                "example_implementation": item.get("implementation", ""),
+                "behavioral_basis": item.get("behavioral_basis", "")
+            })
     
-    # Ensure we always return at least one hypothesis
-    if not hyps:
-        hyps.append({
-            "hypothesis": "If we change [variable], then [metric] will improve because [rationale]",
-            "rationale": "",
-            "example_implementation": "",
-            "behavioral_basis": ""
+    # Fallback if generation failed
+    if not hypotheses:
+        hypotheses.append({
+            "hypothesis": "If we change [variable], then [metric] will improve",
+            "rationale": "AI generation failed - check API key and inputs",
+            "example_implementation": "Try providing more specific context",
+            "behavioral_basis": "N/A"
         })
     
-    return hyps
+    return hypotheses
 
 def generate_hypothesis_details(hypothesis: str, context: dict) -> dict:
-    """Enrich a hypothesis with details - main.py expects this exact function name."""
+    """Wrapper for backward compatibility"""
     return expand_hypothesis_with_details(hypothesis, context)
 
 def expand_hypothesis_with_details(hypothesis: str, context: dict) -> dict:
-    """Enrich a hypothesis with rationale, example, and behavioral basis."""
+    """Enrich a hypothesis with rationale, example, and behavioral basis"""
     if not hypothesis or not isinstance(context, dict):
         return {
             "hypothesis": hypothesis or "",
@@ -249,38 +277,46 @@ def expand_hypothesis_with_details(hypothesis: str, context: dict) -> dict:
     
     prompt = f"""Expand this hypothesis into full PRD-ready details:
     
-Hypothesis: {hypothesis}
+Original Hypothesis: {hypothesis}
 
-Context:
-- Business Goal: {context.get('business_goal', '')}
+Business Context:
+- Goal: {context.get('business_goal', '')}
 - Product: {context.get('product_type', '')}
-- User: {context.get('user_persona', '')}
+- Users: {context.get('user_persona', '')}
 - Metric: {context.get('key_metric', '')}
+
+Provide:
+1. Detailed technical implementation
+2. Behavioral psychology basis with academic reference
+3. Expected impact range
 
 Return JSON with:
 {{
-  "hypothesis": "...", 
-  "rationale": "...",
-  "example_implementation": "...",
-  "behavioral_basis": "..."
+  "hypothesis": "refined_statement",
+  "rationale": "detailed_explanation",
+  "example_implementation": "technical_steps",
+  "behavioral_basis": "theory(reference)"
 }}"""
     
     raw = safe_call_llm(prompt, temperature=0.5)
     parsed = extract_json_from_text(raw)
-    
-    if not parsed:
-        parsed = {}
     
     return {
         "hypothesis": parsed.get("hypothesis", hypothesis).strip(),
         "rationale": parsed.get("rationale", "").strip(),
         "example_implementation": parsed.get("example_implementation", "").strip(),
         "behavioral_basis": parsed.get("behavioral_basis", "").strip()
+    } if parsed else {
+        "hypothesis": hypothesis,
+        "rationale": "Expansion failed - check API",
+        "example_implementation": "",
+        "behavioral_basis": ""
     }
+# prompt_engine.py - Complete Fixed Version (Part 2/2)
 
 # ============ PRD Generation ============
 def generate_experiment_plan(context: dict, hypothesis: dict) -> dict:
-    """Generate full PRD from context and hypothesis - main.py expects this exact function."""
+    """Generate full PRD from context and hypothesis"""
     if not isinstance(context, dict):
         context = {}
     if not isinstance(hypothesis, dict):
@@ -297,11 +333,11 @@ def generate_experiment_plan(context: dict, hypothesis: dict) -> dict:
     return sanitize_experiment_plan(parsed)
 
 def validate_experiment_plan(plan: dict) -> dict:
-    """Validate PRD for completeness and quality - main.py expects this exact function."""
+    """Validate PRD for completeness and quality"""
     if not isinstance(plan, dict):
         return {
-            "missing_fields": [],
-            "inconsistencies": ["Plan is not a valid dictionary"],
+            "missing_fields": ["Plan is not a valid dictionary"],
+            "inconsistencies": ["Invalid plan structure"],
             "suggestions": ["Please provide a valid experiment plan"]
         }
     
@@ -315,8 +351,8 @@ def validate_experiment_plan(plan: dict) -> dict:
     if not parsed:
         return {
             "missing_fields": [],
-            "inconsistencies": [],
-            "suggestions": ["Could not validate plan - validation service unavailable"]
+            "inconsistencies": ["Could not validate plan - validation service unavailable"],
+            "suggestions": []
         }
     
     return {
@@ -326,16 +362,16 @@ def validate_experiment_plan(plan: dict) -> dict:
     }
 
 def generate_prd(context: dict, hypothesis: dict) -> dict:
-    """Alias for generate_experiment_plan for backward compatibility."""
+    """Alias for generate_experiment_plan for backward compatibility"""
     return generate_experiment_plan(context, hypothesis)
 
 # ============ Tips Generation ============
 def generate_dynamic_tips(context: dict, current_step: str) -> List[str]:
-    """Generate contextual tips - main.py expects this exact function signature."""
+    """Generate contextual tips - main.py expects this exact function signature"""
     return generate_tips(current_step, context)
 
 def generate_tips(step: str, context: dict) -> List[str]:
-    """Generate contextual PM tips for a given step."""
+    """Generate contextual PM tips for a given step"""
     if not step or not isinstance(context, dict):
         return get_fallback_tips(step)
     
@@ -352,12 +388,12 @@ def generate_tips(step: str, context: dict) -> List[str]:
     elif isinstance(parsed, dict) and "tips" in parsed:
         return [str(tip) for tip in parsed["tips"]][:5]
     elif isinstance(raw, str):
-        return [line.strip() for line in raw.split("\\n") if line.strip()][:5]
+        return [line.strip() for line in raw.split("\n") if line.strip()][:5]
     
     return get_fallback_tips(step)
 
 def get_fallback_tips(step: str) -> List[str]:
-    """Static fallback tips when LLM is unavailable."""
+    """Static fallback tips when LLM is unavailable"""
     base_tips = {
         "inputs": [
             "🎯 Keep business goals specific and measurable",
@@ -377,9 +413,9 @@ def get_fallback_tips(step: str) -> List[str]:
     }
     return base_tips.get(step, base_tips["prd"])
 
-# ============ Sanitization ============
+# ============ Sanitization Utilities ============
 def sanitize_experiment_plan(raw_plan: dict) -> dict:
-    """Ensure PRD has all required fields with proper types."""
+    """Ensure PRD has all required fields with proper types"""
     if not isinstance(raw_plan, dict):
         raw_plan = {}
     
@@ -466,5 +502,5 @@ def sanitize_experiment_plan(raw_plan: dict) -> dict:
     return sanitized
 
 def sanitize_plan(plan: dict) -> dict:
-    """Alias for sanitize_experiment_plan for compatibility."""
+    """Alias for sanitize_experiment_plan for compatibility"""
     return sanitize_experiment_plan(plan)
