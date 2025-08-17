@@ -668,7 +668,7 @@ def main():
         
         # Action button to generate hypotheses
         if st.button("Generate Hypotheses", use_container_width=True):
-            if PROMPT_ENGINE_AVAILABLE and _generate_hypotheses and _client:  # Add _client check
+            if PROMPT_ENGINE_AVAILABLE and _generate_hypotheses and _get_llm_client():  # Add _client check
                 with st.spinner("Generating hypotheses..."):
                     try:
                         generated_hypotheses = _generate_hypotheses(ctx)
